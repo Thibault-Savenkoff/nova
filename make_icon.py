@@ -120,15 +120,20 @@ def make_dmg_bg(path="assets/dmg_bg.png") -> str:
     od.polygon([(l + bar, t), (l + bar * 2, t), (r, b), (r - bar, b)], fill=c)
     img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
-    # Instructions — rendered at 2x so divide target px by 2 for visual size
+    # Instructions text — use truetype if available, fallback to default
     d = ImageDraw.Draw(img)
-    hint_color = (80, 100, 140)
-    # "Drag NOVAViewer to Applications to install"
-    d.text((W // 2, 580), "Drag NOVAViewer → Applications to install",
-           fill=hint_color, anchor="mm")
-    # "If blocked by macOS: right-click → Open"
-    d.text((W // 2, 630), "If blocked by macOS: right-click the app → Open",
-           fill=(160, 100, 60), anchor="mm")
+    try:
+        from PIL import ImageFont
+        font_main = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 28)
+        font_hint = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 24)
+    except Exception:
+        font_main = font_hint = None
+    kw_main = {"font": font_main} if font_main else {}
+    kw_hint = {"font": font_hint} if font_hint else {}
+    d.text((W // 2, 570), "Drag NOVAViewer to Applications to install",
+           fill=(60, 80, 130), anchor="mm", **kw_main)
+    d.text((W // 2, 626), "If blocked: System Settings > Privacy & Security > Open Anyway",
+           fill=(140, 80, 40), anchor="mm", **kw_hint)
 
     img.save(path)
     print(f"  {path}")

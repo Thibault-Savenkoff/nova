@@ -46,6 +46,11 @@ jobs:
       - name: Build with PyInstaller
         run: python build.py
 
+      # macOS: ad-hoc sign → changes "damaged" to "unidentified developer" → Privacy & Security shows "Open Anyway"
+      - name: Sign app (macOS)
+        if: runner.os == 'macOS'
+        run: codesign --deep --force --sign - dist/NOVAViewer.app
+
       # macOS: styled DMG with custom background
       - name: Archive (macOS)
         if: runner.os == 'macOS'
