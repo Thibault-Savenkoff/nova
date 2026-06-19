@@ -61,16 +61,16 @@ def build():
 
     if PLATFORM == "Darwin":
         _patch_plist_macos()
-        print(f"\n✓  dist/{APP}.app")
-        print("   Drag to /Applications — .nova files will open automatically.")
+        print(f"\ndist/{APP}.app")
+        print("   Drag to /Applications -- .nova files will open automatically.")
 
     elif PLATFORM == "Windows":
-        print(f"\n✓  dist/{APP}.exe")
+        print(f"\ndist/{APP}.exe")
         print("   .nova files register on first launch (no admin required).")
 
     else:
         _write_linux_extras()
-        print(f"\n✓  dist/{APP}")
+        print(f"\ndist/{APP}")
         print("   Run  sudo dist/install.sh  to register .nova files system-wide.")
 
 # ── macOS: patch Info.plist ───────────────────────────────────────────────────
