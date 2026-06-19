@@ -38,15 +38,7 @@ jobs:
         run: sudo apt-get install -y python3-tk
 
       - name: Set version
-        run: |
-          python -c "
-          import re
-          v = '${{ github.ref_name }}'.lstrip('v')
-          txt = open('updater.py').read()
-          txt = re.sub(r'^VERSION = .*', 'VERSION = \"' + v + '\"', txt, flags=re.M)
-          open('updater.py', 'w').write(txt)
-          print('Version set to', v)
-          "
+        run: python set_version.py ${{ github.ref_name }}
 
       - name: Generate icons
         run: python make_icon.py
