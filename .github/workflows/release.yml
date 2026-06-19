@@ -75,7 +75,10 @@ jobs:
 
       - name: Build installer (Windows)
         if: runner.os == 'Windows'
-        run: makensis installer.nsi
+        shell: pwsh
+        run: |
+          $env:Path += ";C:\Program Files (x86)\NSIS"
+          makensis installer.nsi
 
       # Linux: copy binary
       - name: Archive (Linux)
