@@ -149,6 +149,7 @@ class NovaViewer(tk.Tk):
         dst = filedialog.asksaveasfilename(
             title="Save as .nova",
             defaultextension=".nova",
+            initialfile=os.path.splitext(os.path.basename(src))[0],
             filetypes=[("NOVA images", "*.nova")])
         if not dst:
             return
@@ -211,23 +212,29 @@ class NovaViewer(tk.Tk):
                 row=i + 1, column=0, columnspan=2, padx=20, sticky="w")
 
         tk.Label(dlg, text="Quality", bg="#2a2a2a", fg="white").grid(
-            row=4, column=0, padx=12, pady=(12, 0), sticky="w")
+            row=5, column=0, padx=12, pady=(12, 0), sticky="w")
         quality_var = tk.IntVar(value=85)
         tk.Scale(dlg, from_=1, to=100, orient=tk.HORIZONTAL, variable=quality_var,
                  length=260, bg="#2a2a2a", fg="white", troughcolor="#444",
-                 highlightthickness=0).grid(row=5, column=0, columnspan=2, padx=12, pady=(0, 12))
+                 highlightthickness=0).grid(row=6, column=0, columnspan=2, padx=12, pady=(0, 12))
 
         def ok():
             result["mode"] = mode_var.get()
             result["quality"] = quality_var.get()
             dlg.destroy()
 
+        def _dlg_btn(parent, text, cmd, color):
+            lbl = tk.Label(parent, text=text, bg=color, fg="white",
+                           font=("Helvetica", 12), padx=16, pady=6, cursor="hand2")
+            lbl.pack(side=tk.RIGHT, padx=4)
+            lbl.bind("<Button-1>", lambda _: cmd())
+            lbl.bind("<Enter>",    lambda _: lbl.config(bg="#555" if color == "#444" else "#0066cc"))
+            lbl.bind("<Leave>",    lambda _: lbl.config(bg=color))
+
         btn_row = tk.Frame(dlg, bg="#2a2a2a")
-        btn_row.grid(row=6, column=0, columnspan=2, pady=(0, 12))
-        tk.Button(btn_row, text="Cancel", command=dlg.destroy,
-                  bg="#444", fg="white", relief=tk.FLAT, padx=10).pack(side=tk.RIGHT, padx=4)
-        tk.Button(btn_row, text="Encode", command=ok, default=tk.ACTIVE,
-                  bg="#0a84ff", fg="white", relief=tk.FLAT, padx=10).pack(side=tk.RIGHT, padx=4)
+        btn_row.grid(row=7, column=0, columnspan=2, pady=(0, 12))
+        _dlg_btn(btn_row, "Cancel", dlg.destroy, "#444")
+        _dlg_btn(btn_row, "Encode", ok, "#0a84ff")
 
         dlg.wait_window()
         return result if result else None
