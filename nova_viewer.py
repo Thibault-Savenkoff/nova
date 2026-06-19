@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os, struct, sys, threading, tkinter as tk
 from tkinter import filedialog, messagebox
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 import nova
 try:
     import updater
@@ -14,9 +14,9 @@ except ImportError:
 
 
 def _register_windows():
-    """Register .nova file association in HKCU (no admin required)."""
+    """Register .nova file association and Start Menu shortcut in HKCU (no admin required)."""
     try:
-        import winreg  # type: ignore[import]
+        import winreg, subprocess  # type: ignore[import]
         exe = sys.executable if not getattr(sys, "frozen", False) else sys.argv[0]
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\.nova") as k:
             winreg.SetValue(k, "", winreg.REG_SZ, "NOVAImage")
@@ -25,8 +25,21 @@ def _register_windows():
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
                                r"Software\Classes\NOVAImage\shell\open\command") as k:
             winreg.SetValue(k, "", winreg.REG_SZ, f'"{exe}" "%1"')
+        # Start Menu shortcut
+        start_menu = os.path.expandvars(
+            r"%APPDATA%\Microsoft\Windows\Start Menu\Programs\NOVA Viewer.lnk")
+        if not os.path.exists(start_menu):
+            ps = (
+                f'$ws = New-Object -ComObject WScript.Shell;'
+                f'$s = $ws.CreateShortcut("{start_menu}");'
+                f'$s.TargetPath = "{exe}";'
+                f'$s.Description = "NOVA Image Viewer";'
+                f'$s.Save()'
+            )
+            subprocess.run(["powershell", "-WindowStyle", "Hidden", "-Command", ps],
+                           capture_output=True)
     except Exception:
-        pass  # silently skip if registry is inaccessible
+        pass
 
 
 class NovaViewer(tk.Tk):
@@ -46,14 +59,17 @@ class NovaViewer(tk.Tk):
 
         self._build_menu()
         self._build_ui()
+        self._set_window_icon()
 
         # macOS: handle double-click on .nova file via Apple Event
         if sys.platform == "darwin":
             self.tk.createcommand("::tk::mac::OpenDocument",
                                   lambda *files: self.after(0, lambda: self._load(files[0])))
 
-        # Windows: register .nova association silently on first launch
+        # Windows: fix focus (prevents menu closing instantly), register associations
         if sys.platform == "win32":
+            self.lift()
+            self.focus_force()
             self.after(500, _register_windows)
 
         # Check for updates in background (3s delay to not slow startup)
@@ -61,6 +77,27 @@ class NovaViewer(tk.Tk):
             self.after(3000, self._check_update)
 
     # ── menu ──────────────────────────────────────────────────────────────────
+
+    def _set_window_icon(self):
+        try:
+            size = 64
+            mask = Image.new("L", (size, size), 0)
+            ImageDraw.Draw(mask).rounded_rectangle([(0, 0), (size-1, size-1)],
+                                                    radius=size//5, fill=255)
+            bg = Image.new("RGBA", (size, size), (12, 18, 30, 255))
+            result = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+            result.paste(bg, mask=mask)
+            m, bar = int(size * 0.22), int(size * 0.12)
+            t, b, l, r = m, size-m, m, size-m
+            c = (228, 236, 255, 255)
+            d = ImageDraw.Draw(result)
+            d.rectangle([l, t, l+bar, b], fill=c)
+            d.rectangle([r-bar, t, r, b], fill=c)
+            d.polygon([(l+bar, t), (l+bar*2, t), (r, b), (r-bar, b)], fill=c)
+            self._icon_photo = ImageTk.PhotoImage(result)
+            self.wm_iconphoto(True, self._icon_photo)
+        except Exception:
+            pass
 
     def _build_menu(self):
         bar = tk.Menu(self)
@@ -111,20 +148,28 @@ class NovaViewer(tk.Tk):
         self._info.pack(side=tk.LEFT, padx=12, pady=4)
 
         # Update banner — hidden until an update is found
-        self._update_btn = tk.Button(bar, text="", command=self._install_update,
-                                     bg="#1a6b2e", fg="white", relief=tk.FLAT,
-                                     padx=10, pady=0, cursor="hand2")
+        self._update_btn = tk.Label(bar, text="", bg="#1a6b2e", fg="white",
+                                    font=("Helvetica", 11), padx=10, pady=0, cursor="hand2")
+        self._update_btn.bind("<Button-1>", lambda _: self._install_update())
+        self._update_btn.bind("<Enter>", lambda _: self._update_btn.config(bg="#1f8a3a"))
+        self._update_btn.bind("<Leave>", lambda _: self._update_btn.config(bg="#1a6b2e"))
         self._update_info = {}
 
         # animation controls — hidden until an animated file is loaded
         self._anim_bar = tk.Frame(bar, bg="#242424")
         for text, cmd in [("◀", self._prev), ("▶", self._next)]:
-            tk.Button(self._anim_bar, text=text, command=cmd,
-                      bg="#333", fg="white", relief=tk.FLAT,
-                      padx=6, pady=0).pack(side=tk.LEFT, padx=2)
-        self._play_btn = tk.Button(self._anim_bar, text="▶ Play", command=self._toggle_play,
-                                   bg="#333", fg="white", relief=tk.FLAT, padx=8, pady=0)
+            b = tk.Label(self._anim_bar, text=text, bg="#333", fg="white",
+                         font=("Helvetica", 12), padx=8, pady=2, cursor="hand2")
+            b.pack(side=tk.LEFT, padx=2)
+            b.bind("<Button-1>", lambda _, c=cmd: c())
+            b.bind("<Enter>",    lambda _, w=b: w.config(bg="#444"))
+            b.bind("<Leave>",    lambda _, w=b: w.config(bg="#333"))
+        self._play_btn = tk.Label(self._anim_bar, text="▶ Play", bg="#333", fg="white",
+                                  font=("Helvetica", 12), padx=10, pady=2, cursor="hand2")
         self._play_btn.pack(side=tk.LEFT, padx=4)
+        self._play_btn.bind("<Button-1>", lambda _: self._toggle_play())
+        self._play_btn.bind("<Enter>",    lambda _: self._play_btn.config(bg="#444"))
+        self._play_btn.bind("<Leave>",    lambda _: self._play_btn.config(bg="#333"))
         self._frame_lbl = tk.Label(self._anim_bar, text="", bg="#242424", fg="#777",
                                    font=("Helvetica", 11))
         self._frame_lbl.pack(side=tk.LEFT, padx=4)
@@ -399,7 +444,8 @@ class NovaViewer(tk.Tk):
     def _install_update(self):
         if not self._update_info:
             return
-        self._update_btn.config(text="Downloading…", state=tk.DISABLED)
+        self._update_btn.config(text="Downloading…")
+        self._update_btn.unbind("<Button-1>")
 
         def _progress(msg):
             self.after(0, lambda: self._update_btn.config(text=msg))
@@ -410,7 +456,7 @@ class NovaViewer(tk.Tk):
         def _error(msg):
             self.after(0, lambda: (
                 messagebox.showerror("Update failed", msg),
-                self._update_btn.config(text="Update failed", state=tk.NORMAL)
+                self._update_btn.config(text="Update failed")
             ))
 
         updater.install_async(self._update_info, _progress, _done, _error)  # type: ignore[possibly-unbound]
