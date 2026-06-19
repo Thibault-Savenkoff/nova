@@ -46,24 +46,10 @@ jobs:
       - name: Build with PyInstaller
         run: python build.py
 
-      # macOS: styled DMG with custom background and auto-installer
+      # macOS: styled DMG with custom background
       - name: Archive (macOS)
         if: runner.os == 'macOS'
-        run: |
-          cat > Install.command << 'SCRIPT'
-          #!/bin/bash
-          cd "$(dirname "$0")"
-          echo "Installing NOVA Viewer..."
-          xattr -cr NOVAViewer.app
-          cp -r NOVAViewer.app /Applications/
-          echo "Done! Launching..."
-          open /Applications/NOVAViewer.app
-          SCRIPT
-          chmod +x Install.command
-          dmgbuild -s dmg_settings.py \
-            -D app=dist/NOVAViewer.app \
-            -D install=Install.command \
-            "NOVA Viewer" NOVAViewer-mac.dmg
+        run: dmgbuild -s dmg_settings.py -D app=dist/NOVAViewer.app "NOVA Viewer" NOVAViewer-mac.dmg
 
       # Windows: rename the exe
       - name: Archive (Windows)
