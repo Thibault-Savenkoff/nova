@@ -96,36 +96,29 @@ def make_dmg_bg(path="assets/dmg_bg.png") -> str:
     os.makedirs("assets", exist_ok=True)
     W, H = 1320, 800
 
-    # Dark navy base
-    img = Image.new("RGB", (W, H), (10, 15, 26))
-    d = ImageDraw.Draw(img)
+    # Light base — white text would be invisible, so keep it light for Finder's black labels
+    img = Image.new("RGB", (W, H), (235, 240, 250))
 
-    # Subtle blue radial glow — top-left
+    # Subtle blue radial glow — top-left corner
     glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    ImageDraw.Draw(glow).ellipse([-300, -300, 900, 900], fill=(30, 80, 200, 40))
-    glow = glow.filter(ImageFilter.GaussianBlur(120))
+    ImageDraw.Draw(glow).ellipse([-200, -200, 800, 800], fill=(100, 160, 255, 35))
+    glow = glow.filter(ImageFilter.GaussianBlur(100))
     img = Image.alpha_composite(img.convert("RGBA"), glow).convert("RGB")
-    d = ImageDraw.Draw(img)
 
-    # Large faint "N" watermark in centre
-    S = 420
+    # Large faint "N" watermark — bottom-right, dark blue at low opacity
+    S = 500
     m = int(S * 0.18)
     bar = int(S * 0.13)
-    cx, cy = W // 2, H // 2
-    ox, oy = cx - S // 2, cy - S // 2
+    ox, oy = W - S + 40, H - S + 40
     t, b = oy + m, oy + S - m
     l, r = ox + m, ox + S - m
-    c = (255, 255, 255, 18)
+    c = (12, 30, 80, 22)
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
     od.rectangle([l,       t, l + bar,     b], fill=c)
     od.rectangle([r - bar, t, r,           b], fill=c)
     od.polygon([(l + bar, t), (l + bar * 2, t), (r, b), (r - bar, b)], fill=c)
     img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
-
-    # Thin separator line at bottom (drag-here hint area)
-    d = ImageDraw.Draw(img)
-    d.line([(0, H - 2), (W, H - 2)], fill=(255, 255, 255, 15), width=2)
 
     img.save(path)
     print(f"  {path}")
