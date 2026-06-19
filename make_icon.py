@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Generate NOVA Viewer icon assets (PNG, ICO, ICNS)."""
+"""Generate NOVA Viewer icon assets (PNG, ICO, ICNS, DMG background)."""
 
 import os, platform, shutil, subprocess
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 
 def _render_raw(size: int) -> Image.Image:
@@ -91,10 +91,52 @@ def make_icns(out="assets/nova_viewer.icns") -> str:
     return out
 
 
+def make_dmg_bg(path="assets/dmg_bg.png") -> str:
+    """1320×800 background for the DMG window (displayed at 660×400 @2x)."""
+    os.makedirs("assets", exist_ok=True)
+    W, H = 1320, 800
+
+    # Dark navy base
+    img = Image.new("RGB", (W, H), (10, 15, 26))
+    d = ImageDraw.Draw(img)
+
+    # Subtle blue radial glow — top-left
+    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).ellipse([-300, -300, 900, 900], fill=(30, 80, 200, 40))
+    glow = glow.filter(ImageFilter.GaussianBlur(120))
+    img = Image.alpha_composite(img.convert("RGBA"), glow).convert("RGB")
+    d = ImageDraw.Draw(img)
+
+    # Large faint "N" watermark in centre
+    S = 420
+    m = int(S * 0.18)
+    bar = int(S * 0.13)
+    cx, cy = W // 2, H // 2
+    ox, oy = cx - S // 2, cy - S // 2
+    t, b = oy + m, oy + S - m
+    l, r = ox + m, ox + S - m
+    c = (255, 255, 255, 18)
+    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    od = ImageDraw.Draw(overlay)
+    od.rectangle([l,       t, l + bar,     b], fill=c)
+    od.rectangle([r - bar, t, r,           b], fill=c)
+    od.polygon([(l + bar, t), (l + bar * 2, t), (r, b), (r - bar, b)], fill=c)
+    img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
+
+    # Thin separator line at bottom (drag-here hint area)
+    d = ImageDraw.Draw(img)
+    d.line([(0, H - 2), (W, H - 2)], fill=(255, 255, 255, 15), width=2)
+
+    img.save(path)
+    print(f"  {path}")
+    return path
+
+
 if __name__ == "__main__":
     print("Generating icons…")
     make_png()
     make_ico()
     if platform.system() == "Darwin":
         make_icns()
+        make_dmg_bg()
     print("Done.")

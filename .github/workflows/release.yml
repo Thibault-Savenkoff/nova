@@ -31,7 +31,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install pillow pyinstaller
+        run: pip install pillow pyinstaller dmgbuild
 
       - name: Install Tkinter (Linux)
         if: runner.os == 'Linux'
@@ -46,17 +46,10 @@ jobs:
       - name: Build with PyInstaller
         run: python build.py
 
-      # macOS: create a DMG with drag-to-Applications shortcut
+      # macOS: styled DMG with custom background
       - name: Archive (macOS)
         if: runner.os == 'macOS'
-        run: |
-          mkdir -p dmg_staging
-          cp -r dist/NOVAViewer.app dmg_staging/
-          ln -s /Applications dmg_staging/Applications
-          hdiutil create -volname "NOVA Viewer" \
-            -srcfolder dmg_staging \
-            -ov -format UDZO \
-            NOVAViewer-mac.dmg
+        run: dmgbuild -s dmg_settings.py -D app=dist/NOVAViewer.app "NOVA Viewer" NOVAViewer-mac.dmg
 
       # Windows: rename the exe
       - name: Archive (Windows)
