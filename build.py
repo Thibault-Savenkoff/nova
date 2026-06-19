@@ -95,6 +95,13 @@ def _patch_plist_macos():
     with open(path, "rb") as f:
         pl = plistlib.load(f)
 
+    try:
+        import updater as _u
+        pl["CFBundleShortVersionString"] = _u.VERSION
+        pl["CFBundleVersion"] = _u.VERSION
+    except ImportError:
+        pass
+
     pl["CFBundleDocumentTypes"] = [{
         "CFBundleTypeName": "NOVA Image",
         "CFBundleTypeRole": "Viewer",
