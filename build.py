@@ -96,10 +96,12 @@ def _patch_plist_macos():
         pl = plistlib.load(f)
 
     try:
-        import updater as _u
-        pl["CFBundleShortVersionString"] = _u.VERSION
-        pl["CFBundleVersion"] = _u.VERSION
-    except ImportError:
+        import re as _re
+        _m = _re.search(r'^VERSION = "(.+)"', open("updater.py").read(), _re.M)
+        if _m:
+            pl["CFBundleShortVersionString"] = _m.group(1)
+            pl["CFBundleVersion"] = _m.group(1)
+    except Exception:
         pass
 
     pl["CFBundleDocumentTypes"] = [{

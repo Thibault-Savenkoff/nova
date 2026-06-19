@@ -6,6 +6,7 @@ appname     = os.path.basename(application)
 
 files    = [application]
 symlinks = {"Applications": "/Applications"}
+icon       = "assets/nova_viewer.icns"
 background = "assets/dmg_bg.png"
 
 window_rect = ((200, 120), (660, 400))
