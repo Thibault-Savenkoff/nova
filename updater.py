@@ -104,18 +104,16 @@ def _apply(downloaded: str, tmp: str):
         sys.exit(0)
 
     elif sys.platform == "win32":
-        bat = os.path.join(tmp, "nova_update.bat")
-        with open(bat, "w") as f:
-            f.write(
-                f"@echo off\n"
-                f"timeout /t 2 /nobreak >nul\n"
-                f'copy /y "{downloaded}" "{app}"\n'
-                f'start "" "{app}"\n'
-                f"del \"%~f0\"\n"
-            )
-        # Launch bat detached, no window, then quit
-        subprocess.Popen(["cmd", "/c", bat],
-                         creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS)
+        # PowerShell hidden window: wait for this process to exit, replace exe, relaunch
+        ps = (
+            f'Start-Sleep -Seconds 2; '
+            f'Copy-Item -Force "{downloaded}" "{app}"; '
+            f'Start-Process "{app}"'
+        )
+        subprocess.Popen(
+            ["powershell", "-WindowStyle", "Hidden", "-NonInteractive", "-Command", ps],
+            creationflags=subprocess.DETACHED_PROCESS,
+        )
         sys.exit(0)
 
     else:  # Linux
