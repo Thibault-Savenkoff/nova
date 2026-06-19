@@ -56,7 +56,11 @@ jobs:
         if: runner.os == 'macOS'
         run: dmgbuild -s dmg_settings.py -D app=dist/NOVAViewer.app "NOVA Viewer" NOVAViewer-mac.dmg
 
-      # Windows: build NSIS installer (NSIS is pre-installed on windows-latest)
+      # Windows: build NSIS installer
+      - name: Install NSIS (Windows)
+        if: runner.os == 'Windows'
+        run: choco install nsis -y
+
       - name: Patch installer version (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
