@@ -16,7 +16,7 @@ jobs:
             archive: NOVAViewer-mac.dmg
           - os: windows-latest
             artifact: NOVAViewer.exe
-            archive: NOVAViewer-windows.exe
+            archive: NOVAViewer-setup.exe
           - os: ubuntu-latest
             artifact: NOVAViewer
             archive: NOVAViewer-linux
@@ -56,11 +56,22 @@ jobs:
         if: runner.os == 'macOS'
         run: dmgbuild -s dmg_settings.py -D app=dist/NOVAViewer.app "NOVA Viewer" NOVAViewer-mac.dmg
 
-      # Windows: rename the exe
-      - name: Archive (Windows)
+      # Windows: build NSIS installer (NSIS is pre-installed on windows-latest)
+      - name: Patch installer version (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Copy-Item dist\NOVAViewer.exe ${{ matrix.archive }}
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart("v")
+          $parts = ($v + ".0") -split "\." | Select-Object -First 4
+          $vi = $parts -join "."
+          (Get-Content installer.nsi) `
+            -replace 'VIProductVersion ".*"', "VIProductVersion `"$vi`"" `
+            -replace '(VIAddVersionKey "FileVersion"\s+)".*"', "`$1`"$v`"" |
+          Set-Content installer.nsi
+
+      - name: Build installer (Windows)
+        if: runner.os == 'Windows'
+        run: makensis installer.nsi
 
       # Linux: copy binary
       - name: Archive (Linux)
@@ -108,7 +119,7 @@ jobs:
             | Platform | File |
             |----------|------|
             | macOS    | `NOVAViewer-mac.dmg` — ouvre le DMG, glisse dans Applications |
-            | Windows  | `NOVAViewer-windows.exe` — run directly |
+            | Windows  | `NOVAViewer-setup.exe` — double-clic pour installer |
             | Linux    | `NOVAViewer-linux` — `chmod +x`, then `sudo ./install.sh` |
 
             ### Auto-update
@@ -118,7 +129,7 @@ jobs:
             ```
           files: |
             artifacts/NOVAViewer-mac.dmg
-            artifacts/NOVAViewer-windows.exe
+            artifacts/NOVAViewer-setup.exe
             artifacts/NOVAViewer-linux
 
       - name: Publish version.json for auto-updater
@@ -129,7 +140,7 @@ jobs:
             "notes": "See release notes on GitHub",
             "download": {
               "darwin": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/NOVAViewer-mac.dmg",
-              "win32":  "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/NOVAViewer-windows.exe",
+              "win32":  "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/NOVAViewer-setup.exe",
               "linux":  "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/NOVAViewer-linux"
             }
           }

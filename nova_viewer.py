@@ -33,6 +33,7 @@ def _register_windows():
                 f'$ws = New-Object -ComObject WScript.Shell;'
                 f'$s = $ws.CreateShortcut("{start_menu}");'
                 f'$s.TargetPath = "{exe}";'
+                f'$s.IconLocation = "{exe},0";'
                 f'$s.Description = "NOVA Image Viewer";'
                 f'$s.Save()'
             )

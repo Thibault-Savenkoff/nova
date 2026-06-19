@@ -104,10 +104,10 @@ def _apply(downloaded: str, tmp: str):
         sys.exit(0)
 
     elif sys.platform == "win32":
-        # PowerShell hidden window: wait for this process to exit, replace exe, relaunch
+        # Run NSIS installer silently (/S), then relaunch the app
         ps = (
             f'Start-Sleep -Seconds 2; '
-            f'Copy-Item -Force "{downloaded}" "{app}"; '
+            f'Start-Process "{downloaded}" -ArgumentList "/S" -Wait; '
             f'Start-Process "{app}"'
         )
         subprocess.Popen(
