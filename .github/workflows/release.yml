@@ -1,0 +1,140 @@
+name: Build & Release
+
+# Triggers on every push of a version tag (v1.0.0, v1.2.3, etc.)
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: NOVAViewer.app
+            archive: NOVAViewer-mac.dmg
+          - os: windows-latest
+            artifact: NOVAViewer.exe
+            archive: NOVAViewer-windows.exe
+          - os: ubuntu-latest
+            artifact: NOVAViewer
+            archive: NOVAViewer-linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pillow pyinstaller
+
+      - name: Install Tkinter (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y python3-tk
+
+      - name: Generate icons
+        run: python make_icon.py
+
+      - name: Build with PyInstaller
+        run: python build.py
+
+      # macOS: create a DMG with drag-to-Applications shortcut
+      - name: Archive (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dmg_staging
+          cp -r dist/NOVAViewer.app dmg_staging/
+          ln -s /Applications dmg_staging/Applications
+          hdiutil create -volname "NOVA Viewer" \
+            -srcfolder dmg_staging \
+            -ov -format UDZO \
+            NOVAViewer-mac.dmg
+
+      # Windows: rename the exe
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Copy-Item dist\NOVAViewer.exe ${{ matrix.archive }}
+
+      # Linux: copy binary
+      - name: Archive (Linux)
+        if: runner.os == 'Linux'
+        run: cp dist/NOVAViewer ${{ matrix.archive }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Update version in updater.py
+        run: |
+          sed -i 's/^VERSION = .*/VERSION = "${{ steps.version.outputs.VERSION }}"/' updater.py || true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "NOVA Viewer ${{ github.ref_name }}"
+          body: |
+            ## NOVA Viewer ${{ github.ref_name }}
+
+            ### Downloads
+            | Platform | File |
+            |----------|------|
+            | macOS    | `NOVAViewer-mac.dmg` — ouvre le DMG, glisse dans Applications |
+            | Windows  | `NOVAViewer-windows.exe` — run directly |
+            | Linux    | `NOVAViewer-linux` — `chmod +x`, then `sudo ./install.sh` |
+
+            ### Auto-update
+            Point `UPDATE_URL` in `updater.py` to:
+            ```
+            https://github.com/${{ github.repository }}/releases/latest/download/version.json
+            ```
+          files: |
+            artifacts/NOVAViewer-mac.dmg
+            artifacts/NOVAViewer-windows.exe
+            artifacts/NOVAViewer-linux
+
+      - name: Publish version.json for auto-updater
+        run: |
+          cat > version.json << EOF
+          {
+            "version": "${{ steps.version.outputs.VERSION }}",
+            "notes": "See release notes on GitHub",
+            "download": {
+              "darwin": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/NOVAViewer-mac.dmg",
+              "win32":  "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/NOVAViewer-windows.exe",
+              "linux":  "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/NOVAViewer-linux"
+            }
+          }
+          EOF
+
+      - name: Upload version.json to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: version.json
