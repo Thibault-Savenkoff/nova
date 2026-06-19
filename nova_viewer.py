@@ -60,7 +60,8 @@ class NovaViewer(tk.Tk):
 
         self._build_menu()
         self._build_ui()
-        self._set_window_icon()
+        if sys.platform != "darwin":   # macOS gets icon from .icns bundle; wm_iconphoto overrides Dock
+            self._set_window_icon()
 
         # macOS: handle double-click on .nova file via Apple Event
         if sys.platform == "darwin":

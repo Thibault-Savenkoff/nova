@@ -44,8 +44,6 @@ def build():
         "--hidden-import", "PIL._tkinter_finder",
         "--hidden-import", "PIL.Image",
         "--hidden-import", "PIL.ImageTk",
-        "--add-data", f"nova.py{os.pathsep}.",
-        "--add-data", f"updater.py{os.pathsep}.",
     ]
 
     if PLATFORM == "Darwin":
