@@ -635,14 +635,20 @@ async function encodeNOVA(file, mode, quality, exifBytes) {
 }
 
 // ── HDR16 helpers ─────────────────────────────────────────────────────────────
+const _SAT = 1.35; // display-only saturation boost (linear space, Rec.709 luma)
 function _drawHDR16ToCanvas(ctx, u16, w, h) {
   const wp = _u16WhitePoint(u16);
   const id = ctx.createImageData(w, h);
   const d = id.data;
   for (let i = 0, j = 0; i < w*h; i++, j += 3) {
-    d[i*4]   = _aces8(u16[j]   / wp);
-    d[i*4+1] = _aces8(u16[j+1] / wp);
-    d[i*4+2] = _aces8(u16[j+2] / wp);
+    let r = u16[j] / wp, g = u16[j+1] / wp, b = u16[j+2] / wp;
+    const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+    r = lum + (r - lum) * _SAT;
+    g = lum + (g - lum) * _SAT;
+    b = lum + (b - lum) * _SAT;
+    d[i*4]   = _aces8(r);
+    d[i*4+1] = _aces8(g);
+    d[i*4+2] = _aces8(b);
     d[i*4+3] = 255;
   }
   ctx.putImageData(id, 0, 0);
