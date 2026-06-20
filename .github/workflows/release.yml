@@ -111,10 +111,6 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
-      - name: Update version in updater.py
-        run: |
-          sed -i 's/^VERSION = .*/VERSION = "${{ steps.version.outputs.VERSION }}"/' updater.py || true
-
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:

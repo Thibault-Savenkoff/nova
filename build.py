@@ -95,7 +95,7 @@ def _patch_plist_macos():
 
     try:
         import re as _re
-        _m = _re.search(r'^VERSION = "(.+)"', open("updater.py").read(), _re.M)
+        _m = _re.search(r'^VERSION\s*=\s*"(.+)"', open("updater.py").read(), _re.M)
         if _m:
             pl["CFBundleShortVersionString"] = _m.group(1)
             pl["CFBundleVersion"] = _m.group(1)

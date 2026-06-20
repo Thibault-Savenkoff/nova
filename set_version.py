@@ -3,6 +3,6 @@ import re, sys
 
 v = sys.argv[1].lstrip("v")
 txt = open("updater.py").read()
-txt = re.sub(r'^VERSION = .*', f'VERSION = "{v}"', txt, flags=re.M)
+txt = re.sub(r'^VERSION\s*=\s*.*', f'VERSION = "{v}"', txt, flags=re.M)
 open("updater.py", "w").write(txt)
 print("Version set to", v)

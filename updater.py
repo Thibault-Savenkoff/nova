@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import io, json, os, shutil, subprocess, sys, tempfile, threading, urllib.request
 
-VERSION    = "1.0.0"
+VERSION = "1.0.0"
 UPDATE_URL = "https://github.com/Thibault-Savenkoff/nova/releases/latest/download/version.json"
 
 
@@ -104,10 +104,15 @@ def _apply(downloaded: str, tmp: str):
         sys.exit(0)
 
     elif sys.platform == "win32":
-        # Run NSIS installer silently (/S), then relaunch the app
+        # Run NSIS silent install to the same directory as the current exe.
+        # /D= must be last and unquoted; use RunAs if under Program Files.
+        instdir = os.path.dirname(app)
+        pf = os.environ.get("PROGRAMFILES", "C:\\Program Files")
+        needs_admin = instdir.lower().startswith(pf.lower())
+        verb = "-Verb RunAs " if needs_admin else ""
         ps = (
             f'Start-Sleep -Seconds 2; '
-            f'Start-Process "{downloaded}" -ArgumentList "/S" -Wait; '
+            f'Start-Process "{downloaded}" -ArgumentList "/S","/D={instdir}" {verb}-Wait; '
             f'Start-Process "{app}"'
         )
         subprocess.Popen(
