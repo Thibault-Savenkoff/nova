@@ -296,7 +296,7 @@ const inflate = d => xform(new DecompressionStream('deflate'), d);
 const deflate = d => xform(new CompressionStream('deflate'), d);
 
 // ── block decoder ─────────────────────────────────────────────────────────────
-async function decodeBlock(data, w, h) {
+async function decodeBlock(data, w, h, colorSpace='srgb') {
   const marker = data[0], payload = data.subarray(1);
   if (marker === 0x50) return createImageBitmap(new Blob([payload], {type:'image/png'}));
   if (marker === 0x4A) return createImageBitmap(new Blob([payload], {type:'image/jpeg'}));
@@ -307,7 +307,7 @@ async function decodeBlock(data, w, h) {
       createImageBitmap(new Blob([payload.subarray(4, 4+jLen)], {type:'image/jpeg'})),
       inflate(payload.subarray(4+jLen)),
     ]);
-    const oc = new OffscreenCanvas(w, h); const cx = oc.getContext('2d');
+    const oc = new OffscreenCanvas(w, h); const cx = oc.getContext('2d', {colorSpace});
     cx.drawImage(bm, 0, 0);
     const id = cx.getImageData(0, 0, w, h);
     for (let i = 0; i < w*h; i++) id.data[i*4+3] = alphaRaw[i];
@@ -354,6 +354,8 @@ async function parseNOVA(buf) {
   if (!ihdr) throw new Error('Missing IHDR chunk');
   const iv = new DataView(ihdr.data.buffer, ihdr.data.byteOffset);
   const w = iv.getUint32(0,false), h = iv.getUint32(4,false);
+  const colorSpaceCode = ihdr.data[9]; // 0=sRGB, 1=Display P3
+  const cs = colorSpaceCode === 1 ? 'display-p3' : 'srgb';
   const flags = ihdr.data[10], cmode = ihdr.data[11];
   const hasAlpha = !!(flags&1), isHDR = !!(flags&2), isAnimated = !!(flags&4);
 
@@ -379,8 +381,8 @@ async function parseNOVA(buf) {
   let baseCanvas = null, baseCx = null;
   for (const {type, data} of chunks) {
     if (type === 'FDAT') {
-      const bm = await decodeBlock(data, w, h);
-      if (!baseCanvas) { baseCanvas = new OffscreenCanvas(w,h); baseCx = baseCanvas.getContext('2d'); }
+      const bm = await decodeBlock(data, w, h, cs);
+      if (!baseCanvas) { baseCanvas = new OffscreenCanvas(w,h); baseCx = baseCanvas.getContext('2d', {colorSpace:cs}); }
       baseCx.clearRect(0,0,w,h); baseCx.drawImage(bm,0,0);
       frames.push(await createImageBitmap(baseCanvas));
     } else if (type === 'FDLT') {
@@ -388,13 +390,13 @@ async function parseNOVA(buf) {
       const dv = new DataView(data.buffer, data.byteOffset);
       const x0=dv.getUint32(0,false), y0=dv.getUint32(4,false);
       const dw=dv.getUint32(8,false), dh=dv.getUint32(12,false);
-      if (dw>0 && dh>0) { const bm=await decodeBlock(data.subarray(16),dw,dh); baseCx.drawImage(bm,x0,y0); }
+      if (dw>0 && dh>0) { const bm=await decodeBlock(data.subarray(16),dw,dh,cs); baseCx.drawImage(bm,x0,y0); }
       frames.push(await createImageBitmap(baseCanvas));
     }
   }
   if (!frames.length) throw new Error('No image frames found');
   const modeNames = ['adaptive','lossless','lossy','express'];
-  return {w, h, frames, frameDuration, mode: modeNames[cmode]??'?', hasAlpha, isHDR, isAnimated, exifBytes};
+  return {w, h, frames, frameDuration, mode: modeNames[cmode]??'?', hasAlpha, isHDR, isAnimated, exifBytes, colorSpaceCode};
 }
 
 // ── EXIF parser (TIFF IFD) ────────────────────────────────────────────────────
@@ -560,8 +562,11 @@ async function lossyBlock(oc, quality, hasAlpha) {
 async function encodeNOVA(file, mode, quality, exifBytes) {
   const bitmap = await createImageBitmap(file);
   const {width:w, height:h} = bitmap;
-  const oc = new OffscreenCanvas(w,h); const cx = oc.getContext('2d'); cx.drawImage(bitmap,0,0);
+  const oc = new OffscreenCanvas(w,h);
+  const cx = oc.getContext('2d', {colorSpace:'display-p3'});
+  cx.drawImage(bitmap,0,0);
   const id = cx.getImageData(0,0,w,h);
+  const colorSpaceCode = id.colorSpace === 'display-p3' ? 1 : 0;
   let hasAlpha = false;
   for (let i=3;i<id.data.length;i+=4) if (id.data[i]<255){hasAlpha=true;break;}
 
@@ -575,7 +580,7 @@ async function encodeNOVA(file, mode, quality, exifBytes) {
 
   const ihdrData = new Uint8Array(12);
   ihdrData.set(u32be(w),0); ihdrData.set(u32be(h),4);
-  ihdrData[8]=8; ihdrData[9]=0; ihdrData[10]=hasAlpha?1:0; ihdrData[11]=cmode;
+  ihdrData[8]=8; ihdrData[9]=colorSpaceCode; ihdrData[10]=hasAlpha?1:0; ihdrData[11]=cmode;
 
   const chunks = [buildChunk('IHDR', ihdrData)];
   if (exifBytes && exifBytes.length > 0) {
@@ -626,7 +631,7 @@ document.querySelectorAll('.tab-btn').forEach(btn=>btn.addEventListener('click',
 }));
 
 // ══ VIEW TAB ══════════════════════════════════════════════════════════════════
-const vCanvas=document.getElementById('view-canvas'), vCtx=vCanvas.getContext('2d');
+const vCanvas=document.getElementById('view-canvas'), vCtx=vCanvas.getContext('2d',{colorSpace:'display-p3'});
 const vStatus=document.getElementById('view-status'), vResult=document.getElementById('view-result');
 const vInfo=document.getElementById('view-info'), animBar=document.getElementById('anim-bar');
 const frameLbl=document.getElementById('frame-lbl');
@@ -645,7 +650,7 @@ async function loadNOVA(file) {
     cur = await parseNOVA(await file.arrayBuffer());
     vCanvas.width=cur.w; vCanvas.height=cur.h;
     const tags=[`${cur.w}×${cur.h}`,cur.mode,cur.hasAlpha?'RGBA':'RGB',
-      cur.isHDR?'HDR':'8-bit',fmtSize(file.size),
+      cur.isHDR?'HDR':'8-bit',cur.colorSpaceCode===1?'Display P3':'',fmtSize(file.size),
       cur.isAnimated?`${cur.frames.length} frames @ ${cur.frameDuration}ms`:''
     ].filter(Boolean);
     vInfo.textContent=`${file.name}  ·  ${tags.join(' · ')}`;
@@ -724,7 +729,7 @@ document.getElementById('btn-view-new').addEventListener('click',()=>{
 });
 
 // ══ MAKE TAB ══════════════════════════════════════════════════════════════════
-const mCanvas=document.getElementById('make-canvas'), mCtx=mCanvas.getContext('2d');
+const mCanvas=document.getElementById('make-canvas'), mCtx=mCanvas.getContext('2d',{colorSpace:'display-p3'});
 const mStatus=document.getElementById('make-status'), mResult=document.getElementById('make-result');
 const mModeEl=document.getElementById('make-mode'), mQualEl=document.getElementById('make-quality');
 const qValEl=document.getElementById('q-val'), sizeEst=document.getElementById('size-est');
