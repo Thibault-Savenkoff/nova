@@ -635,21 +635,30 @@ async function encodeNOVA(file, mode, quality, exifBytes) {
 }
 
 // ── HDR16 helpers ─────────────────────────────────────────────────────────────
-const _SAT = 1.35; // display-only saturation boost (linear space, Rec.709 luma)
-function _drawHDR16ToCanvas(ctx, u16, w, h) {
+const _SAT = 1.2; // display-only saturation boost (linear space, Rec.709 luma)
+const _DISP_MAX = 2048; // max canvas edge — avoids CSS blur on 48MP ProRAW
+
+function _drawHDR16ToCanvas(ctx, u16, srcW, srcH) {
+  const scale = Math.min(1, _DISP_MAX / Math.max(srcW, srcH));
+  const dw = Math.round(srcW * scale);
+  const dh = Math.round(srcH * scale);
+  ctx.canvas.width = dw;
+  ctx.canvas.height = dh;
+
   const wp = _u16WhitePoint(u16);
-  const id = ctx.createImageData(w, h);
+  const id = ctx.createImageData(dw, dh);
   const d = id.data;
-  for (let i = 0, j = 0; i < w*h; i++, j += 3) {
-    let r = u16[j] / wp, g = u16[j+1] / wp, b = u16[j+2] / wp;
-    const lum = 0.2126*r + 0.7152*g + 0.0722*b;
-    r = lum + (r - lum) * _SAT;
-    g = lum + (g - lum) * _SAT;
-    b = lum + (b - lum) * _SAT;
-    d[i*4]   = _aces8(r);
-    d[i*4+1] = _aces8(g);
-    d[i*4+2] = _aces8(b);
-    d[i*4+3] = 255;
+  for (let dy = 0; dy < dh; dy++) {
+    const sy = Math.min(srcH - 1, Math.round(dy / scale));
+    for (let dx = 0; dx < dw; dx++) {
+      const sx = Math.min(srcW - 1, Math.round(dx / scale));
+      const j = (sy * srcW + sx) * 3;
+      let r = u16[j] / wp, g = u16[j+1] / wp, b = u16[j+2] / wp;
+      const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+      r = lum + (r-lum)*_SAT; g = lum + (g-lum)*_SAT; b = lum + (b-lum)*_SAT;
+      const i = dy*dw + dx;
+      d[i*4] = _aces8(r); d[i*4+1] = _aces8(g); d[i*4+2] = _aces8(b); d[i*4+3] = 255;
+    }
   }
   ctx.putImageData(id, 0, 0);
 }
@@ -839,7 +848,6 @@ async function loadSource(file) {
     setStatus(mStatus,'Decoding RAW with LibRaw…','loading'); mResult.style.display='none';
     try {
       const raw = await decodeRAW(await file.arrayBuffer());
-      mCanvas.width=raw.width; mCanvas.height=raw.height;
       _drawHDR16ToCanvas(mCtx, raw.data, raw.width, raw.height);
       document.getElementById('make-info').textContent=
         `${file.name}  ·  ${raw.width}×${raw.height}  ·  ${fmtSize(file.size)}  ·  HDR16 RAW`;
