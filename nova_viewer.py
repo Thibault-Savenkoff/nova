@@ -3,14 +3,46 @@
 from __future__ import annotations
 
 import os, struct, sys, threading, tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, scrolledtext
 from PIL import Image, ImageDraw, ImageTk
+from PIL.ExifTags import TAGS as _EXIF_TAGS
 import nova
 try:
     import updater
     _HAS_UPDATER = True
 except ImportError:
     _HAS_UPDATER = False
+
+
+_RAW_EXTS = {'.dng','.cr2','.cr3','.nef','.arw','.orf','.rw2','.pef','.srw','.raf','.3fr','.erf','.mrw'}
+_HEIC_EXTS = {'.heic','.heif','.hif'}
+
+
+def _open_image(path: str) -> "Image.Image":
+    """Open any image file, with optional rawpy/pillow-heif for RAW and HEIC formats."""
+    ext = os.path.splitext(path)[1].lower()
+
+    if ext in _HEIC_EXTS:
+        try:
+            import pillow_heif
+            pillow_heif.register_heif_opener()
+        except ImportError:
+            raise RuntimeError(
+                "HEIC/HEIF support requires pillow-heif.\n"
+                "Install it with:  pip install pillow-heif")
+
+    if ext in _RAW_EXTS:
+        try:
+            import rawpy, numpy as np
+            with rawpy.imread(path) as raw:
+                rgb = raw.postprocess(use_camera_wb=True, half_size=False, no_auto_bright=False)
+            return Image.fromarray(rgb)
+        except ImportError:
+            raise RuntimeError(
+                f"RAW format ({ext}) support requires rawpy and numpy.\n"
+                "Install them with:  pip install rawpy numpy")
+
+    return Image.open(path)
 
 
 def _register_windows():
@@ -108,6 +140,8 @@ class NovaViewer(tk.Tk):
         file_m.add_command(label="Open .nova…",      accelerator="Cmd+O", command=self._open)
         file_m.add_command(label="Import image as .nova…",               command=self._import)
         file_m.add_separator()
+        file_m.add_command(label="File Info…",       accelerator="Cmd+I", command=self._show_info)
+        file_m.add_separator()
         file_m.add_command(label="Export as…",                           command=self._export)
         file_m.add_separator()
         file_m.add_command(label="Quit",             accelerator="Cmd+Q", command=self.quit)
@@ -115,6 +149,7 @@ class NovaViewer(tk.Tk):
 
         self.config(menu=bar)
         self.bind_all("<Command-o>", lambda _: self._open())
+        self.bind_all("<Command-i>", lambda _: self._show_info())
         self.bind_all("<Command-q>", lambda _: self.quit())
 
     # ── layout ────────────────────────────────────────────────────────────────
@@ -188,8 +223,12 @@ class NovaViewer(tk.Tk):
     def _import(self):
         src = filedialog.askopenfilename(
             title="Import image",
-            filetypes=[("Images", "*.png *.jpg *.jpeg *.gif *.webp *.bmp *.tiff *.heic"),
-                       ("All files", "*.*")])
+            filetypes=[
+                ("Images", "*.png *.jpg *.jpeg *.gif *.webp *.bmp *.tiff *.tif "
+                           "*.heic *.heif *.dng *.cr2 *.cr3 *.nef *.arw *.orf "
+                           "*.rw2 *.pef *.srw *.raf *.3fr"),
+                ("All files", "*.*"),
+            ])
         if not src:
             return
 
@@ -201,12 +240,27 @@ class NovaViewer(tk.Tk):
         if not dst:
             return
 
-        opts = self._encode_dialog()
+        # Read source EXIF before showing the dialog
+        try:
+            src_img = _open_image(src)
+            src_exif = src_img.getexif()
+        except Exception:
+            src_img = None
+            src_exif = Image.Exif()
+
+        opts = self._encode_dialog(src_exif)
         if opts is None:
             return
 
         try:
-            nova.encode(src, dst, quality=opts["quality"], mode=opts["mode"])
+            final_exif = opts["exif"]
+            exif_bytes = final_exif.tobytes() if final_exif and len(final_exif) else None
+            # For RAW/HEIC, pre-open with _open_image so nova.encode gets a PIL Image
+            # rather than a path (which would fall back to Image.open and likely fail).
+            ext = os.path.splitext(src)[1].lower()
+            source = _open_image(src) if ext in (_RAW_EXTS | _HEIC_EXTS) else src
+            nova.encode(source, dst, quality=opts["quality"], mode=opts["mode"],
+                        exif=exif_bytes)
             self._load(dst)
         except Exception as e:
             messagebox.showerror("Import failed", str(e))
@@ -220,22 +274,35 @@ class NovaViewer(tk.Tk):
             title="Export image",
             defaultextension=".png",
             filetypes=[("PNG", "*.png"), ("JPEG", "*.jpg"),
-                       ("GIF", "*.gif"), ("WebP", "*.webp")])
+                       ("TIFF", "*.tiff"), ("WebP", "*.webp"),
+                       ("GIF", "*.gif")])
         if not dst:
             return
 
         try:
+            # Re-attach stored EXIF to the exported file
+            exif_bytes = None
+            if self._path:
+                meta = nova.decode_metadata(self._path)
+                exif_bytes = meta.get('exif')
+
+            save_kwargs = {}
+            ext = os.path.splitext(dst)[1].lower()
+            if exif_bytes and ext in ('.jpg', '.jpeg', '.tiff', '.tif', '.webp', '.png'):
+                save_kwargs['exif'] = exif_bytes
+
             if len(self._frames) == 1:
-                self._frames[0].save(dst)
+                self._frames[0].save(dst, **save_kwargs)
             else:
                 self._frames[0].save(dst, save_all=True,
-                                     append_images=self._frames[1:], loop=0)
+                                     append_images=self._frames[1:], loop=0,
+                                     **save_kwargs)
         except Exception as e:
             messagebox.showerror("Export failed", str(e))
 
     # ── encode options dialog ─────────────────────────────────────────────────
 
-    def _encode_dialog(self):
+    def _encode_dialog(self, src_exif: "Image.Exif | None" = None):
         dlg = tk.Toplevel(self)
         dlg.title("Encode options")
         dlg.resizable(False, False)
@@ -243,6 +310,16 @@ class NovaViewer(tk.Tk):
         dlg.configure(bg="#2a2a2a")
 
         result = {}
+        # Working copy of EXIF that _exif_editor can mutate
+        current_exif = [src_exif if src_exif is not None else Image.Exif()]
+
+        def _dlg_btn(parent, text, cmd, color):
+            lbl = tk.Label(parent, text=text, bg=color, fg="white",
+                           font=("Helvetica", 12), padx=16, pady=6, cursor="hand2")
+            lbl.pack(side=tk.RIGHT, padx=4)
+            lbl.bind("<Button-1>", lambda _: cmd())
+            lbl.bind("<Enter>",    lambda _: lbl.config(bg="#555" if color == "#444" else "#0066cc"))
+            lbl.bind("<Leave>",    lambda _: lbl.config(bg=color))
 
         tk.Label(dlg, text="Mode", bg="#2a2a2a", fg="white").grid(
             row=0, column=0, padx=12, pady=(12, 4), sticky="w")
@@ -265,26 +342,192 @@ class NovaViewer(tk.Tk):
                  length=260, bg="#2a2a2a", fg="white", troughcolor="#444",
                  highlightthickness=0).grid(row=6, column=0, columnspan=2, padx=12, pady=(0, 12))
 
+        # EXIF row
+        exif_has = bool(src_exif and len(src_exif))
+        exif_lbl = tk.Label(dlg,
+            text=f"EXIF  ({'found from source' if exif_has else 'none'})",
+            bg="#2a2a2a", fg="#aaa" if exif_has else "#555")
+        exif_lbl.grid(row=7, column=0, padx=12, pady=(4, 0), sticky="w")
+
+        def _open_exif_editor():
+            edited = self._exif_editor(current_exif[0])
+            if edited is not None:
+                current_exif[0] = edited
+                tag_count = len(edited)
+                exif_lbl.config(
+                    text=f"EXIF  ({tag_count} tag{'s' if tag_count != 1 else ''} set)",
+                    fg="#6c8ef5")
+
+        edit_lbl = tk.Label(dlg, text="Edit EXIF…", bg="#2a2a2a", fg="#6c8ef5",
+                            font=("Helvetica", 11), cursor="hand2")
+        edit_lbl.grid(row=7, column=1, padx=12, pady=(4, 0), sticky="e")
+        edit_lbl.bind("<Button-1>", lambda _: _open_exif_editor())
+        edit_lbl.bind("<Enter>",    lambda _: edit_lbl.config(fg="#93aff7"))
+        edit_lbl.bind("<Leave>",    lambda _: edit_lbl.config(fg="#6c8ef5"))
+
         def ok():
-            result["mode"] = mode_var.get()
+            result["mode"]    = mode_var.get()
             result["quality"] = quality_var.get()
+            result["exif"]    = current_exif[0]
             dlg.destroy()
 
-        def _dlg_btn(parent, text, cmd, color):
+        btn_row = tk.Frame(dlg, bg="#2a2a2a")
+        btn_row.grid(row=8, column=0, columnspan=2, pady=(8, 12))
+        _dlg_btn(btn_row, "Cancel", dlg.destroy, "#444")
+        _dlg_btn(btn_row, "Encode", ok, "#0a84ff")
+
+        dlg.wait_window()
+        return result if result else None
+
+    # ── EXIF editor dialog ────────────────────────────────────────────────────
+
+    # Common editable tags: id → (label, type_hint)
+    _EDITABLE_TAGS = [
+        (270,   "Description"),
+        (271,   "Make"),
+        (272,   "Model"),
+        (305,   "Software"),
+        (306,   "DateTime"),        # "YYYY:MM:DD HH:MM:SS"
+        (315,   "Artist"),
+        (33432, "Copyright"),
+    ]
+
+    def _exif_editor(self, exif: "Image.Exif") -> "Image.Exif | None":
+        dlg = tk.Toplevel(self)
+        dlg.title("Edit EXIF")
+        dlg.resizable(False, False)
+        dlg.grab_set()
+        dlg.configure(bg="#2a2a2a")
+
+        result = [None]
+        vars_ = {}
+
+        tk.Label(dlg, text="Edit EXIF metadata", bg="#2a2a2a", fg="white",
+                 font=("Helvetica", 13, "bold")).grid(
+            row=0, column=0, columnspan=2, padx=16, pady=(14, 8), sticky="w")
+
+        for row, (tag_id, label) in enumerate(self._EDITABLE_TAGS, start=1):
+            tk.Label(dlg, text=label, bg="#2a2a2a", fg="#aaa",
+                     font=("Helvetica", 11), width=14, anchor="e").grid(
+                row=row, column=0, padx=(16, 6), pady=3, sticky="e")
+            v = tk.StringVar(value=str(exif.get(tag_id, "")))
+            vars_[tag_id] = v
+            tk.Entry(dlg, textvariable=v, bg="#1e1e1e", fg="white", insertbackground="white",
+                     relief="flat", font=("Helvetica", 11), width=34).grid(
+                row=row, column=1, padx=(0, 16), pady=3)
+
+        tk.Label(dlg, text="DateTime format: YYYY:MM:DD HH:MM:SS",
+                 bg="#2a2a2a", fg="#555", font=("Helvetica", 9)).grid(
+            row=len(self._EDITABLE_TAGS) + 1, column=1, padx=(0, 16), sticky="w")
+
+        def ok():
+            new_exif = Image.Exif()
+            # Carry over any non-editable tags from the original
+            for tid, val in exif.items():
+                if tid not in dict(self._EDITABLE_TAGS):
+                    new_exif[tid] = val
+            # Apply edits
+            for tag_id, _ in self._EDITABLE_TAGS:
+                val = vars_[tag_id].get().strip()
+                if val:
+                    new_exif[tag_id] = val
+                elif tag_id in new_exif:
+                    del new_exif[tag_id]
+            result[0] = new_exif
+            dlg.destroy()
+
+        def _btn(parent, text, cmd, color):
             lbl = tk.Label(parent, text=text, bg=color, fg="white",
-                           font=("Helvetica", 12), padx=16, pady=6, cursor="hand2")
+                           font=("Helvetica", 12), padx=14, pady=6, cursor="hand2")
             lbl.pack(side=tk.RIGHT, padx=4)
             lbl.bind("<Button-1>", lambda _: cmd())
             lbl.bind("<Enter>",    lambda _: lbl.config(bg="#555" if color == "#444" else "#0066cc"))
             lbl.bind("<Leave>",    lambda _: lbl.config(bg=color))
 
         btn_row = tk.Frame(dlg, bg="#2a2a2a")
-        btn_row.grid(row=7, column=0, columnspan=2, pady=(0, 12))
-        _dlg_btn(btn_row, "Cancel", dlg.destroy, "#444")
-        _dlg_btn(btn_row, "Encode", ok, "#0a84ff")
+        btn_row.grid(row=len(self._EDITABLE_TAGS) + 2, column=0, columnspan=2, pady=(8, 14))
+        _btn(btn_row, "Cancel", dlg.destroy, "#444")
+        _btn(btn_row, "Apply", ok, "#0a84ff")
 
         dlg.wait_window()
-        return result if result else None
+        return result[0]
+
+    # ── file info dialog ──────────────────────────────────────────────────────
+
+    def _show_info(self):
+        if not self._frames or not self._path:
+            messagebox.showinfo("No file", "Open a .nova file first.")
+            return
+
+        dlg = tk.Toplevel(self)
+        dlg.title("File Info")
+        dlg.resizable(False, False)
+        dlg.grab_set()
+        dlg.configure(bg="#2a2a2a")
+
+        def _row(parent, label, value, r):
+            tk.Label(parent, text=label, bg="#2a2a2a", fg="#777",
+                     font=("Helvetica", 11), width=18, anchor="e").grid(
+                row=r, column=0, padx=(16, 8), pady=2, sticky="e")
+            tk.Label(parent, text=str(value), bg="#2a2a2a", fg="white",
+                     font=("Helvetica", 11), anchor="w").grid(
+                row=r, column=1, padx=(0, 16), pady=2, sticky="w")
+
+        tk.Label(dlg, text=os.path.basename(self._path),
+                 bg="#2a2a2a", fg="white", font=("Helvetica", 13, "bold")).grid(
+            row=0, column=0, columnspan=2, padx=16, pady=(14, 10), sticky="w")
+
+        img = self._frames[0]
+        sz = os.path.getsize(self._path)
+        sz_str = f"{sz / 1024:.1f} KB" if sz < 1_000_000 else f"{sz / 1_048_576:.2f} MB"
+
+        _row(dlg, "Dimensions", f"{img.width} × {img.height} px", 1)
+        _row(dlg, "Color mode",  img.mode, 2)
+        _row(dlg, "Frames",      len(self._frames), 3)
+        _row(dlg, "File size",   sz_str, 4)
+
+        # Parse stored EXIF
+        meta = nova.decode_metadata(self._path)
+        exif_bytes = meta.get('exif')
+
+        sep = tk.Frame(dlg, bg="#3a3a3a", height=1)
+        sep.grid(row=5, column=0, columnspan=2, sticky="ew", padx=16, pady=8)
+
+        if exif_bytes:
+            try:
+                exif = Image.Exif()
+                exif.load(exif_bytes)
+                row_idx = 6
+                displayed = 0
+                for tag_id, value in exif.items():
+                    name = _EXIF_TAGS.get(tag_id, f"Tag {tag_id}")
+                    if isinstance(value, bytes):
+                        continue   # skip binary blobs
+                    _row(dlg, name, str(value)[:80], row_idx)
+                    row_idx += 1
+                    displayed += 1
+                if not displayed:
+                    tk.Label(dlg, text="EXIF present but no readable tags",
+                             bg="#2a2a2a", fg="#555", font=("Helvetica", 11)).grid(
+                        row=6, column=0, columnspan=2, padx=16, pady=4)
+                    row_idx = 7
+            except Exception as e:
+                tk.Label(dlg, text=f"EXIF parse error: {e}",
+                         bg="#2a2a2a", fg="#f87171", font=("Helvetica", 11)).grid(
+                    row=6, column=0, columnspan=2, padx=16, pady=4)
+                row_idx = 7
+        else:
+            tk.Label(dlg, text="No EXIF metadata stored",
+                     bg="#2a2a2a", fg="#555", font=("Helvetica", 11)).grid(
+                row=6, column=0, columnspan=2, padx=16, pady=4)
+            row_idx = 7
+
+        close = tk.Label(dlg, text="Close", bg="#444", fg="white",
+                         font=("Helvetica", 12), padx=16, pady=6, cursor="hand2")
+        close.grid(row=row_idx + 1, column=0, columnspan=2, pady=(8, 14))
+        close.bind("<Button-1>", lambda _: dlg.destroy())
+        close.bind("<Enter>",    lambda _: close.config(bg="#555"))
+        close.bind("<Leave>",    lambda _: close.config(bg="#444"))
 
     # ── loading ───────────────────────────────────────────────────────────────
 

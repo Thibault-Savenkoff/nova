@@ -296,6 +296,19 @@ def decode(input_path: str) -> list:
     return images
 
 
+def decode_metadata(input_path: str) -> dict:
+    """Return {'exif': bytes|None, 'icc': bytes|None} from the MDAT chunk."""
+    for ct, data in _read_all_chunks(input_path):
+        if ct == CHUNK_MDAT:
+            icc_len = struct.unpack('>I', data[:4])[0]
+            icc = data[4:4 + icc_len] if icc_len else None
+            ex_off = 4 + icc_len
+            ex_len = struct.unpack('>I', data[ex_off:ex_off + 4])[0]
+            ex = data[ex_off + 4:ex_off + 4 + ex_len] if ex_len else None
+            return {'exif': ex, 'icc': icc}
+    return {'exif': None, 'icc': None}
+
+
 def decode_preview(input_path: str) -> Image.Image | None:
     """Return the embedded thumbnail from an express-mode file, or None.
 
