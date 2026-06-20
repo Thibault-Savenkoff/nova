@@ -4,7 +4,7 @@
 # Run from the repo root:  bash wasm/build.sh
 set -euo pipefail
 
-LIBRAW_VER="0.21.3"
+LIBRAW_VER="0.22.0"
 LIBRAW_URL="https://www.libraw.org/data/LibRaw-${LIBRAW_VER}.tar.gz"
 WASM_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${WASM_DIR}/.." && pwd)"
@@ -32,7 +32,7 @@ if [ ! -f "Makefile" ] || [ "configure" -nt "Makefile" ]; then
         --disable-jasper \
         --disable-jpeg \
         --disable-lcms \
-        CXXFLAGS="-O3 -DLIBRAW_NOTHREADS"
+        CXXFLAGS="-O3 -DLIBRAW_NOTHREADS -fexceptions"
 fi
 
 echo "→ Building LibRaw…"
@@ -52,9 +52,13 @@ emcc "${WASM_DIR}/libraw_wrapper.cpp" \
     -s EXPORTED_FUNCTIONS='["_libraw_decode","_libraw_free","_malloc","_free"]' \
     -s EXPORTED_RUNTIME_METHODS='["HEAPU8","HEAPU16","getValue","setValue"]' \
     -s ALLOW_MEMORY_GROWTH=1 \
-    -s MAXIMUM_MEMORY=2gb \
+    -s INITIAL_MEMORY=268435456 \
+    -s MAXIMUM_MEMORY=2147483648 \
+    -s STACK_SIZE=5242880 \
+    -s SUPPORT_LONGJMP=1 \
     -s ENVIRONMENT=web \
     -s SINGLE_FILE=0 \
+    -fexceptions \
     -O3
 
 echo "✓ Generated:"
