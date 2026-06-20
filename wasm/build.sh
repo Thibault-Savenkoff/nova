@@ -32,7 +32,7 @@ if [ ! -f "Makefile" ] || [ "configure" -nt "Makefile" ]; then
         --disable-jasper \
         --disable-jpeg \
         --disable-lcms \
-        CXXFLAGS="-O3 -DLIBRAW_NOTHREADS"
+        CXXFLAGS="-O3 -DLIBRAW_NOTHREADS -fexceptions"
 fi
 
 echo "→ Building LibRaw…"
@@ -58,6 +58,7 @@ emcc "${WASM_DIR}/libraw_wrapper.cpp" \
     -s SUPPORT_LONGJMP=1 \
     -s ENVIRONMENT=web \
     -s SINGLE_FILE=0 \
+    -fexceptions \
     -O3
 
 echo "✓ Generated:"
