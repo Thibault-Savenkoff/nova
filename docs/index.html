@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NOVA Web Viewer</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: #0f0f0f;
+  color: #d4d4d4;
+  min-height: 100vh;
+  padding: 2.5rem 1.25rem 4rem;
+}
+
+.container { max-width: 880px; margin: 0 auto; }
+
+header { text-align: center; margin-bottom: 2.5rem; }
+header h1 {
+  font-size: 1.9rem; font-weight: 700; letter-spacing: -0.4px; color: #fff;
+}
+header p { margin-top: 0.45rem; color: #5a5a5a; font-size: 0.88rem; }
+header a { color: #6c8ef5; text-decoration: none; }
+header a:hover { text-decoration: underline; }
+
+/* ── tabs ── */
+.tabs {
+  display: flex; gap: 0; margin-bottom: 1.75rem;
+  border-bottom: 1px solid #1e1e1e;
+}
+.tab-btn {
+  background: none; border: none; color: #5a5a5a; font-size: 0.88rem;
+  padding: 0.65rem 1.25rem; cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color 0.13s;
+}
+.tab-btn:hover { color: #aaa; }
+.tab-btn.active { color: #fff; border-bottom-color: #6c8ef5; }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── drop zone ── */
+.drop-zone {
+  border: 2px dashed #232323;
+  border-radius: 12px;
+  padding: 2.75rem 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  user-select: none;
+}
+.drop-zone:hover, .drop-zone.over {
+  border-color: #6c8ef5;
+  background: rgba(108,142,245,0.05);
+}
+.drop-zone input[type=file] { display: none; }
+.dz-icon { font-size: 2.2rem; margin-bottom: 0.65rem; line-height: 1; }
+.dz-main { color: #ccc; font-size: 0.95rem; }
+.dz-main strong { color: #fff; }
+.dz-sub { color: #444; font-size: 0.8rem; margin-top: 0.35rem; }
+
+/* ── status messages ── */
+.status-msg { margin-top: 1rem; padding: 0.6rem 1rem; border-radius: 8px; font-size: 0.84rem; display: none; }
+.status-msg.error  { background: rgba(239,68,68,.10); border: 1px solid rgba(239,68,68,.25); color: #f87171; }
+.status-msg.loading{ background: rgba(108,142,245,.08); border: 1px solid rgba(108,142,245,.2); color: #93aff7; }
+
+/* ── canvas ── */
+.canvas-wrap { margin-top: 1.5rem; text-align: center; }
+canvas {
+  max-width: 100%; height: auto; border-radius: 10px; display: block; margin: 0 auto;
+  /* checkerboard for alpha */
+  background: repeating-conic-gradient(#1a1a1a 0% 25%, #222 0% 50%) 0 0 / 18px 18px;
+}
+
+.info-line {
+  font-family: "SF Mono","Fira Mono","Consolas",monospace;
+  font-size: 0.76rem; color: #444; text-align: center; margin-top: 0.7rem;
+  letter-spacing: 0.01em;
+}
+
+/* ── animation bar ── */
+.anim-bar { display: none; align-items: center; gap: 0.75rem; margin-top: 0.9rem; justify-content: center; }
+.anim-bar.visible { display: flex; }
+.frame-lbl { font-family: monospace; font-size: 0.78rem; color: #444; }
+
+/* ── buttons ── */
+button {
+  border: 1px solid #272727; background: #181818; color: #ccc;
+  padding: 0.55rem 1.2rem; border-radius: 8px; cursor: pointer; font-size: 0.84rem;
+  transition: background 0.12s, border-color 0.12s;
+}
+button:hover { background: #212121; border-color: #3a3a3a; }
+button.primary { background: #6c8ef5; color: #fff; border-color: transparent; }
+button.primary:hover { background: #7a9af6; }
+button:disabled { opacity: 0.38; cursor: default; pointer-events: none; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-top: 1.2rem; justify-content: center; }
+
+/* ── make tab options ── */
+.options-row {
+  display: flex; flex-wrap: wrap; gap: 1.2rem; margin-top: 1.1rem; align-items: center;
+}
+.opt-group { display: flex; align-items: center; gap: 0.5rem; }
+.opt-group label { color: #555; font-size: 0.8rem; }
+select {
+  background: #181818; border: 1px solid #272727; color: #ccc;
+  padding: 0.35rem 0.6rem; border-radius: 6px; font-size: 0.8rem; cursor: pointer;
+}
+input[type=range] { accent-color: #6c8ef5; cursor: pointer; }
+.size-est { font-family: monospace; font-size: 0.78rem; color: #444; margin-left: auto; }
+
+/* ── compat warning ── */
+#compat-warn {
+  text-align: center; color: #f87171; padding: 3rem 1rem;
+  font-size: 0.9rem; display: none;
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div id="compat-warn">
+    Your browser does not support the required APIs (DecompressionStream / OffscreenCanvas).<br>
+    Please use Chrome 80+, Firefox 113+, or Safari 16.4+.
+  </div>
+
+  <header>
+    <h1>NOVA Viewer</h1>
+    <p>Open and convert <strong>.nova</strong> files in your browser — no install needed &nbsp;·&nbsp;
+       <a href="https://github.com/Thibault-Savenkoff/nova" target="_blank" rel="noopener">GitHub</a></p>
+  </header>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="view">Open .nova</button>
+    <button class="tab-btn" data-tab="make">Make .nova</button>
+  </div>
+
+  <!-- ═══ VIEW TAB ═══════════════════════════════════════════════════════════ -->
+  <div class="tab-panel active" id="tab-view">
+    <div class="drop-zone" id="view-drop">
+      <input type="file" id="view-input" accept=".nova">
+      <div class="dz-icon">🖼</div>
+      <div class="dz-main">Drop a <strong>.nova</strong> file here</div>
+      <div class="dz-sub">or click to browse</div>
+    </div>
+    <div class="status-msg" id="view-status"></div>
+
+    <div id="view-result" style="display:none">
+      <div class="canvas-wrap">
+        <canvas id="view-canvas"></canvas>
+      </div>
+      <div class="info-line" id="view-info"></div>
+      <div class="anim-bar" id="anim-bar">
+        <button id="btn-play">⏸ Pause</button>
+        <span class="frame-lbl" id="frame-lbl">Frame 1 / ?</span>
+      </div>
+      <div class="actions">
+        <button class="primary" id="btn-png">Export PNG</button>
+        <button id="btn-jpg">Export JPEG</button>
+        <button id="btn-view-new">Open another file</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ MAKE TAB ════════════════════════════════════════════════════════════ -->
+  <div class="tab-panel" id="tab-make">
+    <div class="drop-zone" id="make-drop">
+      <input type="file" id="make-input" accept="image/*">
+      <div class="dz-icon">✨</div>
+      <div class="dz-main">Drop any image here</div>
+      <div class="dz-sub">PNG · JPEG · WebP · BMP — converts to .nova</div>
+    </div>
+    <div class="status-msg" id="make-status"></div>
+
+    <div id="make-result" style="display:none">
+      <div class="canvas-wrap">
+        <canvas id="make-canvas"></canvas>
+      </div>
+      <div class="info-line" id="make-info"></div>
+      <div class="options-row">
+        <div class="opt-group">
+          <label for="make-mode">Mode</label>
+          <select id="make-mode">
+            <option value="adaptive">adaptive (auto)</option>
+            <option value="lossless">lossless (exact)</option>
+            <option value="lossy">lossy (smaller)</option>
+          </select>
+        </div>
+        <div class="opt-group">
+          <label for="make-quality">Quality <span id="q-val">85</span></label>
+          <input type="range" id="make-quality" min="10" max="100" value="85" step="5">
+        </div>
+        <span class="size-est" id="size-est"></span>
+      </div>
+      <div class="actions">
+        <button class="primary" id="btn-dl-nova" disabled>Download .nova</button>
+        <button id="btn-make-new">Convert another image</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+"use strict";
+
+// ── compat check ──────────────────────────────────────────────────────────────
+if (!window.DecompressionStream || !window.CompressionStream || !window.OffscreenCanvas || !window.createImageBitmap) {
+  document.getElementById('compat-warn').style.display = 'block';
+  document.querySelector('.tabs').style.display = 'none';
+  document.querySelector('header').style.display = 'none';
+  document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+}
+
+// ── NOVA magic ────────────────────────────────────────────────────────────────
+const MAGIC = new Uint8Array([0x89, 0x4E, 0x4F, 0x56, 0x41, 0x0D, 0x0A, 0x1A, 0x0A]);
+
+// ── CRC32 (IEEE 802.3 / zlib) ─────────────────────────────────────────────────
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(...parts) {
+  let c = 0xFFFFFFFF;
+  for (const p of parts) for (const b of p) c = (CRC_TABLE[(c ^ b) & 0xFF] ^ (c >>> 8)) >>> 0;
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+// ── zlib inflate / deflate ────────────────────────────────────────────────────
+async function xform(stream, data) {
+  const w = stream.writable.getWriter(), r = stream.readable.getReader();
+  w.write(data instanceof Uint8Array ? data : new Uint8Array(data));
+  w.close();
+  const chunks = [];
+  for (;;) { const { done, value } = await r.read(); if (done) break; chunks.push(value); }
+  const total = chunks.reduce((s, c) => s + c.length, 0);
+  const out = new Uint8Array(total);
+  let pos = 0;
+  for (const c of chunks) { out.set(c, pos); pos += c.length; }
+  return out;
+}
+const inflate = d => xform(new DecompressionStream('deflate'), d);
+const deflate = d => xform(new CompressionStream('deflate'), d);
+
+// ── block decoder: FDAT / FDLT payload ───────────────────────────────────────
+async function decodeBlock(data, w, h) {
+  const marker = data[0], payload = data.subarray(1);
+  if (marker === 0x50) // 'P' PNG
+    return createImageBitmap(new Blob([payload], { type: 'image/png' }));
+  if (marker === 0x4A) // 'J' JPEG no alpha
+    return createImageBitmap(new Blob([payload], { type: 'image/jpeg' }));
+  if (marker === 0x41) { // 'A' JPEG + zlib alpha
+    const dv = new DataView(payload.buffer, payload.byteOffset);
+    const jLen = dv.getUint32(0, false);
+    const [bm, alphaRaw] = await Promise.all([
+      createImageBitmap(new Blob([payload.subarray(4, 4+jLen)], { type: 'image/jpeg' })),
+      inflate(payload.subarray(4+jLen)),
+    ]);
+    const oc = new OffscreenCanvas(w, h);
+    const cx = oc.getContext('2d');
+    cx.drawImage(bm, 0, 0);
+    const id = cx.getImageData(0, 0, w, h);
+    for (let i = 0; i < w * h; i++) id.data[i*4+3] = alphaRaw[i];
+    cx.putImageData(id, 0, 0);
+    return createImageBitmap(oc);
+  }
+  if (marker === 0x48) { // 'H' HDR float32 grayscale — tone-map to 8-bit
+    const raw = await inflate(payload);
+    const floats = new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4);
+    let mn = Infinity, mx = -Infinity;
+    for (const v of floats) { if (v < mn) mn = v; if (v > mx) mx = v; }
+    const rng = mx === mn ? 1 : mx - mn;
+    const id = new ImageData(w, h);
+    for (let i = 0; i < floats.length; i++) {
+      const v = Math.round(((floats[i] - mn) / rng) * 255);
+      id.data[i*4] = v; id.data[i*4+1] = v; id.data[i*4+2] = v; id.data[i*4+3] = 255;
+    }
+    return createImageBitmap(id);
+  }
+  throw new Error(`Unknown compression marker 0x${marker.toString(16).padStart(2,'0')}`);
+}
+
+// ── NOVA parser ───────────────────────────────────────────────────────────────
+async function parseNOVA(buf) {
+  const bytes = new Uint8Array(buf), view = new DataView(buf);
+  let off = 0;
+
+  for (let i = 0; i < MAGIC.length; i++)
+    if (bytes[off+i] !== MAGIC[i]) throw new Error('Not a valid NOVA file (magic mismatch)');
+  off += MAGIC.length;
+
+  const chunks = [];
+  while (off + 8 <= bytes.byteLength) {
+    const typeU8 = bytes.subarray(off, off+4);
+    const type = String.fromCharCode(...typeU8);
+    off += 4;
+    const len = view.getUint32(off, false); off += 4;
+    const data = bytes.slice(off, off+len); off += len;
+    const storedCRC = view.getUint32(off, false); off += 4;
+    if (crc32(typeU8, data) !== storedCRC) throw new Error(`CRC mismatch in ${type} chunk`);
+    chunks.push({ type, data });
+    if (type === 'IEND') break;
+  }
+
+  const ihdr = chunks.find(c => c.type === 'IHDR');
+  if (!ihdr) throw new Error('Missing IHDR chunk');
+  const iv = new DataView(ihdr.data.buffer, ihdr.data.byteOffset);
+  const w = iv.getUint32(0, false), h = iv.getUint32(4, false);
+  const flags = ihdr.data[10], cmode = ihdr.data[11];
+  const hasAlpha = !!(flags & 1), isHDR = !!(flags & 2), isAnimated = !!(flags & 4);
+  const modeNames = ['adaptive','lossless','lossy','express'];
+
+  let frameDuration = 100;
+  const anim = chunks.find(c => c.type === 'ANIM');
+  if (anim) {
+    const av = new DataView(anim.data.buffer, anim.data.byteOffset);
+    frameDuration = av.getUint16(4, false) || 100;
+  }
+
+  const frames = [];
+  let baseCanvas = null, baseCx = null;
+
+  for (const { type, data } of chunks) {
+    if (type === 'FDAT') {
+      const bm = await decodeBlock(data, w, h);
+      if (!baseCanvas) { baseCanvas = new OffscreenCanvas(w, h); baseCx = baseCanvas.getContext('2d'); }
+      baseCx.clearRect(0, 0, w, h);
+      baseCx.drawImage(bm, 0, 0);
+      frames.push(await createImageBitmap(baseCanvas));
+    } else if (type === 'FDLT') {
+      if (!baseCanvas) throw new Error('Delta frame before base frame');
+      const dv = new DataView(data.buffer, data.byteOffset);
+      const x0 = dv.getUint32(0,false), y0 = dv.getUint32(4,false);
+      const dw = dv.getUint32(8,false), dh = dv.getUint32(12,false);
+      if (dw > 0 && dh > 0) {
+        const bm = await decodeBlock(data.subarray(16), dw, dh);
+        baseCx.drawImage(bm, x0, y0);
+      }
+      frames.push(await createImageBitmap(baseCanvas));
+    }
+  }
+
+  if (!frames.length) throw new Error('No image frames found');
+  return { w, h, frames, frameDuration, mode: modeNames[cmode] ?? '?', hasAlpha, isHDR, isAnimated };
+}
+
+// ── NOVA encoder ──────────────────────────────────────────────────────────────
+const u32be = v => new Uint8Array([(v>>>24)&0xFF,(v>>>16)&0xFF,(v>>>8)&0xFF,v&0xFF]);
+
+function buildChunk(type, data) {
+  const tU8 = new TextEncoder().encode(type).subarray(0,4);
+  const dU8 = data instanceof Uint8Array ? data : new Uint8Array(data);
+  const chunk = new Uint8Array(4 + 4 + dU8.length + 4);
+  chunk.set(tU8, 0);
+  chunk.set(u32be(dU8.length), 4);
+  chunk.set(dU8, 8);
+  chunk.set(u32be(crc32(tU8, dU8)), 8 + dU8.length);
+  return chunk;
+}
+
+async function losslessBlock(oc) {
+  const png = new Uint8Array(await (await oc.convertToBlob({ type:'image/png' })).arrayBuffer());
+  const out = new Uint8Array(1 + png.length);
+  out[0] = 0x50; out.set(png, 1);
+  return out;
+}
+
+async function lossyBlock(oc, quality, hasAlpha) {
+  const blob = await oc.convertToBlob({ type:'image/jpeg', quality: quality/100 });
+  const jpg = new Uint8Array(await blob.arrayBuffer());
+  if (!hasAlpha) {
+    const out = new Uint8Array(1 + jpg.length);
+    out[0] = 0x4A; out.set(jpg, 1);
+    return out;
+  }
+  // 'A' marker: JPEG(RGB) + zlib(alpha)
+  const id = oc.getContext('2d').getImageData(0, 0, oc.width, oc.height);
+  const alphaRaw = new Uint8Array(oc.width * oc.height);
+  for (let i = 0; i < alphaRaw.length; i++) alphaRaw[i] = id.data[i*4+3];
+  const alphaComp = await deflate(alphaRaw);
+  const out = new Uint8Array(1 + 4 + jpg.length + alphaComp.length);
+  out[0] = 0x41;
+  out.set(u32be(jpg.length), 1);
+  out.set(jpg, 5);
+  out.set(alphaComp, 5 + jpg.length);
+  return out;
+}
+
+async function encodeNOVA(file, mode, quality) {
+  const bitmap = await createImageBitmap(file);
+  const { width: w, height: h } = bitmap;
+  const oc = new OffscreenCanvas(w, h);
+  const cx = oc.getContext('2d');
+  cx.drawImage(bitmap, 0, 0);
+
+  const id = cx.getImageData(0, 0, w, h);
+  let hasAlpha = false;
+  for (let i = 3; i < id.data.length; i += 4) if (id.data[i] < 255) { hasAlpha = true; break; }
+
+  let fdatPayload, cmode;
+  if (mode === 'lossless') {
+    fdatPayload = await losslessBlock(oc); cmode = 1;
+  } else if (mode === 'lossy') {
+    fdatPayload = await lossyBlock(oc, quality, hasAlpha); cmode = 2;
+  } else { // adaptive: keep smaller
+    const [ll, jj] = await Promise.all([losslessBlock(oc), lossyBlock(oc, quality, hasAlpha)]);
+    fdatPayload = ll.length <= jj.length ? ll : jj; cmode = 0;
+  }
+
+  const ihdrData = new Uint8Array(12);
+  ihdrData.set(u32be(w), 0); ihdrData.set(u32be(h), 4);
+  ihdrData[8] = 8; ihdrData[9] = 0; ihdrData[10] = hasAlpha ? 1 : 0; ihdrData[11] = cmode;
+
+  const chunks = [
+    buildChunk('IHDR', ihdrData),
+    buildChunk('FDAT', fdatPayload),
+    buildChunk('IEND', new Uint8Array(0)),
+  ];
+  const total = MAGIC.length + chunks.reduce((s, c) => s + c.length, 0);
+  const out = new Uint8Array(total);
+  let pos = 0;
+  out.set(MAGIC, pos); pos += MAGIC.length;
+  for (const c of chunks) { out.set(c, pos); pos += c.length; }
+  return out;
+}
+
+// ── utils ─────────────────────────────────────────────────────────────────────
+function fmtSize(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1e6) return `${(n/1024).toFixed(1)} KB`;
+  return `${(n/1e6).toFixed(2)} MB`;
+}
+
+function dlBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+function setStatus(el, msg, type) {
+  el.textContent = msg;
+  el.className = `status-msg${msg ? ' '+type : ''}`;
+  el.style.display = msg ? 'block' : 'none';
+}
+
+function wireDropZone(zone, input, onFile) {
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('over');
+    if (e.dataTransfer.files[0]) onFile(e.dataTransfer.files[0]);
+  });
+  input.addEventListener('change', () => { if (input.files[0]) onFile(input.files[0]); input.value=''; });
+}
+
+// ── tab switching ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+}));
+
+// ══ VIEW TAB ══════════════════════════════════════════════════════════════════
+const vCanvas  = document.getElementById('view-canvas');
+const vCtx     = vCanvas.getContext('2d');
+const vStatus  = document.getElementById('view-status');
+const vResult  = document.getElementById('view-result');
+const vInfo    = document.getElementById('view-info');
+const animBar  = document.getElementById('anim-bar');
+const frameLbl = document.getElementById('frame-lbl');
+
+let cur = null, animIdx = 0, animPlaying = false, animTid = null;
+
+wireDropZone(
+  document.getElementById('view-drop'),
+  document.getElementById('view-input'),
+  loadNOVA
+);
+
+async function loadNOVA(file) {
+  if (!file.name.toLowerCase().endsWith('.nova')) {
+    setStatus(vStatus, 'Please drop a .nova file.', 'error'); return;
+  }
+  setStatus(vStatus, 'Decoding…', 'loading');
+  vResult.style.display = 'none';
+  stopAnim();
+  try {
+    cur = await parseNOVA(await file.arrayBuffer());
+    vCanvas.width = cur.w; vCanvas.height = cur.h;
+    const tags = [`${cur.w}×${cur.h}`, cur.mode, cur.hasAlpha ? 'RGBA':'RGB',
+      cur.isHDR ? 'HDR':'8-bit', fmtSize(file.size),
+      cur.isAnimated ? `${cur.frames.length} frames @ ${cur.frameDuration}ms` : ''
+    ].filter(Boolean);
+    vInfo.textContent = `${file.name}  ·  ${tags.join(' · ')}`;
+    if (cur.frames.length > 1) {
+      animBar.classList.add('visible');
+      document.getElementById('btn-play').textContent = '⏸ Pause';
+      animIdx = 0; animPlaying = true; startAnim();
+    } else {
+      animBar.classList.remove('visible');
+      vCtx.drawImage(cur.frames[0], 0, 0);
+    }
+    vResult.style.display = 'block';
+    setStatus(vStatus, '', '');
+  } catch (e) {
+    setStatus(vStatus, `Error: ${e.message}`, 'error');
+  }
+}
+
+function startAnim() {
+  if (animTid) return;
+  const step = () => {
+    if (!cur || !animPlaying) return;
+    vCtx.drawImage(cur.frames[animIdx], 0, 0);
+    frameLbl.textContent = `Frame ${animIdx+1} / ${cur.frames.length}`;
+    animIdx = (animIdx+1) % cur.frames.length;
+    animTid = setTimeout(step, cur.frameDuration);
+  };
+  step();
+}
+
+function stopAnim() { clearTimeout(animTid); animTid = null; animPlaying = false; }
+
+document.getElementById('btn-play').addEventListener('click', () => {
+  const btn = document.getElementById('btn-play');
+  if (animPlaying) { stopAnim(); btn.textContent = '▶ Play'; }
+  else { animPlaying = true; startAnim(); btn.textContent = '⏸ Pause'; }
+});
+
+document.getElementById('btn-png').addEventListener('click', () =>
+  vCanvas.toBlob(b => dlBlob(b, 'nova-export.png'), 'image/png'));
+
+document.getElementById('btn-jpg').addEventListener('click', () =>
+  vCanvas.toBlob(b => dlBlob(b, 'nova-export.jpg'), 'image/jpeg', 0.92));
+
+document.getElementById('btn-view-new').addEventListener('click', () => {
+  stopAnim(); cur = null;
+  vResult.style.display = 'none';
+  setStatus(vStatus, '', '');
+});
+
+// ══ MAKE TAB ══════════════════════════════════════════════════════════════════
+const mCanvas  = document.getElementById('make-canvas');
+const mCtx     = mCanvas.getContext('2d');
+const mStatus  = document.getElementById('make-status');
+const mResult  = document.getElementById('make-result');
+const mInfo    = document.getElementById('make-info');
+const mModeEl  = document.getElementById('make-mode');
+const mQualEl  = document.getElementById('make-quality');
+const qValEl   = document.getElementById('q-val');
+const sizeEst  = document.getElementById('size-est');
+const btnDl    = document.getElementById('btn-dl-nova');
+
+let srcFile = null, novaBytes = null, encDebounce = null;
+
+mQualEl.addEventListener('input', () => { qValEl.textContent = mQualEl.value; scheduleEncode(); });
+mModeEl.addEventListener('change', scheduleEncode);
+
+function scheduleEncode() {
+  clearTimeout(encDebounce);
+  if (!srcFile) return;
+  encDebounce = setTimeout(doEncode, 350);
+}
+
+wireDropZone(
+  document.getElementById('make-drop'),
+  document.getElementById('make-input'),
+  loadSource
+);
+
+async function loadSource(file) {
+  if (!file.type.startsWith('image/')) {
+    setStatus(mStatus, 'Please drop an image file (PNG, JPEG, WebP…).', 'error'); return;
+  }
+  srcFile = file; novaBytes = null;
+  setStatus(mStatus, 'Loading…', 'loading');
+  mResult.style.display = 'none';
+  try {
+    const bm = await createImageBitmap(file);
+    mCanvas.width = bm.width; mCanvas.height = bm.height;
+    mCtx.drawImage(bm, 0, 0);
+    mInfo.textContent = `${file.name}  ·  ${bm.width}×${bm.height}  ·  ${fmtSize(file.size)}`;
+    mResult.style.display = 'block';
+    setStatus(mStatus, '', '');
+    doEncode();
+  } catch (e) {
+    setStatus(mStatus, `Error: ${e.message}`, 'error');
+  }
+}
+
+async function doEncode() {
+  if (!srcFile) return;
+  const mode = mModeEl.value, quality = parseInt(mQualEl.value, 10);
+  sizeEst.textContent = 'encoding…'; btnDl.disabled = true; novaBytes = null;
+  try {
+    novaBytes = await encodeNOVA(srcFile, mode, quality);
+    sizeEst.textContent = `→ ${fmtSize(novaBytes.length)} as .nova`;
+    btnDl.disabled = false;
+  } catch (e) {
+    sizeEst.textContent = `Error: ${e.message}`;
+  }
+}
+
+btnDl.addEventListener('click', () => {
+  if (!novaBytes || !srcFile) return;
+  const name = srcFile.name.replace(/\.[^.]+$/, '') + '.nova';
+  dlBlob(new Blob([novaBytes], { type:'application/octet-stream' }), name);
+});
+
+document.getElementById('btn-make-new').addEventListener('click', () => {
+  srcFile = null; novaBytes = null;
+  mResult.style.display = 'none';
+  setStatus(mStatus, '', '');
+});
+</script>
+</body>
+</html>
