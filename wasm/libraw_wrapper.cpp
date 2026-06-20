@@ -25,7 +25,6 @@ uint16_t* libraw_decode(
         // Linear light: gamma (1,1), no auto-bright, full-size, 16-bit.
         // Camera white balance applied; sRGB colour primaries via colour matrix.
         proc.imgdata.params.use_camera_wb    = 1;
-        proc.imgdata.params.no_auto_bright   = 1;
         proc.imgdata.params.output_bps       = 16;
         proc.imgdata.params.gamm[0]          = 1.0; // gamma = 1 (linear)
         proc.imgdata.params.gamm[1]          = 1.0;
