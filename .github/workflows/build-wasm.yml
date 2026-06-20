@@ -1,0 +1,38 @@
+name: Build LibRaw WASM
+
+# Rebuild when the C++ wrapper or build script changes.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'wasm/libraw_wrapper.cpp'
+      - 'wasm/build.sh'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to push the compiled WASM back
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.73   # pinned for reproducibility
+
+      - name: Build LibRaw WASM
+        run: bash wasm/build.sh
+
+      - name: Commit compiled WASM to repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/libraw.js docs/libraw.wasm
+          git diff --staged --quiet && echo "WASM unchanged, nothing to commit." || (
+            git commit -m "ci: rebuild LibRaw ${LIBRAW_VER} WASM [skip ci]"
+            git push
+          )
+        env:
+          LIBRAW_VER: "0.21.3"

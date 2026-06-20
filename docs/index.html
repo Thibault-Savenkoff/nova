@@ -134,6 +134,7 @@ input[type=range] { accent-color: #6c8ef5; cursor: pointer; }
 
 #compat-warn { text-align: center; color: #f87171; padding: 3rem 1rem; font-size: 0.9rem; display: none; }
 </style>
+<script src="raw_decoder.js" onerror="console.warn('LibRaw WASM unavailable — RAW decoding disabled')"></script>
 </head>
 <body>
 <div class="container">
@@ -194,7 +195,7 @@ input[type=range] { accent-color: #6c8ef5; cursor: pointer; }
 <!-- ═══ MAKE TAB ════════════════════════════════════════════════════════════ -->
 <div class="tab-panel" id="tab-make">
   <div class="drop-zone" id="make-drop">
-    <input type="file" id="make-input" accept="image/*">
+    <input type="file" id="make-input" accept="image/*,.dng,.cr2,.cr3,.nef,.arw,.orf,.rw2,.pef,.srw,.raf,.3fr,.erf,.mrw">
     <div class="dz-icon">✨</div>
     <div class="dz-main">Drop any image here</div>
     <div class="dz-sub">PNG · JPEG · WebP · TIFF · HEIC · DNG · RAW — converts to .nova</div>
@@ -265,6 +266,7 @@ if (!window.DecompressionStream || !window.CompressionStream || !window.Offscree
 
 // ── NOVA magic ────────────────────────────────────────────────────────────────
 const MAGIC = new Uint8Array([0x89,0x4E,0x4F,0x56,0x41,0x0D,0x0A,0x1A,0x0A]);
+const _RAW_EXTS = new Set(['.dng','.cr2','.cr3','.nef','.arw','.orf','.rw2','.pef','.srw','.raf','.3fr','.erf','.mrw']);
 
 // ── CRC32 ─────────────────────────────────────────────────────────────────────
 const CRC_TABLE = (() => {
@@ -295,6 +297,12 @@ async function xform(stream, data) {
 const inflate = d => xform(new DecompressionStream('deflate'), d);
 const deflate = d => xform(new CompressionStream('deflate'), d);
 
+// ── ACES tone mapping (linear → display) ─────────────────────────────────────
+function _aces8(x) {
+  const v = Math.max(0, Math.min(1, (x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14)));
+  return Math.round(Math.pow(v, 1/2.2) * 255);
+}
+
 // ── block decoder ─────────────────────────────────────────────────────────────
 async function decodeBlock(data, w, h, colorSpace='srgb') {
   const marker = data[0], payload = data.subarray(1);
@@ -324,6 +332,19 @@ async function decodeBlock(data, w, h, colorSpace='srgb') {
     for (let i = 0; i < floats.length; i++) {
       const v = Math.round(((floats[i]-mn)/rng)*255);
       id.data[i*4]=v; id.data[i*4+1]=v; id.data[i*4+2]=v; id.data[i*4+3]=255;
+    }
+    return createImageBitmap(id);
+  }
+  if (marker === 0x4E) { // 'N' = HDR16 linear uint16 RGB → ACES tone mapping
+    const raw = await inflate(payload);
+    const u16 = new Uint16Array(raw.buffer, raw.byteOffset, raw.byteLength >>> 1);
+    const id = new ImageData(w, h);
+    const d = id.data;
+    for (let i = 0, j = 0; i < w*h; i++, j += 3) {
+      d[i*4]   = _aces8(u16[j]   / 65535);
+      d[i*4+1] = _aces8(u16[j+1] / 65535);
+      d[i*4+2] = _aces8(u16[j+2] / 65535);
+      d[i*4+3] = 255;
     }
     return createImageBitmap(id);
   }
@@ -396,7 +417,8 @@ async function parseNOVA(buf) {
   }
   if (!frames.length) throw new Error('No image frames found');
   const modeNames = ['adaptive','lossless','lossy','express'];
-  return {w, h, frames, frameDuration, mode: modeNames[cmode]??'?', hasAlpha, isHDR, isAnimated, exifBytes, colorSpaceCode};
+  const isHDR16 = chunks.some(c => c.type==='FDAT' && c.data[0]===0x4E);
+  return {w, h, frames, frameDuration, mode: modeNames[cmode]??'?', hasAlpha, isHDR, isHDR16, isAnimated, exifBytes, colorSpaceCode};
 }
 
 // ── EXIF parser (TIFF IFD) ────────────────────────────────────────────────────
@@ -600,6 +622,50 @@ async function encodeNOVA(file, mode, quality, exifBytes) {
   return out;
 }
 
+// ── HDR16 helpers ─────────────────────────────────────────────────────────────
+function _drawHDR16ToCanvas(ctx, u16, w, h) {
+  const id = ctx.createImageData(w, h);
+  const d = id.data;
+  for (let i = 0, j = 0; i < w*h; i++, j += 3) {
+    d[i*4]   = _aces8(u16[j]   / 65535);
+    d[i*4+1] = _aces8(u16[j+1] / 65535);
+    d[i*4+2] = _aces8(u16[j+2] / 65535);
+    d[i*4+3] = 255;
+  }
+  ctx.putImageData(id, 0, 0);
+}
+
+async function encodeNOVAFromRAW(raw, exifBytes) {
+  const {width:w, height:h, data:u16} = raw;
+  const n = w * h * 3;
+  const buf = new Uint8Array(n * 2);
+  const dv = new DataView(buf.buffer);
+  for (let i = 0; i < n; i++) dv.setUint16(i*2, u16[i], true); // little-endian
+  const compressed = await deflate(buf);
+  const fdatPayload = new Uint8Array(1 + compressed.length);
+  fdatPayload[0] = 0x4E; // 'N' marker
+  fdatPayload.set(compressed, 1);
+
+  const ihdrData = new Uint8Array(12);
+  ihdrData.set(u32be(w),0); ihdrData.set(u32be(h),4);
+  ihdrData[8]=16; ihdrData[9]=0; ihdrData[10]=2; ihdrData[11]=1; // bd=16, sRGB, is_hdr, lossless
+
+  const chunks = [buildChunk('IHDR', ihdrData)];
+  if (exifBytes && exifBytes.length > 0) {
+    const mdat = new Uint8Array(8+exifBytes.length);
+    mdat.set(u32be(0),0); mdat.set(u32be(exifBytes.length),4); mdat.set(exifBytes,8);
+    chunks.push(buildChunk('MDAT', mdat));
+  }
+  chunks.push(buildChunk('FDAT', fdatPayload));
+  chunks.push(buildChunk('IEND', new Uint8Array(0)));
+
+  const total = MAGIC.length + chunks.reduce((s,c)=>s+c.length,0);
+  const out = new Uint8Array(total); let pos=0;
+  out.set(MAGIC,pos); pos+=MAGIC.length;
+  for (const c of chunks) { out.set(c,pos); pos+=c.length; }
+  return out;
+}
+
 // ── utils ─────────────────────────────────────────────────────────────────────
 function fmtSize(n) {
   if (n<1024) return `${n} B`;
@@ -650,7 +716,7 @@ async function loadNOVA(file) {
     cur = await parseNOVA(await file.arrayBuffer());
     vCanvas.width=cur.w; vCanvas.height=cur.h;
     const tags=[`${cur.w}×${cur.h}`,cur.mode,cur.hasAlpha?'RGBA':'RGB',
-      cur.isHDR?'HDR':'8-bit',cur.colorSpaceCode===1?'Display P3':'',fmtSize(file.size),
+      cur.isHDR16?'HDR16 RAW':cur.isHDR?'HDR':'8-bit',cur.colorSpaceCode===1?'Display P3':'',fmtSize(file.size),
       cur.isAnimated?`${cur.frames.length} frames @ ${cur.frameDuration}ms`:''
     ].filter(Boolean);
     vInfo.textContent=`${file.name}  ·  ${tags.join(' · ')}`;
@@ -735,20 +801,40 @@ const mModeEl=document.getElementById('make-mode'), mQualEl=document.getElementB
 const qValEl=document.getElementById('q-val'), sizeEst=document.getElementById('size-est');
 const btnDl=document.getElementById('btn-dl-nova');
 
-let srcFile=null, novaBytes=null, encDebounce=null;
+let srcFile=null, srcRawData=null, novaBytes=null, encDebounce=null;
 let makeExifBytes=null; // EXIF to embed (from steal or from manual fields)
 
 mQualEl.addEventListener('input',()=>{qValEl.textContent=mQualEl.value;scheduleEncode();});
 mModeEl.addEventListener('change',scheduleEncode);
-function scheduleEncode(){clearTimeout(encDebounce);if(!srcFile)return;encDebounce=setTimeout(doEncode,350);}
+function scheduleEncode(){clearTimeout(encDebounce);if(!srcFile&&!srcRawData)return;encDebounce=setTimeout(doEncode,350);}
 
 wireDropZone(document.getElementById('make-drop'),document.getElementById('make-input'),loadSource);
 
 async function loadSource(file) {
+  const _ext = (file.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+  if (_RAW_EXTS.has(_ext)) {
+    if (typeof decodeRAW === 'undefined') {
+      setStatus(mStatus,'LibRaw WASM not loaded — RAW decoding unavailable.','error'); return;
+    }
+    srcFile=file; srcRawData=null; novaBytes=null;
+    setStatus(mStatus,'Decoding RAW with LibRaw…','loading'); mResult.style.display='none';
+    try {
+      const raw = await decodeRAW(await file.arrayBuffer());
+      mCanvas.width=raw.width; mCanvas.height=raw.height;
+      _drawHDR16ToCanvas(mCtx, raw.data, raw.width, raw.height);
+      document.getElementById('make-info').textContent=
+        `${file.name}  ·  ${raw.width}×${raw.height}  ·  ${fmtSize(file.size)}  ·  HDR16 RAW`;
+      srcRawData=raw;
+      mResult.style.display='block';
+      setStatus(mStatus,'','');
+      doEncode();
+    } catch(e){ setStatus(mStatus,`RAW decode error: ${e.message}`,'error'); }
+    return;
+  }
   if (!file.type.startsWith('image/')) {
     setStatus(mStatus,'Please drop an image file.','error'); return;
   }
-  srcFile=file; novaBytes=null;
+  srcFile=file; srcRawData=null; novaBytes=null;
   setStatus(mStatus,'Loading…','loading'); mResult.style.display='none';
 
   // Try to steal EXIF from the source itself if it's a JPEG
@@ -841,11 +927,13 @@ function _updateExifEditorLabel() {
 
 let pendingNOVABytes=null;
 async function doEncode() {
-  if (!srcFile) return;
+  if (!srcFile && !srcRawData) return;
   const mode=mModeEl.value, quality=parseInt(mQualEl.value,10);
   sizeEst.textContent='encoding…'; btnDl.disabled=true; pendingNOVABytes=null;
   try {
-    pendingNOVABytes=await encodeNOVA(srcFile,mode,quality,makeExifBytes);
+    pendingNOVABytes = srcRawData
+      ? await encodeNOVAFromRAW(srcRawData, makeExifBytes)
+      : await encodeNOVA(srcFile, mode, quality, makeExifBytes);
     sizeEst.textContent=`→ ${fmtSize(pendingNOVABytes.length)} as .nova`;
     btnDl.disabled=false;
   } catch(e){sizeEst.textContent=`Error: ${e.message}`;}
@@ -858,7 +946,7 @@ btnDl.addEventListener('click',()=>{
 });
 
 document.getElementById('btn-make-new').addEventListener('click',()=>{
-  srcFile=null; novaBytes=null; makeExifBytes=null;
+  srcFile=null; srcRawData=null; novaBytes=null; makeExifBytes=null;
   mResult.style.display='none'; setStatus(mStatus,'','');
   _populateExifFields({}); _updateExifEditorLabel();
 });

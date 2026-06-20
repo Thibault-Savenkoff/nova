@@ -36,6 +36,60 @@ def _open_image(path: str) -> "Image.Image":
     return Image.open(path)
 
 
+def _open_raw_hdr16(path: str):
+    """Open RAW with rawpy, return linear uint16 (H,W,3) array, or None."""
+    try:
+        import rawpy, numpy as np
+        with rawpy.imread(path) as raw:
+            return raw.postprocess(
+                use_camera_wb=True,
+                half_size=False,
+                no_auto_bright=True,
+                output_bps=16,
+                gamma=(1, 1),
+            )
+    except Exception:
+        return None
+
+
+def _write_tiff_16bit(path: str, arr16) -> None:
+    """Minimal uncompressed 16-bit RGB TIFF writer — no extra dependencies."""
+    import numpy as np, struct as _st
+    h, w = arr16.shape[:2]
+    img = arr16.astype('<u2').tobytes()
+
+    def p16(v): return _st.pack('<H', v)
+    def p32(v): return _st.pack('<I', v)
+    def entry(tag, typ, cnt, val): return _st.pack('<HHII', tag, typ, cnt, val)
+
+    n = 11
+    ifd_off = 8
+    ifd_sz  = 2 + n * 12 + 4
+    bps_off = ifd_off + ifd_sz      # BitsPerSample: 3 × uint16
+    img_off = bps_off + 6
+
+    buf  = bytearray()
+    buf += b'II' + p16(42) + p32(ifd_off)
+    buf += p16(n)
+    buf += entry(0x0100, 4, 1, w)           # ImageWidth
+    buf += entry(0x0101, 4, 1, h)           # ImageLength
+    buf += entry(0x0102, 3, 3, bps_off)     # BitsPerSample → [16,16,16]
+    buf += entry(0x0103, 3, 1, 1)           # Compression = none
+    buf += entry(0x0106, 3, 1, 2)           # PhotometricInterpretation = RGB
+    buf += entry(0x0111, 4, 1, img_off)     # StripOffsets
+    buf += entry(0x0115, 3, 1, 3)           # SamplesPerPixel
+    buf += entry(0x0116, 4, 1, h)           # RowsPerStrip
+    buf += entry(0x0117, 4, 1, len(img))    # StripByteCounts
+    buf += entry(0x011C, 3, 1, 1)           # PlanarConfiguration = chunky
+    buf += entry(0x0153, 3, 1, 1)           # SampleFormat = uint
+    buf += p32(0)                           # next IFD offset
+    buf += p16(16) * 3                      # BitsPerSample values
+    buf += img
+
+    with open(path, 'wb') as fout:
+        fout.write(buf)
+
+
 def _register_windows():
     """Register .nova file association and Start Menu shortcut in HKCU (no admin required)."""
     try:
@@ -246,10 +300,14 @@ class NovaViewer(tk.Tk):
         try:
             final_exif = opts["exif"]
             exif_bytes = final_exif.tobytes() if final_exif and len(final_exif) else None
-            # For RAW/HEIC, pre-open with _open_image so nova.encode gets a PIL Image
-            # rather than a path (which would fall back to Image.open and likely fail).
             ext = os.path.splitext(src)[1].lower()
-            source = _open_image(src) if ext in (_RAW_EXTS | _HEIC_EXTS) else src
+            if ext in _RAW_EXTS:
+                arr16 = _open_raw_hdr16(src)
+                source = arr16 if arr16 is not None else _open_image(src)
+            elif ext in _HEIC_EXTS:
+                source = _open_image(src)
+            else:
+                source = src
             nova.encode(source, dst, quality=opts["quality"], mode=opts["mode"],
                         exif=exif_bytes)
             self._load(dst)
@@ -281,6 +339,12 @@ class NovaViewer(tk.Tk):
             ext = os.path.splitext(dst)[1].lower()
             if exif_bytes and ext in ('.jpg', '.jpeg', '.tiff', '.tif', '.webp', '.png'):
                 save_kwargs['exif'] = exif_bytes
+
+            if ext in ('.tiff', '.tif') and self._path:
+                arr16 = nova.decode_hdr16(self._path)
+                if arr16 is not None:
+                    _write_tiff_16bit(dst, arr16)
+                    return
 
             if len(self._frames) == 1:
                 self._frames[0].save(dst, **save_kwargs)

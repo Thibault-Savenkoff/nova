@@ -98,12 +98,25 @@ def _compress_jpeg(img: Image.Image, quality: int) -> bytes:
     return b'A' + struct.pack('>I', len(jpeg)) + jpeg + alpha_bytes
 
 
+def _compress_hdr16(arr) -> bytes:
+    import numpy as np
+    return b'N' + zlib.compress(arr.astype('<u2').tobytes(), 6)
+
+
 def _decompress_block(data: bytes, size: tuple, ch: int, is_hdr: bool = False) -> Image.Image:
     mode = 'RGBA' if ch == 4 else 'RGB'
     marker, payload = data[0:1], data[1:]
     if marker == b'H':
         raw = zlib.decompress(payload)
         return Image.frombytes('F', size, raw)
+    if marker == b'N':
+        import numpy as np
+        raw = zlib.decompress(payload)
+        h_px, w_px = size[1], size[0]
+        f32 = np.frombuffer(raw, dtype='<u2').reshape(h_px, w_px, 3).astype(np.float32) / 65535.0
+        t = np.clip((f32*(2.51*f32+0.03))/(f32*(2.43*f32+0.59)+0.14), 0.0, 1.0)
+        arr8 = (np.power(t, 1/2.2) * 255.0).clip(0, 255).astype(np.uint8)
+        return Image.fromarray(arr8, mode='RGB')
     if marker == b'A':
         jpeg_len = struct.unpack('>I', payload[:4])[0]
         rgb = Image.open(io.BytesIO(payload[4:4 + jpeg_len])).convert('RGB')
@@ -177,6 +190,16 @@ def encode(
                      quality 25) arrives in the first KB so viewers can show a preview
                      instantly while the full image downloads. Use quality=50-70.
     """
+    _hdr16_arr = None
+    try:
+        import numpy as np
+        if isinstance(source, np.ndarray) and source.dtype == np.uint16 \
+                and source.ndim == 3 and source.shape[2] == 3:
+            _hdr16_arr = source
+            source = Image.fromarray((source >> 8).astype(np.uint8))
+    except ImportError:
+        pass
+
     if isinstance(source, str):
         img = Image.open(source)
         icc_profile = icc_profile or img.info.get('icc_profile')
@@ -193,6 +216,11 @@ def encode(
     hdr_modes = ('F', 'I', 'I;16', 'I;16B')
     if not is_hdr:
         is_hdr = any(fr.mode in hdr_modes for fr in all_frames)
+
+    if _hdr16_arr is not None:
+        is_hdr = True
+        is_animated = False
+        has_alpha = False
 
     flags = 0
     if has_alpha:   flags |= 1
@@ -223,7 +251,10 @@ def encode(
         for frame in all_frames:
             frame_c = frame if is_hdr else frame.convert(img_mode)
 
-            if is_animated and prev is not None:
+            if _hdr16_arr is not None:
+                _write_chunk(f, CHUNK_FDAT, _compress_hdr16(_hdr16_arr))
+                _hdr16_arr = None
+            elif is_animated and prev is not None:
                 frame_raw = frame_c.tobytes()
                 if _accel is not None:
                     bbox = (ctypes.c_int * 4)()
@@ -327,6 +358,22 @@ def decode_preview(input_path: str) -> Image.Image | None:
                 return Image.open(io.BytesIO(data)).convert("RGB")
             if ct == CHUNK_FDAT:
                 return None   # no PREV chunk found before first frame
+
+
+def decode_hdr16(input_path: str):
+    """Return uint16 (H, W, 3) numpy array for N-marker frames, else None."""
+    try:
+        import numpy as np
+    except ImportError:
+        return None
+    w = h = None
+    for ct, data in _read_all_chunks(input_path):
+        if ct == CHUNK_IHDR:
+            w, h = struct.unpack('>II', data[:8])
+        elif ct == CHUNK_FDAT and w is not None and data[0:1] == b'N':
+            raw = zlib.decompress(data[1:])
+            return np.frombuffer(raw, dtype='<u2').reshape(h, w, 3).copy()
+    return None
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
