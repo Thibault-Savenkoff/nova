@@ -31,7 +31,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install pillow pyinstaller dmgbuild
+        run: pip install pillow pyinstaller dmgbuild rawpy numpy pillow-heif
 
       - name: Install Tkinter (Linux)
         if: runner.os == 'Linux'

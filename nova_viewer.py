@@ -18,47 +18,17 @@ _RAW_EXTS = {'.dng','.cr2','.cr3','.nef','.arw','.orf','.rw2','.pef','.srw','.ra
 _HEIC_EXTS = {'.heic','.heif','.hif'}
 
 
-def _pip_install(*packages: str) -> bool:
-    """Install packages via pip. Returns True on success."""
-    import subprocess
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--quiet", *packages],
-        capture_output=True)
-    return result.returncode == 0
-
-
 def _open_image(path: str) -> "Image.Image":
-    """Open any image, auto-installing rawpy or pillow-heif on first use if needed."""
+    """Open any image file, including RAW (rawpy) and HEIC (pillow-heif)."""
     ext = os.path.splitext(path)[1].lower()
 
     if ext in _HEIC_EXTS:
-        try:
-            import pillow_heif
-        except ImportError:
-            from tkinter import messagebox
-            if not messagebox.askyesno(
-                    "Install required",
-                    "Opening HEIC/HEIF files requires pillow-heif.\n\nInstall it now?"):
-                raise RuntimeError("pillow-heif not installed.")
-            if not _pip_install("pillow-heif"):
-                raise RuntimeError("Failed to install pillow-heif. Try: pip install pillow-heif")
-            import pillow_heif
+        import pillow_heif
         pillow_heif.register_heif_opener()
         return Image.open(path)
 
     if ext in _RAW_EXTS:
-        try:
-            import rawpy
-        except ImportError:
-            from tkinter import messagebox
-            if not messagebox.askyesno(
-                    "Install required",
-                    f"Opening {ext.upper()} RAW files requires rawpy and numpy.\n\nInstall them now?"):
-                raise RuntimeError("rawpy not installed.")
-            if not _pip_install("rawpy", "numpy"):
-                raise RuntimeError("Failed to install rawpy. Try: pip install rawpy numpy")
-            import rawpy
-        import numpy as np
+        import rawpy, numpy as np
         with rawpy.imread(path) as raw:
             rgb = raw.postprocess(use_camera_wb=True, half_size=False, no_auto_bright=False)
         return Image.fromarray(rgb)
