@@ -297,10 +297,12 @@ async function xform(stream, data) {
 const inflate = d => xform(new DecompressionStream('deflate'), d);
 const deflate = d => xform(new CompressionStream('deflate'), d);
 
-// ── ACES tone mapping (linear → display) ─────────────────────────────────────
+// ── Photographic tone mapping (linear → display) ──────────────────────────────
+// Standard sRGB gamma, no per-channel hue shift (ACES shifted hues in sRGB).
+// LibRaw's auto-brightness places scene white at ~65535, so hard clip is clean.
 function _aces8(x) {
-  const v = Math.max(0, Math.min(1, (x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14)));
-  return Math.round(Math.pow(v, 1/2.2) * 255);
+  const c = Math.max(0, Math.min(1, x));
+  return Math.round((c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055) * 255);
 }
 function _u16WhitePoint(u16) {
   // Sample up to 20 000 values to find the scene white point.
