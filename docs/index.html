@@ -639,8 +639,11 @@ const _SAT = 1.1; // display-only saturation boost (linear space, Rec.709 luma)
 
 function _drawHDR16ToCanvas(ctx, u16, srcW, srcH) {
   // Fit canvas to the container's physical pixels — no CSS rescaling → no blur.
+  // parentElement.clientWidth is 0 when the result panel is still display:none,
+  // so fall back to viewport width capped at the 880px CSS max-width.
   const dpr = Math.min(3, window.devicePixelRatio || 1);
-  const cssW = ctx.canvas.parentElement?.clientWidth || 800;
+  const cssW = ctx.canvas.parentElement?.clientWidth
+    || Math.min(window.innerWidth, 880);
   const scale = Math.min(1, (cssW * dpr) / Math.max(srcW, srcH));
   const dw = Math.round(srcW * scale);
   const dh = Math.round(srcH * scale);
