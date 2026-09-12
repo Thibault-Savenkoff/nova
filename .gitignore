@@ -11,8 +11,8 @@ test/look/lin
 test/look/thumb
 
 # Private test images and cached reference sizes (not published)
-test/photos/
-test/quick/
+test/photos
+test/quick
 test/.ref_sizes
 
 # WebAssembly build cache (docs/build.sh)

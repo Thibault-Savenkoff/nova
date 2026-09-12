@@ -62,7 +62,7 @@ nova encode shot.png shot.nova -m lossless   # always exact
 nova encode frame*.png anim.nova -d 40       # several sources make an animation
 nova encode IMG_1401.CR3 IMG_1401.nova       # camera RAW, sensor frame kept exactly
 
-nova decode photo.nova photo.jpg -q 90       # also .png .tif .webp .avif .heic
+nova decode photo.nova photo.jpg -q 90       # also .png .tif .webp .avif .heic (-fast: quicker WebP)
 nova decode IMG_1401.nova IMG_1401.dng       # RAW back to DNG, or developed to .png .tif .jpg
 nova preview photo.nova thumb.png            # the embedded 512 px thumbnail, instantly
 nova info photo.nova                         # the chunks of the file

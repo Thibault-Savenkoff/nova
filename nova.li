@@ -33,6 +33,7 @@ Public
     "    -q 1-100  quality (default: JPEG/WebP 90, AVIF 85, HEIC 60: ~44 dB)\n".print
     "    -m lossy|lossless  WebP/AVIF/HEIC (default: lossless if the\n".print
     "                       .nova is)\n".print
+    "    -fast     WebP: about 4x faster, files ~5 % larger\n".print
     "    animation: dst_000.png, dst_001.png...\n".print
     "\n".print
     "  nova decode <raw.nova> <dst> [-look canon|darktable]\n".print
@@ -1399,27 +1400,38 @@ Public
   - opt_q_set:Boolean
 
   - parse_decode_args n:Int <-
-  // nova decode src dst [-q 1-100] [-look canon|darktable] [-m lossy|lossless]
+  // nova decode src dst [-q 1-100] [-look canon|darktable] [-m lossy|lossless] [-fast]
   ( + i:Int
     + a,v:String
     opt_q := 90
     opt_look := 0
     i := 4
-    {i + 1 < n}.while_do {
+    {i < n}.while_do {
       a := Command_args.at i
-      v := Command_args.at (i + 1)
-      (a == "-q").if {
-        opt_q := v.to_int
-        opt_q_set := True
-        ((opt_q < 1) || {opt_q > 100}).if { fail "quality must be 1..100" }
-      }.elseif {a == "-m"} then {
-        (v == "lossy").if { opt_webp := 1 }.elseif {v == "lossless"} then { opt_webp := 2 } else { fail "-m: lossy or lossless" }
-      }.elseif {a == "-look"} then {
-        (v == "canon").if { opt_look := 0 }.elseif {v == "darktable"} then { opt_look := 1 } else { fail "-look: canon or darktable" }
+      (a == "-fast").if {
+        Nova_webp.set_fast
+        i := i + 1
       } else {
-        fail ("unknown decode option " + a)
+        (i + 1 < n).if { } else { fail (a + ": value missing") }
+        v := Command_args.at (i + 1)
+        parse_decode_pair (a, v)
+        i := i + 2
       }
-      i := i + 2
+    }
+  )
+
+  - parse_decode_pair (a,v:String) <-
+  (
+    (a == "-q").if {
+      opt_q := v.to_int
+      opt_q_set := True
+      ((opt_q < 1) || {opt_q > 100}).if { fail "quality must be 1..100" }
+    }.elseif {a == "-m"} then {
+      (v == "lossy").if { opt_webp := 1 }.elseif {v == "lossless"} then { opt_webp := 2 } else { fail "-m: lossy or lossless" }
+    }.elseif {a == "-look"} then {
+      (v == "canon").if { opt_look := 0 }.elseif {v == "darktable"} then { opt_look := 1 } else { fail "-look: canon or darktable" }
+    } else {
+      fail ("unknown decode option " + a)
     }
   )
 
@@ -1457,7 +1469,7 @@ Public
       ((Environment.read_variable "NOVA_RECON") != NULL).if {
         write_png recon planes recon_np to (Environment.read_variable "NOVA_RECON")
       }
-    }.elseif {(cmd != NULL) && {cmd == "decode"} && {n >= 4} && {(n & 1) = 0}} then {
+    }.elseif {(cmd != NULL) && {cmd == "decode"} && {n >= 4}} then {
       parse_decode_args n
       read_nova (Command_args.at 2) decode_to (Command_args.at 3)
     }.elseif {(cmd != NULL) && {cmd == "preview"} && {n = 4}} then {

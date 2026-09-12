@@ -7,6 +7,7 @@ Header
   // Effort, measured on a 24 Mpx photo and a 1080p screenshot: lossy method 3 (as small as the
   // default 4, 1.4x faster); lossless effort 90 up to 8 Mpx (graphics: -4 % vs 70), 25 above
   // (photos: same size, 5x faster). libwebp's thread_level barely helps (one image, no tiles).
+  // -fast (nw_fast): lossy method 2. Lossless unchanged (effort 25 on a screenshot: +53 %, same time).
   - include := `
 #include <dlfcn.h>
 #include <stdlib.h>
@@ -60,6 +61,8 @@ static void nw_chunk(const char *id, const unsigned char *p, long n) {
 }
 static unsigned long nw_u32(const unsigned char *p) { return p[0] | p[1] << 8 | p[2] << 16 | (unsigned long)p[3] << 24; }
 
+static int nw_fast;
+
 /* rgba (4 bytes per pixel, np = 3: alpha ignored) -> WebP in nw_out / nw_n. 1 on success, else 0 with nw_msg. */
 static int nw_encode(const unsigned char *rgba, int w, int h, int np, int lossless, int q,
                      const unsigned char *exif, long en, const unsigned char *icc, long icn, const unsigned char *xmp, long xn) {
@@ -78,7 +81,7 @@ static int nw_encode(const unsigned char *rgba, int w, int h, int np, int lossle
     return 0;
   }
   cfg.lossless = lossless;
-  cfg.method = lossless ? 4 : 3;
+  cfg.method = lossless ? 4 : nw_fast ? 2 : 3;
   if (lossless) cfg.quality = (long)w * h <= 8000000 ? 90 : 25;
   cfg.thread_level = 1;
   pic.use_argb = lossless;
@@ -131,6 +134,8 @@ Public
     l := ll.to_int
     `nw_encode(@rgba, @w, @h, @np, @l, @q, @e + @ep, @en, @c + @cp, @cn, @x + @xp, @xn)`:Int != 0
   )
+
+  - set_fast <- ( `nw_fast = 1`; );
 
   - data:C_array Uint8 <- `nw_out`:C_array Uint8
 
