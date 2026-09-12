@@ -892,9 +892,10 @@ Public
 
   - put_preview np:Int <-
   // PREV chunk: [u16 w][u16 h][planes][coded region], only when the long side is > 1024.
-  // Box-filtered to 512 px, wavelet q 75 (alpha exact).
-  ( + tw,th,m,sx0,sx1,sy0,sy1,n:Int
-    + t:C_array Uint8
+  // Box-filtered to 512 px, wavelet q 75 or less (alpha exact).
+  ( + tw,th,m,sx0,sx1,sy0,sy1,n,start,q:Int
+    + done:Boolean
+    + t,u:C_array Uint8
     + sum:C_array Int
     m := width.max height
     (m > 1024).if {
@@ -922,12 +923,25 @@ Public
           }
         }
       }
-      begin_chunk t_prev
-      Nova_codec.put_u16 tw
-      Nova_codec.put_u16 th
-      Nova_codec.put_byte np
-      Nova_codec.encode t stride tw region (0, 0, tw, th) planes np level 5 eps 75
-      end_chunk
+      // Budget: 1 byte per 128 pixels of the image (1080p: 16 KB), else lower q: a screenshot's
+      // text costs ~21 KB at q 75, a third of the file. Photos stay at q 75. Floor q 56 (below,
+      // the thumbnail stops looking like the image; it is then over budget).
+      u := C_array Uint8.create (tw * th * 4)
+      start := Nova_codec.out_count
+      q := 75
+      done := False
+      {! done}.while_do {
+        Nova_codec.truncate_out start
+        0.to (tw * th * 4 - 1) do { i:Int u.at i put (t.at i) }   // encode overwrites its input
+        begin_chunk t_prev
+        Nova_codec.put_u16 tw
+        Nova_codec.put_u16 th
+        Nova_codec.put_byte np
+        Nova_codec.encode u stride tw region (0, 0, tw, th) planes np level 5 eps q
+        end_chunk
+        q := (q * 3) / 4
+        done := (Nova_codec.out_count - start <= (width * height) / 128) || {q < 50}
+      }
     }
   )
 

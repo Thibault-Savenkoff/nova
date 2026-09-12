@@ -33,7 +33,7 @@ v1 and v2 files are not compatible. The web page linked here is still v1 until v
 | --- | --- | --- |
 | Photos, 12–24 Mpx (10 photos) | **50 %** on average (45–63 %) | **84 %** on average (80–99 %) |
 | iPhone screenshots (2) | 42 % | 86–87 % |
-| Terminal screenshot, 1920 × 1080 | 32 % | 100.6 % (WebP wins by 356 bytes) |
+| Terminal screenshot, 1920 × 1080 | 27 % | **85 %** |
 | Synthetic text, gradient, alpha | 15–73 % | 82–98 % |
 | Pure noise (nothing to compress) | 100 % | 100 % |
 
@@ -47,6 +47,7 @@ v1 and v2 files are not compatible. The web page linked here is still v1 until v
 
 **Camera RAW.** The sensor data of a Canon CR3 is kept bit for bit in 80–85 % of the CR3's size.
 
+NOVA sizes include the 512 px thumbnail (`PREV`) that PNG and WebP files do not carry.
 Measured with `test/check.sh` and `test/rd_summary.sh`. The photos themselves are not in the repository.
 
 ## Try it
