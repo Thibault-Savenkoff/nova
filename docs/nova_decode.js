@@ -1032,7 +1032,7 @@ function crc(c, d, lo, hi) {
 
 const tag = s => (s.charCodeAt(0) << 24 >>> 0) + (s.charCodeAt(1) << 16) + (s.charCodeAt(2) << 8) + s.charCodeAt(3);
 const T = { IHDR: tag('IHDR'), ANIM: tag('ANIM'), FDAT: tag('FDAT'), FDLT: tag('FDLT'), IEND: tag('IEND'),
-  MDAT: tag('MDAT'), PREV: tag('PREV'), RAWH: tag('RAWH'), LIVE: tag('LIVE') };
+  MDAT: tag('MDAT'), PREV: tag('PREV'), RAWH: tag('RAWH'), LIVE: tag('LIVE'), GMAP: tag('GMAP') };
 
 // Parses the chunks: {width, height, np, raw, animated, delay, nframes, chunks: [{type, pos, len}]}.
 function parse(data) {
@@ -1079,6 +1079,60 @@ async function decodePreview(data, opts) {
   return { width: w, height: h, rgba };
 }
 
+// Decodes the HDR gain map (GMAP): {width, height, rgba, meta: ISO 21496-1 bytes} or null.
+async function decodeGainMap(data, opts) {
+  const f = parse(data), c = f.chunks.find(c => c.type === T.GMAP && c.len >= 7);
+  if (!c || f.animated) return null;
+  const w = u16(data, c.pos), h = u16(data, c.pos + 2), n = u16(data, c.pos + 5);
+  if (!w || !h || data[c.pos + 4] !== 3 || 7 + n > c.len) throw new Error('bad GMAP');
+  const rgba = new Uint8Array(w * h * 4);
+  for (let i = 3; i < rgba.length; i += 4) rgba[i] = 255;
+  if (!(await decodeRegion(data, c.pos + 7 + n, c.len - 7 - n, rgba, w, 0, 0, w, h, 3, opts && opts.run))) throw new Error('corrupt GMAP');
+  return { width: w, height: h, rgba, meta: data.slice(c.pos + 7, c.pos + 7 + n) };
+}
+
+// ISO 21496-1 metadata (version 0, one channel read) -> {min, max, gamma, offsetSdr, offsetHdr,
+// headroomBase, headroomAlt} in stops, or null. As nova_hdr.li.
+function gainMapParams(m) {
+  if (m.length < 62 || m[0] !== 0 || (m[5] & 0x3F)) return null;
+  const fr = (p, sg) => { const d = u32(m, p + 4); let n = u32(m, p); if (sg && n > 0x7FFFFFFF) n -= 0x100000000; return d ? n / d : 0; };
+  return { headroomBase: fr(6), headroomAlt: fr(14), min: fr(22, 1), max: fr(30, 1), gamma: fr(38) || 1, offsetSdr: fr(46, 1), offsetHdr: fr(54, 1) };
+}
+
+// Ultra HDR JPEG from an SDR JPEG and a gain map JPEG (both JFIF, e.g. from canvas.toBlob) and
+// the gain map's ISO metadata: hdrgm XMP in each, MPF index after the primary's APP0. As nova_hdr.li.
+function ultraHdr(primary, gain, meta) {
+  const g = gainMapParams(meta), te = new TextEncoder();
+  if (!g) return null;
+  const x = v => v.toFixed(6), rdf = '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">';
+  const app1 = s => {
+    const id = te.encode('http://ns.adobe.com/xap/1.0/\0'), b = te.encode(s), o = new Uint8Array(4 + id.length + b.length);
+    o.set([0xFF, 0xE1, (o.length - 2) >> 8, (o.length - 2) & 255]); o.set(id, 4); o.set(b, 4 + id.length);
+    return o;
+  };
+  const afterApp0 = j => j[2] === 0xFF && j[3] === 0xE0 ? 4 + (j[4] << 8 | j[5]) : 2;
+  const splice = (j, ...segs) => { const a = afterApp0(j), n = segs.reduce((s, x) => s + x.length, 0), o = new Uint8Array(j.length + n);
+    o.set(j.subarray(0, a)); let p = a; for (const s of segs) { o.set(s, p); p += s.length; } o.set(j.subarray(a), p); return o; };
+  const gm = splice(gain, app1(rdf + '<rdf:Description xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" hdrgm:Version="1.0"' +
+    ` hdrgm:GainMapMin="${x(g.min)}" hdrgm:GainMapMax="${x(g.max)}" hdrgm:Gamma="${x(g.gamma)}" hdrgm:OffsetSDR="${x(g.offsetSdr)}"` +
+    ` hdrgm:OffsetHDR="${x(g.offsetHdr)}" hdrgm:HDRCapacityMin="${x(g.headroomBase)}" hdrgm:HDRCapacityMax="${x(g.headroomAlt)}"` +
+    ' hdrgm:BaseRenditionIsHDR="False"/></rdf:RDF></x:xmpmeta>'));
+  const xmp = app1(rdf + '<rdf:Description xmlns:Container="http://ns.google.com/photos/1.0/container/"' +
+    ' xmlns:Item="http://ns.google.com/photos/1.0/container/item/" xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" hdrgm:Version="1.0">' +
+    '<Container:Directory><rdf:Seq><rdf:li rdf:parseType="Resource"><Container:Item Item:Semantic="Primary" Item:Mime="image/jpeg"/></rdf:li>' +
+    `<rdf:li rdf:parseType="Resource"><Container:Item Item:Semantic="GainMap" Item:Mime="image/jpeg" Item:Length="${gm.length}"/></rdf:li>` +
+    '</rdf:Seq></Container:Directory></rdf:Description></rdf:RDF></x:xmpmeta>');
+  const mpf = new Uint8Array(90), v = new DataView(mpf.buffer);
+  mpf.set([0xFF, 0xE2, 0, 88, 0x4D, 0x50, 0x46, 0, 0x4D, 0x4D, 0, 42, 0, 0, 0, 8, 0, 3,
+    0xB0, 0, 0, 7, 0, 0, 0, 4, 0x30, 0x31, 0x30, 0x30, 0xB0, 1, 0, 4, 0, 0, 0, 1, 0, 0, 0, 2, 0xB0, 2, 0, 7, 0, 0, 0, 32, 0, 0, 0, 50]);
+  const out = splice(primary, mpf, xmp), total = out.length, tiff = afterApp0(primary) + 8;
+  v.setUint32(58, 0x030000); v.setUint32(62, total); v.setUint32(78, gm.length); v.setUint32(82, total - tiff);
+  out.set(mpf, afterApp0(primary));
+  const r = new Uint8Array(total + gm.length);
+  r.set(out); r.set(gm, total);
+  return r;
+}
+
 // Decodes every frame: {width, height, np, delay, lossy, frames: [Uint8Array RGBA]}.
 // opts.run: stripe runner (see decodeRegion); opts.onFrame(i, rgba): called as frames arrive.
 async function decode(data, opts) {
@@ -1111,6 +1165,6 @@ async function decode(data, opts) {
   return { width: W, height: H, np: f.np, delay: f.delay, lossy: info.lossy, frames };
 }
 
-const api = { parse, decode, decodePreview, decodeRegion, runJob, crc, T };
+const api = { parse, decode, decodePreview, decodeGainMap, gainMapParams, ultraHdr, decodeRegion, runJob, crc, T };
 if (typeof module !== 'undefined') module.exports = api;
 if (typeof self !== 'undefined') self.NovaDecode = api;

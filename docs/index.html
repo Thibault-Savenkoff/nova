@@ -46,7 +46,7 @@
   #viewer { display: grid; gap: 14px; }
   #stage { position: relative; display: grid; place-items: center; min-height: 220px; padding: 18px; border-radius: 6px;
     background: repeating-conic-gradient(var(--stage-a) 0 25%, var(--stage-b) 0 50%) 0 0 / 20px 20px; }
-  #cv { display: block; max-width: 100%; max-height: 72vh; width: auto; height: auto; box-shadow: 0 1px 2px rgb(0 0 0 / .18), 0 8px 28px rgb(0 0 0 / .14); }
+  #cv, #hdr { display: block; max-width: 100%; max-height: 72vh; width: auto; height: auto; box-shadow: 0 1px 2px rgb(0 0 0 / .18), 0 8px 28px rgb(0 0 0 / .14); }
   #stage.over { outline: 2px dashed var(--acc); outline-offset: -2px; }
   #bar { position: absolute; left: 18px; right: 18px; bottom: 10px; height: 4px; border-radius: 2px; background: rgb(0 0 0 / .12); overflow: hidden; visibility: hidden; }
   #bar div { height: 100%; width: 0; background: var(--acc); transition: width .2s; }
@@ -115,6 +115,7 @@
   <section id="viewer" aria-label="Viewer">
     <div id="stage">
       <canvas id="cv" width="0" height="0" aria-label="Opened image"></canvas>
+      <img id="hdr" alt="Opened image, in HDR" hidden>
       <input type="file" id="file" accept=".nova" hidden>
       <div id="bar"><div></div></div>
     </div>
@@ -168,7 +169,7 @@
     <details id="limits">
       <summary>What only the nova program can do</summary>
       <ul>
-        <li>HEIC images can be converted in Safari only, and their HDR rendition is not kept.</li>
+        <li>HEIC images can be converted in Safari only, and without their HDR gain map: the program keeps it, and this page shows it on HDR screens.</li>
         <li>Other formats opened by the browser (WebP, GIF…) are converted without their metadata.</li>
         <li>Animations and Live Photos can only be created with the program.</li>
         <li>RAW files are developed with the camera's look only; the darktable look needs the program.</li>
@@ -245,6 +246,25 @@ async function onWorkers(ws, jobs, progress) {
 }
 
 let cur = null;   // frame on screen, as decoded (the canvas premultiplies alpha)
+let gain = null;  // HDR gain map of the open file ({width, height, rgba, meta}), or null
+// HDR: an HDR screen shows the image as an Ultra HDR JPEG (the browser applies the gain map; a canvas
+// cannot show HDR), made from the canvas and the gain map. Elsewhere the canvas shows the SDR image.
+const jpegOf = (c, q = 0.95) => new Promise(ok => c.toBlob(ok, 'image/jpeg', q)).then(b => b.arrayBuffer()).then(a => new Uint8Array(a));
+async function ultraHdrBlob(src, q) {
+  const g = document.createElement('canvas');
+  g.width = gain.width; g.height = gain.height;
+  g.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(gain.rgba.buffer), gain.width, gain.height), 0, 0);
+  const u = NovaDecode.ultraHdr(await jpegOf(src, q), await jpegOf(g), gain.meta);
+  return u && new Blob([u], { type: 'image/jpeg' });
+}
+function showHdr(blob) {
+  const img = $('hdr');
+  if (img.src) URL.revokeObjectURL(img.src);
+  img.removeAttribute('src');
+  img.hidden = !blob;
+  cv.hidden = !!blob;
+  if (blob) img.src = URL.createObjectURL(blob);
+}
 // Colour: a .nova with a Display P3 profile (iPhone photos) is shown in P3 where the browser can,
 // on a canvas created for it (a canvas keeps its colour space); icc goes into the PNG export.
 const P3 = (() => { try { return document.createElement('canvas').getContext('2d', { colorSpace: 'display-p3' }).getContextAttributes().colorSpace === 'display-p3'; } catch (e) { return false; } })();
@@ -283,7 +303,7 @@ const mb = n => n >= 1e6 ? (n / 1e6).toFixed(1) + ' MB' : n >= 1e3 ? (n / 1e3).t
 
 // The file's anatomy: bytes per chunk type (12 bytes of header and CRC each), in file order.
 const COLOURS = { IHDR: '--c-ihdr', PREV: '--c-prev', FDAT: '--c-fdat', MDAT: '--c-mdat' };
-const WHAT = { IHDR: 'header', PREV: 'preview', FDAT: 'pixels', MDAT: 'metadata', ANIM: 'animation', FDLT: 'frame changes', RAWI: 'RAW info' };
+const WHAT = { IHDR: 'header', PREV: 'preview', FDAT: 'pixels', MDAT: 'metadata', ANIM: 'animation', FDLT: 'frame changes', RAWI: 'RAW info', GMAP: 'HDR gain map' };
 function anatomy(data, f) {
   const parts = [];
   for (const c of f.chunks) {
@@ -325,6 +345,8 @@ async function open(file) {
   ['fmt', 'q', 'save'].forEach(id => $(id).disabled = true);
   if (!(file.sample)) document.querySelectorAll('[data-k]').forEach(b => b.setAttribute('aria-pressed', 'false'));
   name = file.name.replace(/\.nova$/i, '');
+  gain = null;
+  showHdr(null);
   const data = new Uint8Array(await file.arrayBuffer());
   try {
     const f = NovaDecode.parse(data);
@@ -365,8 +387,17 @@ async function open(file) {
     show(r.width, r.height, r.frames[0]);
     info.textContent = file.name;
     const n = workers().length || 1;
-    specs([...base, ['Content', `${kind}, ${r.lossy ? 'lossy' : 'lossless'}${r.frames.length > 1 ? `, ${r.frames.length} frames` : ''}`],
-      ['Decoded in', `${((performance.now() - t0) / 1000).toFixed(1)} s on ${n} ${n > 1 ? 'cores' : 'core'}`]]);
+    const rows = [...base, ['Content', `${kind}, ${r.lossy ? 'lossy' : 'lossless'}${r.frames.length > 1 ? `, ${r.frames.length} frames` : ''}`],
+      ['Decoded in', `${((performance.now() - t0) / 1000).toFixed(1)} s on ${n} ${n > 1 ? 'cores' : 'core'}`]];
+    specs(rows);
+    gain = r.frames.length === 1 ? await NovaDecode.decodeGainMap(data) : null;
+    if (my !== token) return;
+    const gp = gain && NovaDecode.gainMapParams(gain.meta);
+    if (gp) {
+      const hdr = matchMedia('(dynamic-range: high)').matches;
+      specs([...rows, ['HDR', `gain map, up to ${gp.headroomAlt.toFixed(1)} stops brighter${hdr ? '' : ' (this screen shows SDR)'}`]]);
+      if (hdr) { const b = await ultraHdrBlob(cv); if (my === token) showHdr(b); }
+    }
     ['fmt', 'q', 'save'].forEach(id => $(id).disabled = false);
     if (r.frames.length > 1) {
       let i = 0;
@@ -544,6 +575,11 @@ $('save').onclick = async () => {
     src.width = cv.width; src.height = cv.height;
     const c = src.getContext('2d');
     c.fillStyle = '#fff'; c.fillRect(0, 0, cv.width, cv.height); c.drawImage(cv, 0, 0);
+  }
+  // A file with a gain map exports as Ultra HDR JPEG: SDR everywhere, HDR where supported.
+  if (fmt.value === 'image/jpeg' && gain && cur && cur.w === cv.width) {
+    const b = await ultraHdrBlob(src, q.value / 100);
+    if (b) return download(b);
   }
   src.toBlob(b => {
     if (!b) { info.textContent = 'Export failed.'; return; }

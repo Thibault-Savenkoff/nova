@@ -64,6 +64,7 @@ nova encode frame*.png anim.nova -d 40       # several sources make an animation
 nova encode IMG_1401.CR3 IMG_1401.nova       # camera RAW, sensor frame kept exactly
 
 nova decode photo.nova photo.jpg -q 90       # also .png .tif .webp .avif .heic (-fast: quicker WebP)
+nova decode photo.nova photo.avif -hdr       # HDR (PQ, 10 bits) from the iPhone's gain map
 nova decode IMG_1401.nova IMG_1401.dng       # RAW back to DNG, or developed to .png .tif .jpg
 nova preview photo.nova thumb.png            # the embedded 512 px thumbnail, instantly
 nova info photo.nova                         # the chunks of the file
@@ -78,9 +79,10 @@ EXIF (GPS included), XMP and the colour profile of the source are kept. Run `nov
 | **Lossless codec** | Context mixing, as in paq and GraLIC: several models predict each bit and a logistic mixer blends them. Levels 0–4 trade time for size, from palette coding to blended predictors. |
 | **Lossy codec** | A wavelet codec (level 5), picked automatically for photos in adaptive mode. Quality 90 is about 45 dB: it looks identical to the source. |
 | **RAW** | Level 6 codes the camera's sensor frame exactly and keeps what LibRaw needs to develop it, so a `.nova` goes back to DNG or develops with the camera's look. |
+| **HDR** | iPhone photos carry an HDR gain map (ISO 21496-1). NOVA keeps it (1–3 % of the file), writes it back as an Ultra HDR JPEG, or applies it for PQ PNG, AVIF and HEIC (`-hdr`). The web page shows it on HDR screens. |
 | **Animation** | Frames after the first store only the rectangle that changed. |
 | **Speed** | Images are coded in independent stripes and decoded on every core, in the program and in the browser. |
-| **Container** | PNG-like chunks: `IHDR` header, `PREV` thumbnail first so viewers show something at once, `FDAT`/`FDLT` frames, `MDAT` metadata, `LIVE` Live Photo video. Unknown chunks are skipped. |
+| **Container** | PNG-like chunks: `IHDR` header, `PREV` thumbnail first so viewers show something at once, `FDAT`/`FDLT` frames, `GMAP` HDR gain map, `MDAT` metadata, `LIVE` Live Photo video. Unknown chunks are skipped. |
 
 ## Build
 
@@ -104,6 +106,7 @@ test/check.sh     # lossless round trip of every image, with the size table
 test/js.sh        # the JavaScript decoder against the program
 test/replicas.sh  # the multi-core WebAssembly build against the program
 test/raw.sh       # RAW: sensor frame, DNG and developed images against LibRaw
+test/hdr.sh       # HDR: gain map in JavaScript = program, Ultra HDR JPEG read back by libuhdr
 ```
 
 `test/corpus/` holds small synthetic images. The photo tests read your own photos (`test/photos/`, not published).

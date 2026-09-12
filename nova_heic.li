@@ -4,8 +4,10 @@ Header
   // time (dlopen): nova builds without libheif headers, and runs without it (HEIC is then refused).
   // Primary image only, decoded to 8-bit RGBA with its rotation/mirror applied, so the EXIF
   // orientation tag is reset to 1. Metadata: EXIF, XMP, ICC as the JPEG segments NOVA already keeps.
-  // ponytail: depth maps, HDR gain maps and other auxiliary images are not kept; burst/sequence
-  // files give their primary image only.
+  // HDR: the ISO 21496-1 gain map of a `tmap` item (iPhone photos) is decoded too (8-bit RGB) with its
+  // metadata; libheif applies its rotation like the primary's.
+  // ponytail: depth maps and other auxiliary images are not kept; burst/sequence files give their
+  // primary image only; a 10-bit primary is read as 8 bits.
   // Export (nova decode x.nova y.avif|heic): libheif's default encoder (AVIF: aom, HEIC: x265), 8-bit
   // RGB(A); lossless = identity matrix (nclx 0) and 4:4:4, so RGB comes back exactly. EXIF, XMP, ICC.
   // ponytail: the EXIF orientation is not turned into irot/imir (NOVA pixels from HEIC or RAW are
@@ -67,6 +69,72 @@ static int nh_open(void) {
   /* The prototypes above are libheif 1.x. */
   if (nh_major() != 1) { nh_lib = 0; return 0; }
   return 1;
+}
+
+/* Gain map part of libheif (1.18+): optional, HDR is skipped without it. */
+static struct nh_err (*nh_primary_id)(void *, unsigned int *);
+static int (*nh_item_ids)(void *, unsigned int *, int);
+static unsigned int (*nh_item_type)(void *, unsigned int);
+static struct nh_err (*nh_item_data)(void *, unsigned int, int *, unsigned char **, size_t *);
+static void (*nh_item_data_free)(void *, unsigned char **);
+static size_t (*nh_item_refs)(void *, unsigned int, int, unsigned int *, unsigned int **);
+static void (*nh_item_refs_free)(void *, unsigned int **);
+static struct nh_err (*nh_handle_of)(void *, unsigned int, void **);
+
+static int nh_open_gm(void) {
+#define NG(v, s) if (!(*(void **)&v = dlsym(nh_lib, s))) return 0;
+  NG(nh_primary_id, "heif_context_get_primary_image_ID") NG(nh_item_ids, "heif_context_get_list_of_item_IDs")
+  NG(nh_item_type, "heif_item_get_item_type") NG(nh_item_data, "heif_item_get_item_data")
+  NG(nh_item_data_free, "heif_release_item_data") NG(nh_item_refs, "heif_context_get_item_references")
+  NG(nh_item_refs_free, "heif_release_item_references") NG(nh_handle_of, "heif_context_get_image_handle")
+#undef NG
+  return 1;
+}
+
+/* Gain map of the last pixel load: RGBA (gray in RGB), its ISO 21496-1 metadata. nh_gm_w 0: none. */
+static int nh_gm_w, nh_gm_h;
+static unsigned char *nh_gm;
+static unsigned char nh_iso[256];
+static int nh_iso_n;
+
+/* tmap item with inputs (primary, gain map) -> nh_gm, nh_iso. */
+static void nh_gainmap(void *ctx) {
+  unsigned int ids[8192], pid, rt, *to;
+  unsigned char *d;
+  size_t sz, nr;
+  int i, n, k, comp, stride, y, x;
+  void *h, *img;
+  if (!nh_open_gm() || nh_primary_id(ctx, &pid).code) return;
+  n = nh_item_ids(ctx, ids, 8192);
+  for (i = 0; i < n; i++) {
+    if (nh_item_type(ctx, ids[i]) != 0x746d6170) continue;   /* 'tmap' */
+    for (k = 0; (nr = nh_item_refs(ctx, ids[i], k, &rt, &to)) > 0; k++) {
+      if (rt == 0x64696d67 && nr == 2 && to[0] == pid && nh_handle_of(ctx, to[1], &h).code == 0) {   /* 'dimg' */
+        if (nh_decode(h, &img, 1, 10, 0).code == 0) {
+          const unsigned char *p = nh_plane(img, 10, &stride);
+          int w = nh_image_width(img, 10), hh = nh_image_height(img, 10);
+          if (p && nh_item_data(ctx, ids[i], &comp, &d, &sz).code == 0) {
+            if (sz <= sizeof nh_iso && (nh_gm = malloc((size_t)w * hh * 4))) {
+              for (y = 0; y < hh; y++)
+                for (x = 0; x < w; x++) {
+                  memcpy(nh_gm + ((size_t)y * w + x) * 4, p + (size_t)y * stride + x * 3, 3);
+                  nh_gm[((size_t)y * w + x) * 4 + 3] = 255;
+                }
+              memcpy(nh_iso, d, sz);
+              nh_iso_n = sz;
+              nh_gm_w = w;
+              nh_gm_h = hh;
+            }
+            nh_item_data_free(ctx, &d);
+          }
+          nh_image_release(img);
+        }
+        nh_handle_release(h);
+      }
+      nh_item_refs_free(ctx, &to);
+      if (nh_gm_w) return;
+    }
+  }
 }
 
 /* Results of the last nh_load. */
@@ -166,6 +234,7 @@ static int nh_load(const char *name, int pixels) {
   nh_meta_n = 0;
   free(nh_px);
   nh_px = 0;
+  if (pixels) { free(nh_gm); nh_gm = 0; nh_gm_w = 0; }
   if (!nh_open()) { nh_msg = "libheif 1.x not found (install libheif)"; return 0; }
   ctx = nh_context_alloc();
   e = nh_read_file(ctx, name, 0);
@@ -191,6 +260,7 @@ static int nh_load(const char *name, int pixels) {
           ok = 1;
         }
         nh_image_release(img);
+        if (ok) nh_gainmap(ctx);
       }
     }
     nh_handle_release(h);
@@ -214,6 +284,12 @@ static void *(*nh_nclx_alloc)(void);
 static void (*nh_nclx_free)(void *);
 static struct nh_err (*nh_nclx_matrix)(void *, unsigned short);
 static struct nh_err (*nh_set_nclx)(void *, const void *);
+static struct nh_err (*nh_nclx_prim)(void *, unsigned short);
+static struct nh_err (*nh_nclx_trc)(void *, unsigned short);
+/* Start of struct heif_encoding_options (version 4+). */
+struct nh_opts { unsigned char version, save_alpha, macos, two_colr; void *nclx; unsigned char no_nclx; };
+static struct nh_opts *(*nh_opts_alloc)(void);
+static void (*nh_opts_free)(void *);
 static struct nh_err (*nh_encode)(void *, const void *, void *, const void *, void **);
 static struct nh_err (*nh_add_exif)(void *, const void *, const void *, int);
 static struct nh_err (*nh_add_xmp)(void *, const void *, const void *, int);
@@ -232,6 +308,9 @@ static int nh_open_enc(void) {
   NE(nh_set_icc, "heif_image_set_raw_color_profile") NE(nh_nclx_alloc, "heif_nclx_color_profile_alloc")
   NE(nh_nclx_free, "heif_nclx_color_profile_free") NE(nh_nclx_matrix, "heif_nclx_color_profile_set_matrix_coefficients")
   NE(nh_set_nclx, "heif_image_set_nclx_color_profile") NE(nh_encode, "heif_context_encode_image")
+  NE(nh_nclx_prim, "heif_nclx_color_profile_set_color_primaries")
+  NE(nh_nclx_trc, "heif_nclx_color_profile_set_transfer_characteristics")
+  NE(nh_opts_alloc, "heif_encoding_options_alloc") NE(nh_opts_free, "heif_encoding_options_free")
   NE(nh_add_exif, "heif_context_add_exif_metadata") NE(nh_add_xmp, "heif_context_add_XMP_metadata")
   NE(nh_write_file, "heif_context_write_to_file")
 #undef NE
@@ -239,10 +318,14 @@ static int nh_open_enc(void) {
   return 1;
 }
 
-/* rgba (4 bytes per pixel; np 3: alpha dropped) -> name. av1: AVIF (else HEIC). 1 on success, else 0 with nh_msg. */
+/* rgba (4 bytes per pixel; np 3: alpha dropped) -> name. av1: AVIF (else HEIC). 1 on success, else 0 with nh_msg.
+   pq: HDR instead, 16-bit big-endian RGB coded PQ (rgba unused), written 10 bits with nclx
+   (primaries prim, transfer 16) and no ICC. */
 static int nh_export(const char *name, const unsigned char *rgba, int w, int h, int np, int av1, int lossless, int q,
-                     const unsigned char *exif, long en, const unsigned char *icc, long icn, const unsigned char *xmp, long xn) {
+                     const unsigned char *exif, long en, const unsigned char *icc, long icn, const unsigned char *xmp, long xn,
+                     const unsigned char *pq, int prim) {
   void *ctx = 0, *enc = 0, *img = 0, *hdl = 0, *nclx = 0;
+  struct nh_opts *opt = 0;
   unsigned char *d;
   int stride, y, ok = 0;
   struct nh_err e;
@@ -256,24 +339,39 @@ static int nh_export(const char *name, const unsigned char *rgba, int w, int h, 
   } else {
     nh_set_quality(enc, q);
   }
-  e = nh_image_create(w, h, 1, np == 4 ? 11 : 10, &img);
-  if (!e.code) e = nh_add_plane(img, 10, w, h, 8);
+  if (pq) np = 3;
+  /* chroma: interleaved RGB (10), RGBA (11), RRGGBB little-endian (14) */
+  e = nh_image_create(w, h, 1, pq ? 14 : np == 4 ? 11 : 10, &img);
+  if (!e.code) e = nh_add_plane(img, 10, w, h, pq ? 10 : 8);
   if (e.code) { nh_msg = e.message; goto end; }
   d = nh_plane_rw(img, 10, &stride);
-  for (y = 0; y < h; y++) {
+  for (y = 0; pq && y < h; y++) {
+    const unsigned char *s = pq + (long)y * w * 6;
+    unsigned char *o = d + (long)y * stride;
+    int x;
+    for (x = 0; x < w * 3; x++) {
+      int v = (s[x * 2] << 8 | s[x * 2 + 1]) >> 6;
+      o[x * 2] = v;
+      o[x * 2 + 1] = v >> 8;
+    }
+  }
+  for (y = 0; !pq && y < h; y++) {
     const unsigned char *s = rgba + (long)y * w * 4;
     unsigned char *o = d + (long)y * stride;
     int x;
     if (np == 4) memcpy(o, s, (size_t)w * 4);
     else for (x = 0; x < w; x++) memcpy(o + x * 3, s + x * 4, 3);
   }
-  if (lossless) {
+  if (lossless || pq) {
     nclx = nh_nclx_alloc();
-    nh_nclx_matrix(nclx, 0);
+    if (lossless) nh_nclx_matrix(nclx, 0);
+    if (pq) { nh_nclx_prim(nclx, prim); nh_nclx_trc(nclx, 16); }
     nh_set_nclx(img, nclx);
   }
-  if (icn) nh_set_icc(img, "prof", icc, icn);
-  e = nh_encode(ctx, img, enc, 0, &hdl);
+  if (icn && !pq) nh_set_icc(img, "prof", icc, icn);
+  /* The nclx box is only written when passed in the options (libheif's macOS workaround otherwise). */
+  if (nclx && (opt = nh_opts_alloc()) && opt->version >= 4) { opt->nclx = nclx; opt->no_nclx = 0; opt->two_colr = 1; }
+  e = nh_encode(ctx, img, enc, opt, &hdl);
   if (e.code) { nh_msg = e.message; goto end; }
   if (en) nh_add_exif(ctx, hdl, exif, en);
   if (xn) nh_add_xmp(ctx, hdl, xmp, xn);
@@ -281,6 +379,7 @@ static int nh_export(const char *name, const unsigned char *rgba, int w, int h, 
   if (e.code) { nh_msg = e.message; goto end; }
   ok = 1;
 end:
+  if (opt) nh_opts_free(opt);
   if (nclx) nh_nclx_free(nclx);
   if (hdl) nh_handle_release(hdl);
   if (img) nh_image_release(img);
@@ -322,8 +421,28 @@ Public
     pe := name.to_external
     a := av.to_int
     l := ll.to_int
-    `nh_export((char *)@pe, @rgba, @w, @h, @np, @a, @l, @q, @e + @ep, @en, @c, @cn, @x + @xp, @xn)`:Int != 0
+    `nh_export((char *)@pe, @rgba, @w, @h, @np, @a, @l, @q, @e + @ep, @en, @c, @cn, @x + @xp, @xn, 0, 0)`:Int != 0
   )
+
+  // HDR: pq = 16-bit big-endian RGB coded PQ (Nova_hdr.apply), written 10 bits; prim: cICP primaries.
+  - export_hdr name:String pq pq:C_array Uint8 size (w,h:Int) primaries prim:Int avif av:Boolean quality q:Int meta (e:C_array Uint8, ep,en:Int, x:C_array Uint8, xp,xn:Int) :Boolean <-
+  ( + pe:C_array Char
+    + a:Int
+    pe := name.to_external
+    a := av.to_int
+    `nh_export((char *)@pe, @pq, @w, @h, 3, @a, 0, @q, @e + @ep, @en, 0, 0, @x + @xp, @xn, @pq, @prim)`:Int != 0
+  )
+
+  // HDR gain map of the last pixel load (gain_width 0: none): RGBA, and its ISO 21496-1 metadata.
+  - gain_width:Int <- `nh_gm_w`:Int
+
+  - gain_height:Int <- `nh_gm_h`:Int
+
+  - gain_map:C_array Uint8 <- `nh_gm`:C_array Uint8
+
+  - gain_meta:C_array Uint8 <- `nh_iso`:C_array Uint8
+
+  - gain_meta_size:Int <- `nh_iso_n`:Int
 
   - message:String <-
   ( + result:String_buffer

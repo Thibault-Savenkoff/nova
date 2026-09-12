@@ -34,6 +34,8 @@ Public
     "    -m lossy|lossless  WebP/AVIF/HEIC (default: lossless if the\n".print
     "                       .nova is)\n".print
     "    -fast     WebP: about 4x faster, files ~5 % larger\n".print
+    "    -hdr      PNG, AVIF, HEIC: HDR rendition (PQ; PNG 16 bits, HEIF 10)\n".print
+    "    HDR gain map (iPhone HEIC): .jpg is written Ultra HDR\n".print
     "    animation: dst_000.png, dst_001.png...\n".print
     "\n".print
     "  nova decode <raw.nova> <dst> [-look canon|darktable]\n".print
@@ -72,6 +74,8 @@ Public
   - t_prev:Int := 50524556h
 
   - t_rawh:Int := 52415748h
+
+  - t_gmap:Int := 474D4150h
 
   - t_app1:Int := 41505031h
 
@@ -435,6 +439,20 @@ Public
     ((name.has_suffix ".tif") || {name.has_suffix ".tiff"}).if {
       collect_meta
       Nova_tiff.write_image name pixels buf bits 8 planes np size (width, height) data data exif (exif_pos, exif_len) icc (iccp, iccp_n) xmp (xmp_pos, xmp_len)
+    }.elseif {((name.has_suffix ".jpg") || {name.has_suffix ".jpeg"}) && {hdr_ok np}} then {
+      write_ultrahdr buf to name
+    }.elseif {opt_hdr && {name.has_suffix ".png"} && {hdr_ok np}} then {
+      write_png_hdr buf to name
+    }.elseif {opt_hdr && {heif_ext name} && {hdr_ok np}} then {
+      // HDR AVIF/HEIC: lossy 10 bits (default quality as below).
+      collect_meta
+      av := name.has_suffix ".avif"
+      q := opt_q
+      (opt_q_set).if { }.elseif {av} then { q := 85 } else { q := 60 }
+      Nova_par.status ("Applying the gain map (" + width.to_string + "x" + height.to_string + ")...")
+      Nova_hdr.apply buf size (width, height) gain_map gm gain_size (gm_w, gm_h) png False
+      ok := Nova_heic.export_hdr name pq (Nova_hdr.data) size (width, height) primaries icc_primaries avif av quality q meta (data, exif_pos, exif_len, data, xmp_pos, xmp_len)
+      (ok).if { } else { fail ("HEIF: " + Nova_heic.message) }
     }.elseif {(name.has_suffix ".jpg") || {name.has_suffix ".jpeg"}} then {
       (raw_exif_n > 0).if {
         // Developed RAW: EXIF built from the CMT blocks, no ICC (sRGB) or XMP.
@@ -474,6 +492,81 @@ Public
     } else {
       write_png buf planes np to name
     }
+  )
+
+  - hdr_ok np:Int :Boolean <-
+  // The .nova has a gain map that applies to this image (still, opaque, known metadata version).
+    (gm_w > 0) && {np = 3} && {raw_exif_n = 0} && {Nova_hdr.parse data from gm_meta_pos size gm_meta_n}
+
+  - copy_bytes src:C_array Uint8 size n:Int :C_array Uint8 <-
+  ( + result:C_array Uint8
+    result := C_array Uint8.create (n + 1)
+    0.to (n - 1) do { i:Int result.at i put (src.at i) }
+    result
+  )
+
+  - write_ultrahdr buf:C_array Uint8 to name:String <-
+  // Ultra HDR JPEG: the SDR image (quality opt_q) whose XMP points to the gain map JPEG (q 85)
+  // appended after it, both indexed by an MPF segment. SDR viewers show the SDR image.
+  // EXIF, ICC and XMP are kept (the Ultra HDR description joins the source's XMP packet).
+  ( + x,g:C_array Uint8
+    + xn,gn:Int
+    collect_meta
+    Nova_hdr.gain_map_xmp
+    xn := Nova_hdr.size
+    x := copy_bytes (Nova_hdr.data) size xn
+    (Nova_jpeg.encode gm size (gm_w, gm_h) quality 85 exif (x, 0, 0) icc (x, 0, 0) xmp (x, 0, xn)).if { } else { fail "JPEG encoding failed (out of memory)" }
+    gn := Nova_jpeg.size
+    g := copy_bytes (Nova_jpeg.data) size gn
+    Nova_hdr.primary_xmp gn source (data, xmp_pos, xmp_len)
+    xn := Nova_hdr.size
+    x := copy_bytes (Nova_hdr.data) size xn
+    (Nova_jpeg.encode buf size (width, height) quality opt_q exif (data, exif_pos, exif_len) icc (iccp, 0, iccp_n) xmp (x, 0, xn)).if { } else { fail "JPEG encoding failed (out of memory)" }
+    Nova_hdr.ultrahdr (Nova_jpeg.data, Nova_jpeg.size) gain_map (g, gn)
+    save_buffer (Nova_hdr.data) size (Nova_hdr.size) to name
+  )
+
+  - icc_primaries:Int <-
+  // cICP colour primaries of the collected ICC profile: 12 (Display P3) when its name says P3
+  // (ASCII or UTF-16), else 1 (BT.709). ponytail: by name, not by the profile's primaries.
+  ( + result:Int
+    result := 1
+    0.to (iccp_n - 3) do { i:Int
+      (((iccp.at i).to_int = 80) && {((iccp.at (i + 1)).to_int = 51) || {((iccp.at (i + 1)).to_int = 0) && {(iccp.at (i + 2)).to_int = 51}}}).if { result := 12 }
+    }
+    result
+  )
+
+  - write_png_hdr buf:C_array Uint8 to name:String <-
+  // HDR PNG: the HDR rendition, 16-bit RGB, PQ, tagged with cICP.
+  // ponytail: no other metadata (an ICC profile would contradict cICP); rows unfiltered.
+  ( + p:Int
+    collect_meta
+    p := icc_primaries
+    Nova_par.status ("Applying the gain map (" + width.to_string + "x" + height.to_string + ")...")
+    Nova_hdr.apply buf size (width, height) gain_map gm gain_size (gm_w, gm_h) png True
+    Nova_codec.reset_out
+    Nova_codec.put_u32 89504E47h
+    Nova_codec.put_u32 0D0A1A0Ah
+    begin_png_chunk t_ihdr
+    Nova_codec.put_u32 width
+    Nova_codec.put_u32 height
+    Nova_codec.put_byte 16
+    Nova_codec.put_byte 2
+    3.times { Nova_codec.put_byte 0 }
+    end_png_chunk
+    begin_png_chunk 63494350h      // cICP: primaries, transfer 16 (PQ), matrix 0 (RGB), full range
+    Nova_codec.put_byte p
+    Nova_codec.put_byte 16
+    Nova_codec.put_byte 0
+    Nova_codec.put_byte 1
+    end_png_chunk
+    begin_png_chunk t_idat
+    put_deflated (Nova_hdr.data) size (Nova_hdr.size)
+    end_png_chunk
+    begin_png_chunk t_iend
+    end_png_chunk
+    save_out name
   )
 
   //
@@ -853,6 +946,8 @@ Public
     }
     Nova_par.status "Building the 512 px preview..."
     put_preview np
+    // Before FDAT: the decoder has the gain map when it writes the frame (Ultra HDR JPEG).
+    ((! animated) && {Nova_heic.gain_width > 0}).if { put_gain_map e }
     // A still image is coded in place (lossy overwrites it with the reconstruction, unused after).
     (animated).if { work := copy_frame (frames.first) } else { work := frames.first }
     begin_chunk t_fdat
@@ -888,6 +983,30 @@ Public
     }
     // ponytail: no IEND (12 bytes). Each chunk has a length and CRC, and the decoder checks the
     // frame count, so a truncated file is still detected; IEND is accepted when present.
+  )
+
+  - put_gain_map e:Int <-
+  // GMAP chunk (HDR): [u16 w][u16 h][planes 3][u16 n][ISO 21496-1 metadata, n bytes][coded region].
+  // The frame's mode: lossless level 2 (e = 0), else wavelet at the frame's quality.
+  // ponytail: a gray gain map is coded as RGB (equal planes cost next to nothing).
+  ( + n:Int
+    + m:C_array Uint8
+    n := Nova_heic.gain_meta_size
+    m := Nova_heic.gain_meta
+    begin_chunk t_gmap
+    Nova_codec.put_u16 (Nova_heic.gain_width)
+    Nova_codec.put_u16 (Nova_heic.gain_height)
+    Nova_codec.put_byte 3
+    Nova_codec.put_u16 n
+    0.to (n - 1) do { i:Int
+      Nova_codec.put_byte ((m.at i).to_int)
+    }
+    (e = 0).if {
+      Nova_codec.encode (Nova_heic.gain_map) stride (Nova_heic.gain_width) region (0, 0, Nova_heic.gain_width, Nova_heic.gain_height) planes 3 level 2 eps 0
+    } else {
+      Nova_codec.encode (Nova_heic.gain_map) stride (Nova_heic.gain_width) region (0, 0, Nova_heic.gain_width, Nova_heic.gain_height) planes 3 level 5 eps opt_q
+    }
+    end_chunk
   )
 
   - put_preview np:Int <-
@@ -1106,7 +1225,7 @@ Public
 
   - read_nova name:String decode_to dst:String <-
   // dst = NULL: print the chunk list (info). Else write each frame as PNG.
-  ( + pos,t,len,c,np,x0,y0,dw,dh,count,flags,nframes,live_pos,live_len,rawh:Int
+  ( + pos,t,len,c,np,x0,y0,dw,dh,count,flags,nframes,live_pos,live_len,rawh,n:Int
     + done,animated,raw:Boolean
     + cur,next:C_array Uint8
     + base:String
@@ -1234,6 +1353,27 @@ Public
           nframes := 0
           done := True
         }
+      }.elseif {(t = t_gmap) && {len >= 7}} then {
+        gm_w := u16 pos
+        gm_h := u16 (pos + 2)
+        gm_meta_n := u16 (pos + 5)
+        gm_meta_pos := pos + 7
+        ((gm_w = 0) || {gm_h = 0} || {(u8 (pos + 4)) != 3} || {7 + gm_meta_n > len}).if { fail "bad GMAP" }
+        (dst = NULL).if {
+          ("        " + gm_w.to_string + "x" + gm_h.to_string + " HDR gain map").print
+          (Nova_hdr.parse data from gm_meta_pos size gm_meta_n).if {
+            n := Nova_hdr.headroom_centistops
+            (", headroom " + (n / 100).to_string + "." + ((n % 100) + 100).to_string.substring 1 to 2 + " stops").print
+          }
+          '\n'.print
+          gm_w := 0
+        }.elseif {preview_only} then {
+          gm_w := 0
+        } else {
+          gm := C_array Uint8.create (gm_w * gm_h * 4)
+          0.to (gm_w * gm_h - 1) do { i:Int gm.at (i * 4 + 3) put 255 }
+          (Nova_codec.decode data from (pos + 7 + gm_meta_n) size (len - 7 - gm_meta_n) into gm stride gm_w region (0, 0, gm_w, gm_h) planes 3).if { } else { fail "corrupt GMAP" }
+        }
       }.elseif {t = t_rawh} then {
         ((len < 45) || {(u8 pos) != 1}).if { fail "unsupported RAWH version" }
         rawh := pos
@@ -1304,6 +1444,16 @@ Public
   - live_src:String
 
   - preview_only:Boolean
+
+  // HDR gain map of the .nova being decoded (gm_w 0: none); its metadata is data[gm_meta_pos, + gm_meta_n).
+  - gm:C_array Uint8
+  - gm_w:Int
+  - gm_h:Int
+  - gm_meta_pos:Int
+  - gm_meta_n:Int
+
+  // -hdr: PNG, AVIF and HEIC get the HDR rendition (PQ) instead of the SDR image.
+  - opt_hdr:Boolean
 
   // Still image as the decoder will rebuild it (test hook, see NOVA_RECON in main).
   - recon:C_array Uint8
@@ -1414,7 +1564,7 @@ Public
   - opt_q_set:Boolean
 
   - parse_decode_args n:Int <-
-  // nova decode src dst [-q 1-100] [-look canon|darktable] [-m lossy|lossless] [-fast]
+  // nova decode src dst [-q 1-100] [-look canon|darktable] [-m lossy|lossless] [-fast] [-hdr]
   ( + i:Int
     + a,v:String
     opt_q := 90
@@ -1424,6 +1574,9 @@ Public
       a := Command_args.at i
       (a == "-fast").if {
         Nova_webp.set_fast
+        i := i + 1
+      }.elseif {a == "-hdr"} then {
+        opt_hdr := True
         i := i + 1
       } else {
         (i + 1 < n).if { } else { fail (a + ": value missing") }
@@ -1486,6 +1639,12 @@ Public
     }.elseif {(cmd != NULL) && {cmd == "decode"} && {n >= 4}} then {
       parse_decode_args n
       read_nova (Command_args.at 2) decode_to (Command_args.at 3)
+      // Test hook: NOVA_GAINMAP=file.png writes the decoded gain map (GMAP).
+      (((Environment.read_variable "NOVA_GAINMAP") != NULL) && {gm_w > 0}).if {
+        width := gm_w
+        height := gm_h
+        write_png gm planes 3 to (Environment.read_variable "NOVA_GAINMAP")
+      }
     }.elseif {(cmd != NULL) && {cmd == "preview"} && {n = 4}} then {
       preview_only := True
       read_nova (Command_args.at 2) decode_to (Command_args.at 3)
