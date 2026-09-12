@@ -7,7 +7,7 @@ Half the size of PNG and usually smaller than WebP when every pixel must stay ex
 
 [![Try it in your browser](https://img.shields.io/badge/try_it-in_your_browser-2945c7)](https://thibault-savenkoff.github.io/nova/)
 [![Status: v2 in progress](https://img.shields.io/badge/status-v2_in_progress-c98314)](#status)
-[![Written in Lisaac Ω](https://img.shields.io/badge/written_in-Lisaac_%CE%A9-16191d)](https://github.com/lisaac-omega/lisaac)
+[![Written in Lisaac Ω](https://img.shields.io/badge/written_in-Lisaac_%CE%A9-16191d)](https://lisaac.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2e8b6e)](LICENSE)
 
 <a href="https://thibault-savenkoff.github.io/nova/"><img src=".github/images/site.jpg" width="760" alt="The NOVA web page: a photo opened from a .nova file, with the file's chunks drawn to scale under it"></a>
@@ -16,7 +16,7 @@ Half the size of PNG and usually smaller than WebP when every pixel must stay ex
 
 ## Status
 
-This is the `v2` branch: NOVA rewritten from scratch in [Lisaac Ω](https://github.com/lisaac-omega/lisaac), with its own codec.
+This is the `v2` branch: NOVA rewritten from scratch in [Lisaac Ω](https://lisaac.org), with its own codec.
 NOVA v1, on `main`, is a Python container around PNG and JPEG data. v2 replaces it on `main` once it is finished.
 v1 and v2 files are not compatible. The web page linked here is still v1 until v2 reaches `main`.
 
@@ -78,7 +78,7 @@ EXIF (GPS included), XMP and the colour profile of the source are kept. Run `nov
 
 ## Build
 
-You need the [Lisaac Ω](https://github.com/lisaac-omega/lisaac) compiler and GCC.
+You need the [Lisaac Ω](https://lisaac.org) compiler (0.6) and GCC.
 
 ```sh
 lisaac nova.li -boost      # writes ./nova (and nova.c)
@@ -105,7 +105,7 @@ test/raw.sh       # RAW: sensor frame, DNG and developed images against LibRaw
 ## FAQ
 
 **Why Lisaac Ω?**
-It is a small prototype-based language that compiles to C. NOVA v2 is also a test of how far it goes on real work: a codec, a container, six output formats and a WebAssembly build.
+It is a prototype-based language, compiled to C: the first compiled one. NOVA v2 is also a test of how far it goes on real work: a codec, a container, six output formats and a WebAssembly build.
 
 **Can the browser version open HEIC files?**
 In Safari only, which decodes HEIC itself. Other browsers do not ship an HEVC decoder, and this site does not either.
