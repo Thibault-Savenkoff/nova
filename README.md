@@ -1,6 +1,11 @@
 <div align="center">
 
-# NOVA
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/images/logo-dark.svg">
+    <img src=".github/images/logo-light.svg" height="72" alt="NOVA">
+  </picture>
+</h1>
 
 **One image format for photos, screenshots, animations and camera RAW files.**<br>
 Half the size of PNG and usually smaller than WebP when every pixel must stay exact, on par with AVIF when it need not.
