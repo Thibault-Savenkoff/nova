@@ -1,0 +1,683 @@
+Header
+  + name := Nova_lossy
+  // Level 5: lossy transform coding of the RGB of a region (alpha: Nova_codec codes it losslessly).
+  // RGB -> YCoCg (x 64), CDF 9/7 wavelet per plane (Nova_wavelet), dead-zone quantizer whose step
+  // comes from the quality byte and the band gains, coefficients coded by Nova_model with contexts
+  // from same-band neighbours, the parent band, the other orientations and the luma plane.
+  // ponytail: the file only stores [5][q]; the step formula, pow_t, band gains, chroma factors,
+  // recon offset and level count are part of the format. Changing any of them makes older level-5
+  // files decode wrong: bump the level byte (6) instead, or store those values in the region header.
+
+Public
+
+  // Planes Y, Co, Cg of the region, then their quantized coefficients (in place).
+  - pl0:C_array Int32 := C_array Int32.create 4
+
+  - pl1:C_array Int32 := C_array Int32.create 4
+
+  - pl2:C_array Int32 := C_array Int32.create 4
+
+  - pcap:Int := 4
+
+  - pa p:Int :C_array Int32 <-
+  ( + result:C_array Int32
+    (p = 0).if { result := pl0 }.elseif {p = 1} then { result := pl1 } else { result := pl2 }
+    result
+  )
+
+  - w:Int
+
+  - h:Int
+
+  - levels:Int
+
+  - qv p:Int at (x,y:Int) :Int <- ((pa p).at (y * w + x)).to_int
+
+  - put v:Int plane p:Int at (x,y:Int) <-
+  (
+    (pa p).at (y * w + x) put (v.to_raw_int32)
+  )
+
+  //
+  // Colour: Y = (R + 2G + B) / 4 - 128, Co = (R - B) / 2, Cg = (2G - R - B) / 4, all x 64.
+  //
+
+  - to_planes buf:C_array Uint8 stride s:Int region (x0,y0:Int) <-
+  ( + i,r,g,b:Int
+    0.to (h - 1) do { y:Int
+      0.to (w - 1) do { x:Int
+        i := ((y0 + y) * s + x0 + x) * 4
+        r := (buf.at i).to_int
+        g := (buf.at (i + 1)).to_int
+        b := (buf.at (i + 2)).to_int
+        put (16 * (r + 2 * g + b) - 8192) plane 0 at (x, y)
+        put (32 * (r - b)) plane 1 at (x, y)
+        put (16 * (2 * g - r - b)) plane 2 at (x, y)
+      }
+    }
+  )
+
+  - px v:Int :Uint8 <-
+  // x 64 -> 0..255, rounded
+  ( + result:Int
+    result := (v + 32) >> 6
+    (result < 0).if { result := 0 }
+    (result > 255).if { result := 255 }
+    result.to_uint8
+  )
+
+  - from_planes buf:C_array Uint8 stride s:Int region (x0,y0:Int) <-
+  ( + i,yy,co,cg:Int
+    0.to (h - 1) do { y:Int
+      0.to (w - 1) do { x:Int
+        i := ((y0 + y) * s + x0 + x) * 4
+        yy := (qv 0 at (x, y)) + 8192
+        co := qv 1 at (x, y)
+        cg := qv 2 at (x, y)
+        buf.at i put (px (yy + co - cg))
+        buf.at (i + 1) put (px (yy + cg))
+        buf.at (i + 2) put (px (yy - co - cg))
+      }
+    }
+  )
+
+  //
+  // Bands: (k, o), o = 0 low-low of the last level (k = levels), 1 HL, 2 LH, 3 HH of level k.
+  // Samples at (bx + i * bs, by + j * bs) of the interleaved wavelet plane.
+  //
+
+  - bk:Int
+
+  - bo:Int
+
+  - bs:Int
+
+  - bx:Int
+
+  - by:Int
+
+  - band (k,o:Int) <-
+  (
+    bk := k
+    bo := o
+    (o = 0).if { bs := 1 << k } else { bs := 2 << k }
+    bx := 0
+    by := 0
+    ((o = 1) || {o = 3}).if { bx := 1 << k }
+    ((o = 2) || {o = 3}).if { by := 1 << k }
+  )
+
+  // Quantizer step of the current band for plane p, in 1/256 of a coefficient unit.
+  // The lifting is unscaled: an orthonormal coefficient is the stored one times zL^2 per level
+  // (zL = 1.1496, zL^2 = 5413 / 4096) for low-pass pairs, HH one level less, so equal
+  // orthonormal steps (MSE-optimal) become smaller steps on coarse bands.
+  - quality:Int
+
+  - step p:Int :Int <-
+  ( + d,e,n:Int
+    // 512 x 2^((80 - q) / 14): q 90 ~ 45 dB, 75 ~ 41 dB, 50 ~ 36 dB, 25 ~ 30 dB on photos.
+    e := 108 - quality
+    d := ((512 * 256 * (pow_t.at (e % 14)) / 1000) << (e / 14)) >> 2
+    (p = 1).if { d := d * chroma1 / 256 }
+    (p = 2).if { d := d * chroma2 / 256 }
+    n := bk
+    (bo = 3).if { n := bk - 1 }
+    1.to n do { i:Int
+      d := d * 4096 / 5413
+    }
+    (d < 16).if { d := 16 }
+    d
+  )
+
+  // 2^(i/14) x 1000
+  - pow_t:C_array Int := C_array Int.create 14
+
+  // Rounding offsets of the quantizer, in 1/256 of a step (tuned on photos): 90 = dead zone of
+  // 1.3 steps; the finest bands (mostly noise) get a wider one. Decoder: indexes rebuilt at
+  // (|index| + recon / 256) steps.
+  - dead_zone:Int := 90
+
+  - dz0:Int := 70
+
+  - recon:Int := 26
+
+  // Chroma steps x 2 and x 1.64: chroma errors show less, and SSIM (luma) stays near AVIF.
+  - chroma1:Int := 512
+
+  - chroma2:Int := 420
+
+  - quantize p:Int step st:Int <-
+  // Encoder: coefficient -> index, |index| = floor(|c| / step + dead_zone / 256).
+  ( + i,c,q,dz:Int
+    + a:C_array Int32
+    dz := dead_zone
+    ((bo > 0) && {bk = 0}).if { dz := dz0 }
+    a := pa p
+    by.to (h - 1) by bs do { y:Int
+      bx.to (w - 1) by bs do { x:Int
+        i := y * w + x
+        c := (a.at i).to_int
+        q := ((c.abs) * 256 + ((st * dz) >> 8)) / st
+        (q > 1000000).if { q := 1000000 }
+        (c < 0).if { q := - q }
+        a.at i put (q.to_raw_int32)
+      }
+    }
+  )
+
+  - dequantize p:Int step st:Int <-
+  // Index -> coefficient at (|index| + recon / 256) * step.
+  ( + i,q,c:Int
+    + a:C_array Int32
+    a := pa p
+    by.to (h - 1) by bs do { y:Int
+      bx.to (w - 1) by bs do { x:Int
+        i := y * w + x
+        q := (a.at i).to_int
+        c := 0
+        (q != 0).if {
+          c := ((q.abs) * st + ((recon * st) >> 8) + 128) >> 8
+          (q < 0).if { c := - c }
+        }
+        a.at i put (c.to_raw_int32)
+      }
+    }
+  )
+
+  - each_band_quant inv:Boolean <-
+  (
+    0.to 2 do { p:Int
+      band (levels, 0)
+      (inv).if { dequantize p step (step p) } else { quantize p step (step p) }
+      (levels - 1).downto 0 do { k:Int
+        1.to 3 do { o:Int
+          band (k, o)
+          (inv).if { dequantize p step (step p) } else { quantize p step (step p) }
+        }
+      }
+    }
+  )
+
+  //
+  // Coefficient coding
+  //
+
+  - aq p:Int at (x,y:Int) :Int <-
+  // |index| at (x,y), 0 outside the region or the current stripe.
+  ( + result:Int
+    ((x >= 0) && {y >= ytop} && {x < w} && {y < ybot}).if { result := (qv p at (x, y)).abs }
+    result
+  )
+
+  - sclip v:Int to m:Int :Int <-
+  ( + result:Int
+    result := v
+    (result > m).if { result := m }
+    (result < - m).if { result := - m }
+    result
+  )
+
+  - clip v:Int to m:Int :Int <-
+  ( + result:Int
+    result := v
+    (result > m).if { result := m }
+    result
+  )
+
+  - sv p:Int at (x,y:Int) :Int <-
+  // signed index at (x,y), 0 outside the region or the current stripe.
+  ( + result:Int
+    ((x >= 0) && {y >= ytop} && {x < w} && {y < ybot}).if { result := qv p at (x, y) }
+    result
+  )
+
+  - set_contexts p:Int at (x,y:Int) <-
+  ( + cw,cn,cnw,cne,cww,cnn,par,lum,cous,a,bc,q1,q2,hh:Int
+    cw := aq p at (x - bs, y)
+    cn := aq p at (x, y - bs)
+    cnw := aq p at (x - bs, y - bs)
+    cne := aq p at (x + bs, y - bs)
+    cww := aq p at (x - 2 * bs, y)
+    cnn := aq p at (x, y - 2 * bs)
+    // Parent: same orientation one level up, at band coordinates (i / 2, j / 2).
+    par := 0
+    ((bo > 0) && {bk + 1 < levels}).if {
+      par := aq p at (bx * 2 + (((x - bx) / bs) / 2) * bs * 2, by * 2 + (((y - by) / bs) / 2) * bs * 2)
+    }
+    // Other orientations of this level at the same band coordinates (coded before).
+    cous := 0
+    (bo = 2).if { cous := aq p at (x + (1 << bk), y - (1 << bk)) }
+    (bo = 3).if { cous := (aq p at (x, y - (1 << bk))) + (aq p at (x - (1 << bk), y)) }
+    lum := 0
+    (p > 0).if { lum := aq 0 at (x, y) }
+    (p = 2).if { lum := lum + (aq 1 at (x, y)) }
+    a := Nova_codec.qhalf (clip (2 * (cw + cn) + cnw + cne + par) to 4095)
+    bc := 0
+    (bo > 0).if { bc := 1 + (clip bk to 4) * 3 + bo - 1 }
+    q1 := Nova_codec.qlog (clip (cw + cn) to 4095)
+    (p = 0).if { q2 := Nova_codec.qlog (clip (2 * par + cous) to 4095) } else { q2 := Nova_codec.qlog (clip (2 * lum + cous) to 4095) }
+    // Direct tables: m0 (plane, band, energy), m1 (plane, band, parent / luma) after it.
+    Nova_model.ctx.at 0 put ((((p * 16 + bc) * 12) + (clip a to 11)) * 80)
+    Nova_model.ctx.at 1 put (46080 + ((p * 16 + bc) * 8 + q2) * 80)
+    Nova_model.set_weights (p * 4 + (a >> 2)) and (p * 8 + (bc >> 1)) and (p * 8 + q2) apm ((p * 16 + a) * 10)
+    hh := Nova_model.hash (p + 1) with bc
+    hh := Nova_model.hash hh with (sclip (sv p at (x - bs, y)) to 15)
+    hh := Nova_model.hash hh with (sclip (sv p at (x, y - bs)) to 15)
+    hh := Nova_model.hash hh with (clip cnw to 7)
+    hh := Nova_model.hash hh with (clip cne to 7)
+    Nova_model.ctx.at 2 put hh
+    hh := Nova_model.hash (p + 11) with bc
+    hh := Nova_model.hash hh with a
+    hh := Nova_model.hash hh with (clip par to 15)
+    hh := Nova_model.hash hh with (clip cous to 15)
+    Nova_model.ctx.at 3 put hh
+    hh := Nova_model.hash (p + 21) with bc
+    hh := Nova_model.hash hh with (a >> 1)
+    (p > 0).if { hh := Nova_model.hash hh with (sclip (sv 0 at (x, y)) to 15) }
+    (p = 2).if { hh := Nova_model.hash hh with (sclip (sv 1 at (x, y)) to 15) }
+    Nova_model.ctx.at 4 put hh
+    hh := Nova_model.hash (p + 31) with bc
+    hh := Nova_model.hash hh with (Nova_codec.qlog (clip cw to 4095))
+    hh := Nova_model.hash hh with (Nova_codec.qlog (clip cn to 4095))
+    hh := Nova_model.hash hh with (Nova_codec.qlog (clip cnw to 4095))
+    hh := Nova_model.hash hh with (Nova_codec.qlog (clip cne to 4095))
+    hh := Nova_model.hash hh with (Nova_codec.qlog (clip cww to 4095))
+    hh := Nova_model.hash hh with (Nova_codec.qlog (clip cnn to 4095))
+    hh := Nova_model.hash hh with (Nova_codec.qlog (clip par to 4095))
+    Nova_model.ctx.at 5 put hh
+    hh := Nova_model.hash (p + 41) with bc
+    hh := Nova_model.hash hh with q2
+    hh := Nova_model.hash hh with q1
+    hh := Nova_model.hash hh with (Nova_codec.qlog (clip lum to 4095))
+    Nova_model.ctx.at 6 put hh
+  )
+
+  - code_coef v:Int :Int <-
+  // Zero flag, sign, exponent n (unary, 0..20), then n mantissa bits: the first 3 modelled,
+  // the others coded at p = 1/2. Encoder: codes v, returns it. Decoder: returns the value.
+  ( + a,n,tn,b,s,off,m,sl,nd,result:Int
+    Nova_model.group 0
+    b := Nova_model.bit ((v != 0).to_int) node 0 slot 0 hint (-1)
+    (b = 1).if {
+      s := Nova_model.bit ((v < 0).to_int) node 1 slot 1 hint (-1)
+      a := v.abs
+      {(a >> (tn + 1)) > 0}.while_do { tn := tn + 1 }
+      {(n < 20) && {
+        (n = 14).if { Nova_model.group 1 }
+        sl := 2 + n
+        (n >= 14).if { sl := n - 14 }
+        b := Nova_model.bit ((n < tn).to_int) node (2 + n) slot sl hint (-1)
+        b = 1
+      }}.while_do {
+        n := n + 1
+      }
+      (n > 0).if { Nova_model.group (2 + n) }
+      m := 1
+      off := 1
+      (n - 1).downto 0 do { i:Int
+        (n - 1 - i < 3).if {
+          nd := 22 + (clip n to 18) * 3 + (n - 1 - i)
+          b := Nova_model.bit ((a >> i) & 1) node nd slot off hint (-1)
+          off := (off << 1) | b
+        } else {
+          b := Nova_model.code_bit ((a >> i) & 1) prob 2048
+        }
+        m := (m << 1) | b
+      }
+      result := m
+      (s = 1).if { result := - m }
+    }
+    result
+  )
+
+  // Finest detail bands (level 0, ~75 % of the coefficients, mostly zero): one flag per 2x2 block
+  // (x 3 planes) of each row pair, 1 = all zero, so those coefficients are not coded at all.
+  - zb:C_array Uint8 := C_array Uint8.create 4
+
+  - zcap:Int := 4
+
+  - zero_block (x,y:Int) :Boolean <-
+  ( + result:Boolean
+    result := True
+    0.to 2 do { p:Int
+      0.to 1 do { j:Int
+        0.to 1 do { i:Int
+          ((sv p at (x + i * bs, y + j * bs)) != 0).if { result := False }
+        }
+      }
+    }
+    result
+  )
+
+  - code_flags y:Int <-
+  // Flags of the blocks of rows (y, y + bs). Contexts only use the rows above, the parent band,
+  // the other orientations (coded before), the left flag and the flag above.
+  ( + n,par,cous,a,q,lf,up,z,i,hh:Int
+    lf := 1
+    i := 0
+    bx.to (w - 1) by (2 * bs) do { x:Int
+      n := 0
+      par := 0
+      cous := 0
+      0.to 2 do { p:Int
+        n := n + (aq p at (x - bs, y - bs)) + (aq p at (x, y - bs)) + (aq p at (x + bs, y - bs)) + (aq p at (x + 2 * bs, y - bs))
+        (levels > 1).if {
+          par := par + (aq p at (bx * 2 + (((x - bx) / bs) / 2) * bs * 2, by * 2 + (((y - by) / bs) / 2) * bs * 2))
+        }
+        0.to 1 do { j:Int
+          0.to 1 do { k:Int
+            (bo = 2).if { cous := cous + (aq p at (x + k * bs + 1, y + j * bs - 1)) }
+            (bo = 3).if { cous := cous + (aq p at (x + k * bs, y + j * bs - 1)) + (aq p at (x + k * bs - 1, y + j * bs)) }
+          }
+        }
+      }
+      up := (zb.at i).to_int
+      a := clip (Nova_codec.qhalf (clip (2 * n + 3 * par + cous) to 4095)) to 11
+      q := Nova_codec.qlog (clip par to 4095)
+      Nova_model.ctx.at 0 put ((bo * 12 + a) * 80)
+      Nova_model.ctx.at 1 put (46080 + ((lf * 16 + bo) * 8 + q) * 80)
+      Nova_model.set_weights (12 + (a >> 2)) and (24 + lf * 2 + up) and (24 + q) apm ((48 + a) * 10)
+      hh := Nova_model.hash 51 with bo
+      hh := Nova_model.hash hh with a
+      Nova_model.ctx.at 2 put (Nova_model.hash hh with lf)
+      hh := Nova_model.hash 52 with bo
+      hh := Nova_model.hash hh with (clip par to 15)
+      Nova_model.ctx.at 3 put (Nova_model.hash hh with (clip cous to 15))
+      hh := Nova_model.hash 53 with bo
+      hh := Nova_model.hash hh with (Nova_codec.qlog (clip n to 4095))
+      hh := Nova_model.hash hh with q
+      Nova_model.ctx.at 4 put (Nova_model.hash hh with lf)
+      hh := Nova_model.hash 54 with bo
+      hh := Nova_model.hash hh with (clip n to 15)
+      Nova_model.ctx.at 5 put (Nova_model.hash hh with up)
+      hh := Nova_model.hash 55 with bo
+      hh := Nova_model.hash hh with (Nova_codec.qlog (clip cous to 4095))
+      hh := Nova_model.hash hh with up
+      Nova_model.ctx.at 6 put (Nova_model.hash hh with lf)
+      Nova_model.group 40
+      z := Nova_model.bit ((zero_block (x, y)).to_int) node 79 slot 0 hint (-1)
+      zb.at i put (z.to_uint8)
+      lf := z
+      i := i + 1
+    }
+  )
+
+  - code_band <-
+  // Codes (or decodes) the current band, planes interleaved per position. The low-low band is
+  // coded as the residual of a MED prediction from its neighbours.
+  ( + fine:Boolean
+    fine := (bo > 0) && {bk = 0}
+    (fine).if {
+      (zcap < w).if {
+        zcap := w
+        zb := C_array Uint8.create zcap
+      }
+      0.to (zcap - 1) do { i:Int
+        zb.at i put 1
+      }
+    }
+    (ytop + by).to (ybot - 1) by bs do { y:Int
+      (fine && {((y - ytop - by) / bs) % 2 = 0}).if { code_flags y }
+      bx.to (w - 1) by bs do { x:Int
+        (fine && {(zb.at ((x - bx) / (2 * bs))).to_int = 1}).if {
+          (Nova_model.decoding).if {
+            0.to 2 do { p:Int
+              put 0 plane p at (x, y)
+            }
+          }
+        } else {
+          code_position (x, y)
+        }
+      }
+    }
+  )
+
+  - code_position (x,y:Int) <-
+  ( + v,pr,a,b,c:Int
+    0.to 2 do { p:Int
+      set_contexts p at (x, y)
+      (bo = 0).if {
+        a := sv p at (x - bs, y)
+        b := sv p at (x, y - bs)
+        c := sv p at (x - bs, y - bs)
+        (x = 0).if { a := b }
+        (y = ytop).if { b := a }
+        (y = ytop).if { c := a }
+        (x = 0).if { c := b }
+        pr := med (a, b, c)
+        (Nova_model.decoding).if {
+          v := pr + (code_coef 0)
+          put v plane p at (x, y)
+        } else {
+          code_coef ((qv p at (x, y)) - pr)
+        }
+      } else {
+        (Nova_model.decoding).if {
+          put (code_coef 0) plane p at (x, y)
+        } else {
+          code_coef (qv p at (x, y))
+        }
+      }
+    }
+  )
+
+  - med (a,b,c:Int) :Int <-
+  ( + mx,mn,result:Int
+    mx := a
+    mn := b
+    (b > a).if {
+      mx := b
+      mn := a
+    }
+    (c >= mx).if {
+      result := mn
+    }.elseif {c <= mn} then {
+      result := mx
+    } else {
+      result := a + b - c
+    }
+    result
+  )
+
+  //
+  // Stripes: the region is coded as independent horizontal stripes (own coder stream, models
+  // restarted, neighbours of other stripes read as 0), so they can be decoded in parallel.
+  // Stripe rows are multiples of 2^levels: parents and other orientations stay in the stripe.
+  //
+
+  - ytop:Int
+
+  - ybot:Int
+
+  - stripes:Int <-
+  // From the region size only, never the machine: the same image always gives the same file.
+  // ~1.5 Mpx per stripe, 16 at most.
+  ( + u,n,per,result:Int
+    u := 1 << levels
+    n := (h + u - 1) / u
+    result := (w * h) / 1500000
+    (result > 16).if { result := 16 }
+    (result > n).if { result := n }
+    (result < 1).if { result := 1 }
+    per := (n + result - 1) / result
+    (n + per - 1) / per
+  )
+
+  - stripe s:Int of ns:Int <-
+  ( + u,n,per:Int
+    u := 1 << levels
+    n := (h + u - 1) / u
+    per := (n + ns - 1) / ns
+    ytop := s * per * u
+    ybot := (s + 1) * per * u
+    (ybot > h).if { ybot := h }
+    (ytop > h).if { ytop := h }
+  )
+
+  - code_all <-
+  // Progress in samples, with the low-low band as 1 unit: a band of level k is 4^(levels-1-k).
+  ( + done:Int
+    band (levels, 0)
+    code_band
+    done := 1
+    Nova_par.tick done
+    (levels - 1).downto 0 do { k:Int
+      1.to 3 do { o:Int
+        band (k, o)
+        code_band
+        done := done + (1 << (2 * (levels - 1 - k)))
+        Nova_par.tick done
+      }
+    }
+  )
+
+  - setup (fw,fh:Int) quality q:Int <-
+  (
+    w := fw
+    h := fh
+    quality := q
+    (w * h > pcap).if {
+      // ponytail: 3 Int32 planes of the whole region (~290 MB at 24 Mpx); tile if memory matters.
+      pcap := w * h
+      // Shared with the stripe processes (Nova_par), which decode into them.
+      pl0 := Nova_par.shared_int32 pcap
+      pl1 := Nova_par.shared_int32 pcap
+      pl2 := Nova_par.shared_int32 pcap
+    }
+    pow_t.at 0 put 1000
+    pow_t.at 1 put 1051
+    pow_t.at 2 put 1104
+    pow_t.at 3 put 1160
+    pow_t.at 4 put 1219
+    pow_t.at 5 put 1281
+    pow_t.at 6 put 1346
+    pow_t.at 7 put 1414
+    pow_t.at 8 put 1486
+    pow_t.at 9 put 1561
+    pow_t.at 10 put 1641
+    pow_t.at 11 put 1724
+    pow_t.at 12 put 1811
+    pow_t.at 13 put 1903
+    (Nova_codec.qtables_ready).if { } else { Nova_codec.make_qtables }
+    Nova_wavelet.setup pl0 size (w, h)
+    levels := Nova_wavelet.levels
+  )
+
+  - transform inv:Boolean <-
+  // One process per plane (the planes are shared memory).
+  ( + n:Int
+    0.to 2 do { p:Int
+      n := Nova_par.start
+      (n <= 0).if {
+        Nova_wavelet.setup (pa p) size (w, h)
+        (inv).if { Nova_wavelet.inverse } else { Nova_wavelet.forward }
+        (n = 0).if { Nova_par.finish }
+      }
+    }
+    Nova_par.wait_all
+  )
+
+  - stripe_samples:Int <- (w * (ybot - ytop) * 3) / 16
+  // Sizes the hash tables of one stripe: 1/16 of its samples keeps ~20 MB per process.
+
+  - encode buf:C_array Uint8 stride s:Int region (x0,y0,fw,fh:Int) quality q:Int <-
+  // Appends the coded region to Nova_codec.out and writes the reconstructed pixels into buf.
+  // Layout: [stripe count] then per stripe [u32 length][coder stream]. Stripes are coded in
+  // parallel (Nova_par), each into its slice of a shared buffer.
+  ( + ns,at,n,cap:Int
+    + lens:C_array Int32
+    + sb,out:C_array Uint8
+    setup (fw, fh) quality q
+    to_planes buf stride s region (x0, y0)
+    transform False
+    each_band_quant False
+    ns := stripes
+    stripe 0 of ns
+    // ponytail: 24 bytes per coefficient is far above any real stream (a coefficient costs < 8 bytes).
+    cap := w * (ybot - ytop) * 24 + 65536
+    lens := Nova_par.shared_int32 ns
+    sb := Nova_par.shared_uint8 (cap * ns)
+    Nova_par.progress "Encoding" of (ns << (2 * levels)) jobs ns
+    0.to (ns - 1) do { i:Int
+      n := Nova_par.start
+      (n <= 0).if {
+        stripe i of ns
+        at := Nova_codec.out_count
+        Nova_model.start_encoder stripe_samples level 3
+        Nova_model.set_match 0
+        code_all
+        Nova_model.flush_encoder
+        out := Nova_codec.out
+        0.to (Nova_codec.out_count - at - 1) do { j:Int
+          sb.at (i * cap + j) put (out.at (at + j))
+        }
+        lens.at i put ((Nova_codec.out_count - at).to_raw_int32)
+        Nova_codec.truncate_out at
+        (n = 0).if { Nova_par.finish }
+      }
+    }
+    Nova_par.wait_all
+    Nova_codec.put_byte ns
+    0.to (ns - 1) do { i:Int
+      n := (lens.at i).to_int
+      Nova_codec.put_u32 n
+      0.to (n - 1) do { j:Int
+        Nova_codec.put_byte ((sb.at (i * cap + j)).to_int)
+      }
+    }
+    Nova_par.free_u8 sb size (cap * ns)
+    Nova_par.free lens size (ns * 4)
+    each_band_quant True
+    transform True
+    from_planes buf stride s region (x0, y0)
+  )
+
+  - decode data:C_array Uint8 from pos:Int size len:Int into buf:C_array Uint8 stride s:Int region (x0,y0,fw,fh:Int) quality q:Int :Boolean <-
+  ( + ns,p,n:Int
+    + ok:Boolean
+    + offs:C_array Int
+    + st:C_array Int32
+    setup (fw, fh) quality q
+    ok := len >= 1
+    (ok).if {
+      ns := (data.at pos).to_int
+      ok := (ns >= 1) && {ns <= 16}
+    }
+    // Stream offsets first (offs: start, length per stripe), then the stripes in parallel.
+    offs := C_array Int.create 34
+    p := pos + 1
+    0.to (ns - 1) do { i:Int
+      ok := ok && {p + 4 <= pos + len}
+      (ok).if {
+        n := (((data.at p).to_int) << 24) | (((data.at (p + 1)).to_int) << 16) | (((data.at (p + 2)).to_int) << 8) | ((data.at (p + 3)).to_int)
+        ok := p + 4 + n <= pos + len
+        offs.at (2 * i) put (p + 4)
+        offs.at (2 * i + 1) put n
+        p := p + 4 + n
+      }
+    }
+    (ok).if {
+      st := Nova_par.shared_int32 ns
+      Nova_par.progress "Decoding" of (ns << (2 * levels)) jobs ns
+      0.to (ns - 1) do { i:Int
+        n := Nova_par.start
+        (n <= 0).if {
+          stripe i of ns
+          Nova_model.start_decoder data from (offs.at (2 * i)) size (offs.at (2 * i + 1)) samples stripe_samples level 3
+          Nova_model.set_match 0
+          code_all
+          (Nova_model.overrun).if { } else { st.at i put 1 }
+          (n = 0).if { Nova_par.finish }
+        }
+      }
+      Nova_par.wait_all
+      0.to (ns - 1) do { i:Int
+        ok := ok && {(st.at i).to_int = 1}
+      }
+      Nova_par.free st size (ns * 4)
+    }
+    each_band_quant True
+    transform True
+    from_planes buf stride s region (x0, y0)
+    ok
+  )

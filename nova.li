@@ -1,0 +1,1478 @@
+Header
+  + name := Nova
+  // NOVA v2 image format: magic + chunks [type][length][data][crc32] (PNG-like order of fields
+  // differs: type first). Frames: Nova_codec (levels 0-4, lossless or near-lossless) or Nova_lossy
+  // (level 5, wavelet), or Nova_raw (level 6, camera sensor frame, RAWH chunk). Alpha, animation by delta
+  // rectangles, unknown chunks skipped. MDAT = one source metadata block (EXIF, XMP, ICC...) kept raw,
+  // LIVE = optional Live Photo video. PREV = thumbnail (512 px long side) of the first frame, before
+  // the frames, so a viewer can show it at once (nova preview).
+  // Run: lisaac nova.li -boost && ./nova encode in.png out.nova   (without -boost: debug build, ~2x slower)
+
+Public
+
+  - usage <-
+  (
+    "Usage:\n".print
+    // ponytail: lines <= 72 columns, so a small terminal does not wrap them
+    "  nova encode <src...> <dst.nova> [options]\n".print
+    "    sources: PNG, JPEG, HEIC/HEIF/AVIF (libheif), camera RAW (LibRaw)\n".print
+    "    several sources = animation\n".print
+    "    -m adaptive|lossless|lossy  default adaptive: lossless for\n".print
+    "                                graphics, wavelet q 90 for photos\n".print
+    "    -l 0-5    codec level (default: the encoder tries them);\n".print
+    "              5 = lossy wavelet (photos)\n".print
+    "    -q 0-100  wavelet quality (default 90: ~45 dB, visually lossless)\n".print
+    "    -e eps    lossy max error per sample (default 2)\n".print
+    "    -d ms     frame delay (animation)\n".print
+    "    -live f.mov  adds the Live Photo video\n".print
+    "    metadata (EXIF/GPS, XMP, ICC, text) of the first source are kept\n".print
+    "    RAW: sensor frame kept losslessly (level 6)\n".print
+    "\n".print
+    "  nova decode <src.nova> <dst> [options]\n".print
+    "    dst: .png .tif .jpg .webp .avif .heic (format from the extension)\n".print
+    "    -q 1-100  quality (default: JPEG/WebP 90, AVIF 85, HEIC 60: ~44 dB)\n".print
+    "    -m lossy|lossless  WebP/AVIF/HEIC (default: lossless if the\n".print
+    "                       .nova is)\n".print
+    "    animation: dst_000.png, dst_001.png...\n".print
+    "\n".print
+    "  nova decode <raw.nova> <dst> [-look canon|darktable]\n".print
+    "    .dng: DNG; .png .tif .jpg .webp .avif .heic: developed with LibRaw\n".print
+    "    (TIFF 16 bits, others 8 bits); .pgm: bare sensor frame\n".print
+    "    -look  camera's look (canon, default) or darktable's\n".print
+    "\n".print
+    "  nova preview <src.nova> <dst.png>  thumbnail only (512 px), instant\n".print
+    "  nova info    <src.nova>\n".print
+    "  nova bench   <src.png|jpg...>\n".print
+  )
+
+  - fail msg:String <-
+  (
+    ("nova: " + msg + "\n").print
+    System.exit 1
+  )
+
+  // Chunk types, as big-endian ASCII.
+  - t_ihdr:Int := 49484452h
+
+  - t_anim:Int := 414E494Dh
+
+  - t_fdat:Int := 46444154h
+
+  - t_fdlt:Int := 46444C54h
+
+  - t_iend:Int := 49454E44h
+
+  - t_idat:Int := 49444154h
+
+  - t_mdat:Int := 4D444154h
+
+  - t_live:Int := 4C495645h
+
+  - t_prev:Int := 50524556h
+
+  - t_rawh:Int := 52415748h
+
+  - t_app1:Int := 41505031h
+
+  - t_app2:Int := 41505032h
+
+  //
+  // CRC-32 (zlib), over Nova_codec.out or an input buffer.
+  //
+
+  - crc_table:C_array Int := C_array Int.create 256
+
+  - make_crc_table <-
+  ( + c:Int
+    0.to 255 do { n:Int
+      c := n
+      1.to 8 do { k:Int
+        ((c & 1) = 1).if { c := (c >> 1) ^ 0EDB88320h } else { c := c >> 1 }
+      }
+      crc_table.at n put c
+    }
+  )
+
+  - crc c:Int of buf:C_array Uint8 from lo:Int until hi:Int :Int <-
+  // Running CRC: start with FFFFFFFFh, xor the final value with FFFFFFFFh.
+  ( + r:Int
+    r := c
+    lo.to (hi - 1) do { i:Int
+      r := (crc_table.at ((r ^ (buf.at i).to_int) & 255)) ^ (r >> 8)
+    }
+    r
+  )
+
+  //
+  // Chunk writing into Nova_codec.out
+  //
+
+  - chunk_start:Int
+
+  - begin_chunk t:Int <-
+  (
+    Nova_codec.put_u32 t
+    Nova_codec.put_u32 0
+    chunk_start := Nova_codec.out_count
+  )
+
+  - end_chunk <-
+  ( + c:Int
+    Nova_codec.set_u32 (Nova_codec.out_count - chunk_start) at (chunk_start - 4)
+    c := crc (0FFFFFFFFh) of (Nova_codec.out) from (chunk_start - 8) until (chunk_start - 4)
+    c := crc c of (Nova_codec.out) from chunk_start until (Nova_codec.out_count)
+    Nova_codec.put_u32 (c ^ 0FFFFFFFFh)
+  )
+
+  - begin_png_chunk t:Int <-
+  (
+    Nova_codec.put_u32 0
+    Nova_codec.put_u32 t
+    chunk_start := Nova_codec.out_count
+  )
+
+  - end_png_chunk <-
+  ( + c:Int
+    Nova_codec.set_u32 (Nova_codec.out_count - chunk_start) at (chunk_start - 8)
+    c := crc (0FFFFFFFFh) of (Nova_codec.out) from (chunk_start - 4) until (Nova_codec.out_count)
+    Nova_codec.put_u32 (c ^ 0FFFFFFFFh)
+  )
+
+  - put_magic <-
+  (
+    Nova_codec.put_byte 137
+    Nova_codec.put_byte 78
+    Nova_codec.put_byte 79
+    Nova_codec.put_byte 86
+    Nova_codec.put_byte 65
+    Nova_codec.put_byte 13
+    Nova_codec.put_byte 10
+    Nova_codec.put_byte 26
+    Nova_codec.put_byte 10
+  )
+
+  - save_buffer buf:C_array Uint8 size n:Int to name:String <-
+  ( + f:Pointer
+    f := File_utils.open_write name
+    (f = NULL).if { fail ("cannot write " + name) }
+    File_utils.write f buffer buf size n
+    File_utils.close f
+  )
+
+  - save_out name:String <-
+  ( + f:Pointer
+    f := File_utils.open_write name
+    (f = NULL).if { fail ("cannot write " + name) }
+    File_utils.write f buffer (Nova_codec.out) size (Nova_codec.out_count)
+    File_utils.close f
+  )
+
+  //
+  // Metadata: source file -> MDAT chunks, MDAT -> PNG chunks
+  //
+
+  - put_bytes (lo,hi:Int) <-
+  // data[lo,hi) -> Nova_codec.out
+  (
+    lo.to (hi - 1) do { i:Int
+      Nova_codec.put_byte (u8 i)
+    }
+  )
+
+  - put_str s:String <-
+  (
+    0.to (s.upper) do { i:Int
+      Nova_codec.put_byte ((s.at i).to_uint8.to_int)
+    }
+  )
+
+  - starts (p,l:Int) with s:String :Boolean <-
+  // data[p..p+l) begins with s followed by a zero byte.
+  ( + result:Boolean
+    result := l > s.count
+    0.to (s.upper) do { i:Int
+      (result && {(u8 (p + i)) != (s.at i).to_uint8.to_int}).if { result := False }
+    }
+    result && {(u8 (p + s.count)) = 0}
+  )
+
+  - put_source_meta name:String <-
+  // One MDAT [kind][raw payload] per PNG ancillary chunk (kind = its type: eXIf, iCCP, iTXt...)
+  // or JPEG APPn/COM segment (kind "APP0".."APPF", "COM "). HEIC: EXIF, XMP, ICC from libheif,
+  // as the JPEG segments (APP1, APP2).
+  ( + pos,len,t,m,n:Int
+    + b:C_array Uint8
+    (is_heif name).if {
+      (Nova_heic.load name pixels False).if {
+        b := Nova_heic.meta
+        n := Nova_heic.meta_size
+        pos := 0
+        {pos + 8 <= n}.while_do {
+          len := (((b.at (pos + 4)).to_int) << 24) | (((b.at (pos + 5)).to_int) << 16) | (((b.at (pos + 6)).to_int) << 8) | (b.at (pos + 7)).to_int
+          begin_chunk t_mdat
+          0.to 3 do { j:Int
+            Nova_codec.put_byte ((b.at (pos + j)).to_int)
+          }
+          (pos + 8).to (pos + 8 + len - 1) do { j:Int
+            Nova_codec.put_byte ((b.at j).to_int)
+          }
+          end_chunk
+          pos := pos + 8 + len
+        }
+      }
+    }.elseif {(data_size > 8) && {(u32 0) = 89504E47h}} then {
+      pos := 8
+      {pos + 12 <= data_size}.while_do {
+        len := u32 pos
+        t := u32 (pos + 4)
+        ((len < 0) || {len > data_size - pos - 12}).if {
+          pos := data_size
+        } else {
+          // Ancillary (lowercase first letter), except pixel structure: tRNS, acTL, fcTL, fdAT.
+          (((u8 (pos + 4)) >= 97) && {t != 74524E53h} && {t != 6163544Ch} && {t != 6663544Ch} && {t != 66644154h}).if {
+            put_meta t from (pos + 8) until (pos + 8 + len)
+          }
+          pos := pos + len + 12
+        }
+      }
+    }.elseif {(data_size > 4) && {(u16 0) = 0FFD8h}} then {
+      pos := 2
+      {pos + 4 <= data_size}.while_do {
+        m := u8 (pos + 1)
+        len := u16 (pos + 2)
+        // Metadata segments all come before the first scan (SOS, DAh).
+        (((u8 pos) != 255) || {m = 0DAh} || {len < 2} || {pos + 2 + len > data_size}).if {
+          pos := data_size
+        } else {
+          t := 0
+          ((m >= 0E0h) && {m <= 0EFh}).if {
+            t := 41505000h | ((m & 15) + 48 + (7 * ((m & 15) > 9).to_int))
+          }.elseif {m = 0FEh} then {
+            t := 434F4D20h
+          }
+          (t != 0).if { put_meta t from (pos + 4) until (pos + 2 + len) }
+          pos := pos + 2 + len
+        }
+      }
+    }
+  )
+
+  - put_meta kind:Int from lo:Int until hi:Int <-
+  (
+    begin_chunk t_mdat
+    Nova_codec.put_u32 kind
+    put_bytes (lo, hi)
+    end_chunk
+  )
+
+  - meta_pos:Array Int := Array Int.create_with_capacity 16
+
+  - meta_len:Array Int := Array Int.create_with_capacity 16
+
+  - put_png_meta <-
+  // MDAT blocks of the .nova being decoded -> PNG chunks: PNG kinds as they were, JPEG Exif -> eXIf,
+  // XMP -> iTXt, ICC (APP2 segments joined) -> iCCP, JFIF density -> pHYs. Other JPEG segments (MPF,
+  // maker APPn, COM) go to the private chunk nvMd [kind][raw], kept as is if the PNG is re-encoded.
+  ( + p,l,k,n,u,x,y:Int
+    + icc:C_array Uint8
+    0.to (meta_pos.upper) do { i:Int
+      p := meta_pos.at i + 4
+      l := meta_len.at i - 4
+      k := u32 (p - 4)
+      ((u8 (p - 4)) >= 97).if {
+        begin_png_chunk k
+        put_bytes (p, p + l)
+        end_png_chunk
+      }.elseif {(k & 0FFFFFF00h) = 434D5400h} then {
+        // CR3 CMT blocks: in the eXIf built from them (raw_exif), below.
+      }.elseif {(k = t_app1) && {starts (p, l) with "Exif"}} then {
+        begin_png_chunk 65584966h
+        put_bytes (p + 6, p + l)
+        end_png_chunk
+      }.elseif {(k = t_app1) && {starts (p, l) with "http://ns.adobe.com/xap/1.0/"}} then {
+        begin_png_chunk 69545874h
+        put_str "XML:com.adobe.xmp"
+        5.times { Nova_codec.put_byte 0 }    // keyword end, uncompressed, method, empty language, empty translation
+        put_bytes (p + 29, p + l)
+        end_png_chunk
+      }.elseif {(k = t_app2) && {starts (p, l) with "ICC_PROFILE"} && {l > 14}} then {
+        n := n + l - 14
+      }.elseif {(k = 41505030h) && {starts (p, l) with "JFIF"} && {l >= 12}} then {
+        // units 1: dots per inch, 2: per cm, 0: aspect ratio only
+        u := u8 (p + 7)
+        x := u16 (p + 8)
+        y := u16 (p + 10)
+        (u = 1).if {
+          x := (x * 10000 + 127) / 254
+          y := (y * 10000 + 127) / 254
+        }.elseif {u = 2} then {
+          x := x * 100
+          y := y * 100
+        }
+        ((x > 0) && {y > 0}).if {
+          begin_png_chunk 70485973h
+          Nova_codec.put_u32 x
+          Nova_codec.put_u32 y
+          Nova_codec.put_byte ((u != 0).to_int)
+          end_png_chunk
+        }
+      } else {
+        begin_png_chunk 6E764D64h
+        put_bytes (p - 4, p + l)
+        end_png_chunk
+      }
+    }
+    (n > 0).if {
+      icc := C_array Uint8.create n
+      n := 0
+      // ponytail: segments joined in file order (writers emit them in sequence order).
+      0.to (meta_pos.upper) do { i:Int
+        p := meta_pos.at i + 4
+        l := meta_len.at i - 4
+        (((u32 (p - 4)) = t_app2) && {starts (p, l) with "ICC_PROFILE"} && {l > 14}).if {
+          (p + 14).to (p + l - 1) do { j:Int
+            icc.at n put (data.at j)
+            n := n + 1
+          }
+        }
+      }
+      begin_png_chunk 69434350h
+      put_str "icc"
+      Nova_codec.put_byte 0
+      Nova_codec.put_byte 0
+      put_deflated icc size n
+      end_png_chunk
+    }
+    (raw_exif_n > 0).if {
+      begin_png_chunk 65584966h
+      0.to (raw_exif_n - 1) do { i:Int
+        Nova_codec.put_byte ((raw_exif.at i).to_int)
+      }
+      end_png_chunk
+    }
+  )
+
+  // Metadata of the .nova being decoded for other formats (TIFF...): EXIF TIFF stream and XMP
+  // packet in data, ICC profile joined in icc. Length 0: none.
+  - exif_pos:Int
+  - exif_len:Int
+  - xmp_pos:Int
+  - xmp_len:Int
+  - iccp:C_array Uint8
+  - iccp_n:Int
+
+  - collect_meta <-
+  // From JPEG segments (APP1 Exif / XMP, APP2 ICC) or PNG chunks (eXIf, iTXt XMP, iCCP).
+  // ponytail: compressed iTXt XMP is skipped (writers store it uncompressed).
+  ( + p,l,k,n,q:Int
+    + d:C_array Uint8
+    exif_len := 0
+    xmp_len := 0
+    iccp_n := 0
+    0.to (meta_pos.upper) do { i:Int
+      p := meta_pos.at i + 4
+      l := meta_len.at i - 4
+      k := u32 (p - 4)
+      ((k = t_app1) && {starts (p, l) with "Exif"} && {l > 14}).if {
+        exif_pos := p + 6
+        exif_len := l - 6
+      }.elseif {(k = 65584966h) && {l > 8}} then {
+        exif_pos := p
+        exif_len := l
+      }.elseif {(k = t_app1) && {starts (p, l) with "http://ns.adobe.com/xap/1.0/"}} then {
+        xmp_pos := p + 29
+        xmp_len := l - 29
+      }.elseif {(k = 69545874h) && {starts (p, l) with "XML:com.adobe.xmp"} && {l > 22} && {(u8 (p + 18)) = 0}} then {
+        // keyword, compression flag, method, language, translated keyword (both NUL-terminated)
+        q := p + 20
+        {(q < p + l) && {(u8 q) != 0}}.while_do { q := q + 1 }
+        q := q + 1
+        {(q < p + l) && {(u8 q) != 0}}.while_do { q := q + 1 }
+        q := q + 1
+        (q < p + l).if {
+          xmp_pos := q
+          xmp_len := p + l - q
+        }
+      }.elseif {(k = t_app2) && {starts (p, l) with "ICC_PROFILE"} && {l > 14}} then {
+        n := n + l - 14
+      }.elseif {k = 69434350h} then {
+        q := p
+        {(q < p + l) && {(u8 q) != 0}}.while_do { q := q + 1 }
+        ((q + 2 < p + l) && {Nova_zlib.inflate data from (q + 2) size (p + l - q - 2) max 16777216}).if {
+          iccp_n := Nova_zlib.size
+          iccp := C_array Uint8.create iccp_n
+          d := Nova_zlib.data
+          0.to (iccp_n - 1) do { j:Int iccp.at j put (d.at j) }
+        }
+      }
+    }
+    (n > 0).if {
+      iccp := C_array Uint8.create n
+      0.to (meta_pos.upper) do { i:Int
+        p := meta_pos.at i + 4
+        l := meta_len.at i - 4
+        (((u32 (p - 4)) = t_app2) && {starts (p, l) with "ICC_PROFILE"} && {l > 14}).if {
+          (p + 14).to (p + l - 1) do { j:Int
+            iccp.at iccp_n put (data.at j)
+            iccp_n := iccp_n + 1
+          }
+        }
+      }
+    }
+  )
+
+  - heif_ext name:String :Boolean <- (name.has_suffix ".avif") || {name.has_suffix ".heic"} || {name.has_suffix ".heif"}
+
+  - image_ext name:String :Boolean <-
+    (name.has_suffix ".png") || {name.has_suffix ".pam"} || {name.has_suffix ".tif"} || {name.has_suffix ".tiff"} || {name.has_suffix ".jpg"} || {name.has_suffix ".jpeg"} || {name.has_suffix ".webp"} || {heif_ext name}
+
+  - write_image buf:C_array Uint8 planes np:Int to name:String <-
+  // Output format from the extension: .tif/.tiff, .jpg/.jpeg (quality opt_q), .webp, .avif/.heic/.heif,
+  // .pam (RGBA, for the web viewer), else PNG.
+  ( + ok,ll,av:Boolean
+    + q:Int
+    ((name.has_suffix ".tif") || {name.has_suffix ".tiff"}).if {
+      collect_meta
+      Nova_tiff.write_image name pixels buf bits 8 planes np size (width, height) data data exif (exif_pos, exif_len) icc (iccp, iccp_n) xmp (xmp_pos, xmp_len)
+    }.elseif {(name.has_suffix ".jpg") || {name.has_suffix ".jpeg"}} then {
+      (raw_exif_n > 0).if {
+        // Developed RAW: EXIF built from the CMT blocks, no ICC (sRGB) or XMP.
+        ok := Nova_jpeg.encode buf size (width, height) quality opt_q exif (raw_exif, 0, raw_exif_n) icc (raw_exif, 0, 0) xmp (raw_exif, 0, 0)
+      } else {
+        collect_meta
+        ok := Nova_jpeg.encode buf size (width, height) quality opt_q exif (data, exif_pos, exif_len) icc (iccp, 0, iccp_n) xmp (data, xmp_pos, xmp_len)
+      }
+      (ok).if { } else { fail "JPEG encoding failed (out of memory)" }
+      save_buffer (Nova_jpeg.data) size (Nova_jpeg.size) to name
+    }.elseif {name.has_suffix ".webp"} then {
+      // Default: lossless when the .nova frame is (graphics), lossy for photos and developed RAWs.
+      ll := (opt_webp = 2) || {(opt_webp = 0) && {! Nova_codec.lossy_seen} && {raw_exif_n = 0}}
+      (raw_exif_n > 0).if {
+        ok := Nova_webp.encode buf size (width, height) planes np lossless ll quality opt_q exif (raw_exif, 0, raw_exif_n) icc (raw_exif, 0, 0) xmp (raw_exif, 0, 0)
+      } else {
+        collect_meta
+        ok := Nova_webp.encode buf size (width, height) planes np lossless ll quality opt_q exif (data, exif_pos, exif_len) icc (iccp, 0, iccp_n) xmp (data, xmp_pos, xmp_len)
+      }
+      (ok).if { } else { fail ("WebP: " + Nova_webp.message) }
+      save_buffer (Nova_webp.data) size (Nova_webp.size) to name
+    }.elseif {heif_ext name} then {
+      // Default quality: about the fidelity of JPEG q 90 (~44 dB on a 24 Mpx photo): AVIF 85, HEIC 60.
+      av := name.has_suffix ".avif"
+      q := opt_q
+      (opt_q_set).if { }.elseif {av} then { q := 85 } else { q := 60 }
+      ll := (opt_webp = 2) || {(opt_webp = 0) && {! Nova_codec.lossy_seen} && {raw_exif_n = 0}}
+      (raw_exif_n > 0).if {
+        ok := Nova_heic.export name pixels buf size (width, height) planes np avif av lossless ll quality q meta (raw_exif, 0, raw_exif_n, raw_exif, 0, raw_exif, 0, 0)
+      } else {
+        collect_meta
+        ok := Nova_heic.export name pixels buf size (width, height) planes np avif av lossless ll quality q meta (data, exif_pos, exif_len, iccp, iccp_n, data, xmp_pos, xmp_len)
+      }
+      (ok).if { } else { fail ("HEIF: " + Nova_heic.message) }
+    }.elseif {name.has_suffix ".pam"} then {
+      write_pam buf to name
+    } else {
+      write_png buf planes np to name
+    }
+  )
+
+  //
+  // Encoder
+  //
+
+  - frames:Array (C_array Uint8) := Array (C_array Uint8).create_with_capacity 16
+
+  - width:Int
+
+  - height:Int
+
+  - is_heif name:String :Boolean <-
+  // HEIF family (HEIC, AVIF): ISO BMFF, ftyp box first (Canon CR3 too: brand "crx ", a RAW).
+  (
+    load_file name
+    (data_size >= 12) && {(u32 4) = 66747970h} && {(u32 8) != 63727820h}
+  )
+
+  - is_raw name:String :Boolean <-
+  // Camera RAW: CR3 by its brand; any other file that is not PNG/JPEG/HEIF and that LibRaw opens.
+  ( + bmff,known:Boolean
+    load_file name
+    bmff := (data_size >= 12) && {(u32 4) = 66747970h}
+    known := bmff || {(data_size >= 8) && {(u32 0) = 89504E47h}} || {(data_size >= 2) && {(u16 0) = 0FFD8h}}
+    (bmff && {(u32 8) = 63727820h}) || {(! known) && {Nova_rawin.is_raw name}}
+  )
+
+  - encode_raw name:String <-
+  // Sensor frame as is (level 6, lossless), RAWH (CFA pattern, levels, colour), EXIF blocks as MDAT.
+  ( + b:C_array Uint8
+    + n,pos,len:Int
+    (Nova_rawin.load name).if { } else { fail ("cannot read RAW " + name + ": " + Nova_rawin.message) }
+    width := Nova_rawin.width
+    height := Nova_rawin.height
+    Nova_par.clear
+    ((short_name name) + ": " + (raw_camera (Nova_rawin.head)) + ", " + width.to_string + "x" + height.to_string + " sensor frame (" + (raw_u32 9 of (Nova_rawin.head)).to_string + "x" + (raw_u32 13 of (Nova_rawin.head)).to_string + " visible)\n").print
+    ((width > 65535) || {height > 65535}).if { fail "RAW frame too large" }
+    Nova_codec.reset_out
+    put_magic
+    begin_chunk t_ihdr
+    Nova_codec.put_u32 width
+    Nova_codec.put_u32 height
+    Nova_codec.put_byte 16         // bits per sample
+    Nova_codec.put_byte 1          // one plane: CFA samples
+    Nova_codec.put_byte 2          // format version
+    Nova_codec.put_byte 8          // flags: 8 = sensor frame, RAWH gives its layout
+    end_chunk
+    b := Nova_rawin.head
+    begin_chunk t_rawh
+    0.to (Nova_rawin.head_size - 1) do { j:Int
+      Nova_codec.put_byte ((b.at j).to_int)
+    }
+    end_chunk
+    Nova_raw.setup (width, height) black (raw_black b)
+    b := Nova_rawin.meta
+    n := Nova_rawin.meta_size
+    {pos + 8 <= n}.while_do {
+      len := (((b.at (pos + 4)).to_int) << 24) | (((b.at (pos + 5)).to_int) << 16) | (((b.at (pos + 6)).to_int) << 8) | (b.at (pos + 7)).to_int
+      begin_chunk t_mdat
+      0.to 3 do { j:Int
+        Nova_codec.put_byte ((b.at (pos + j)).to_int)
+      }
+      (pos + 8).to (pos + 8 + len - 1) do { j:Int
+        Nova_codec.put_byte ((b.at j).to_int)
+      }
+      end_chunk
+      pos := pos + 8 + len
+    }
+    raw_preview name
+    0.to (width * height - 1) do { i:Int
+      Nova_raw.put (Nova_rawin.sample i) at i
+    }
+    begin_chunk t_fdat
+    Nova_raw.encode
+    end_chunk
+    mode_name := "lossless, level 6 RAW"
+  )
+
+  - raw_preview name:String <-
+  // PREV of a RAW: LibRaw half-size development (8 bits), then the usual 512 px thumbnail.
+  ( + w,h:Int
+    Nova_par.status "Building the 512 px preview (LibRaw, half size)..."
+    (Nova_rawin.develop name bits 8 half True).if {
+      w := width
+      h := height
+      width := Nova_rawin.image_width
+      height := Nova_rawin.image_height
+      frames.clear
+      frames.add_last (Nova_rawin.image)
+      put_preview 3
+      frames.clear
+      width := w
+      height := h
+    }
+  )
+
+  - raw_u32 p:Int of b:C_array Uint8 :Int <-
+  ( + v:Int
+    0.to 3 do { i:Int
+      v := (v << 8) | (b.at (p + i)).to_int
+    }
+    v
+  )
+
+  - raw_camera b:C_array Uint8 :String <-
+  // "Canon EOS 250D": make and model strings at the end of RAWH.
+  ( + o,n:Int
+    + s:String_buffer
+    s := String_buffer.create 64
+    o := 41 + 4 * (raw_u32 37 of b) + 148
+    n := (b.at o).to_int
+    (o + 1).to (o + n) do { i:Int s.add_last ((b.at i).to_char) }
+    s.add_last ' '
+    o := o + 1 + n
+    n := (b.at o).to_int
+    (o + 1).to (o + n) do { i:Int s.add_last ((b.at i).to_char) }
+    s.to_string
+  )
+
+  - raw_black b:C_array Uint8 :Int <-
+  // RAWH black + cblack[0] (bytes 29 and 41): where the brightness contexts of level 6 start.
+  ( + v,c:Int
+    0.to 3 do { i:Int
+      v := (v << 8) | (b.at (29 + i)).to_int
+      c := (c << 8) | (b.at (41 + i)).to_int
+    }
+    v + c
+  )
+
+  // EXIF TIFF stream of a developed RAW (PNG eXIf, TIFF tags).
+  - raw_exif:C_array Uint8
+  - raw_exif_n:Int
+
+  - develop_raw name:String rawh rh:Int <-
+  // Decoded sensor frame -> DNG in memory -> LibRaw development -> PNG (8 bits) or TIFF (16 bits).
+  ( + look:String
+    + bits,n:Int
+    + tif:Boolean
+    + o:C_array Uint8
+    Nova_tiff.exif_of data metas (meta_pos, meta_len)
+    n := Nova_codec.out_count
+    o := Nova_codec.out
+    raw_exif := C_array Uint8.create n
+    0.to (n - 1) do { i:Int raw_exif.at i put (o.at i) }
+    raw_exif_n := n
+    Nova_tiff.write_dng NULL data data rawh rh metas (meta_pos, meta_len) size (width, height)
+    tif := (name.has_suffix ".tif") || {name.has_suffix ".tiff"}
+    bits := 8
+    (tif).if { bits := 16 }
+    (opt_look = 0).if { look := "camera look" } else { look := "darktable look" }
+    Nova_par.status ("Developing the RAW with LibRaw (" + bits.to_string + " bits, camera white balance, " + look + ")...")
+    (Nova_rawin.develop_buffer (Nova_codec.out) size (Nova_codec.out_count) rawh (data, rh) bits bits look opt_look).if { } else { fail ("RAW development failed: " + Nova_rawin.message) }
+    width := Nova_rawin.image_width
+    height := Nova_rawin.image_height
+    Nova_par.status ("Writing " + (short_name name) + " (" + width.to_string + "x" + height.to_string + ")...")
+    (tif).if {
+      Nova_tiff.write_image name pixels (Nova_rawin.image) bits 16 planes 3 size (width, height) data raw_exif exif (0, n) icc (raw_exif, 0) xmp (0, 0)
+    } else {
+      write_image (Nova_rawin.image) planes 3 to name
+    }
+  )
+
+  - write_pam buf:C_array Uint8 to name:String <-
+  // RGBA pixels as a PAM (netpbm P7) file: a text header, then buf as it is. For the web viewer,
+  // which shows a developed RAW without compressing it to PNG first.
+  ( + f:Pointer
+    Nova_codec.reset_out
+    put_str ("P7\nWIDTH " + width.to_string + "\nHEIGHT " + height.to_string + "\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n")
+    f := File_utils.open_write name
+    (f = NULL).if { fail ("cannot write " + name) }
+    File_utils.write f buffer (Nova_codec.out) size (Nova_codec.out_count)
+    File_utils.write f buffer buf size (width * height * 4)
+    File_utils.close f
+  )
+
+  - write_pgm name:String <-
+  // Sensor frame of Nova_raw as a 16-bit PGM (like dcraw -D).
+  (
+    Nova_codec.reset_out
+    put_str ("P5\n" + width.to_string + " " + height.to_string + "\n65535\n")
+    0.to (width * height - 1) do { i:Int
+      Nova_codec.put_u16 (Nova_raw.value i)
+    }
+    save_out name
+  )
+
+  - load_sources (first,last:Int) <-
+  // Loads Command_args first..last as RGBA frames of the same size (PNG, JPEG..., HEIC via libheif).
+  ( + name:String
+    + iw,ih:Int
+    + f,src:C_array Uint8
+    frames.clear
+    first.to last do { i:Int
+      name := Command_args.at i
+      Nova_par.status ("Reading " + (short_name name) + "...")
+      // Image.init crashes on a missing file.
+      (File_utils.file_exists name).if { } else { fail ("cannot read " + name) }
+      (is_heif name).if {
+        (Nova_heic.load name pixels True).if { } else { fail ("cannot read HEIC " + name + ": " + Nova_heic.message) }
+        iw := Nova_heic.width
+        ih := Nova_heic.height
+        src := Nova_heic.rgba
+        f := C_array Uint8.create (iw * ih * 4)
+        0.to (iw * ih * 4 - 1) do { j:Int
+          f.at j put (src.at j)
+        }
+        frames.add_last f
+      }.elseif {Image.init name} then {
+        frames.add_last (Image.load (Image.rgb_alpha))
+        iw := Image.img_x
+        ih := Image.img_y
+      } else {
+        fail ("cannot read image " + name)
+      }
+      (i = first).if {
+        width := iw
+        height := ih
+      }.elseif {(iw != width) || {ih != height}} then {
+        fail ("all frames must have the same size: " + name)
+      }
+    }
+  )
+
+  - has_alpha:Boolean <-
+  ( + result:Boolean
+    0.to (frames.upper) do { f:Int
+      0.to (width * height - 1) do { i:Int
+        ((frames.at f).at (i * 4 + 3) != 255).if { result := True }
+      }
+    }
+    result
+  )
+
+  - bx0:Int
+
+  - by0:Int
+
+  - bx1:Int
+
+  - by1:Int
+
+  - diff_box (a,b:C_array Uint8) <-
+  // Bounding box [bx0,bx1) x [by0,by1) of changed pixels; empty when bx1 = 0.
+  ( + i:Int
+    bx0 := width
+    by0 := height
+    bx1 := 0
+    by1 := 0
+    0.to (height - 1) do { y:Int
+      0.to (width - 1) do { x:Int
+        i := (y * width + x) * 4
+        (((a.at i) != (b.at i)) || {(a.at (i + 1)) != (b.at (i + 1))} || {(a.at (i + 2)) != (b.at (i + 2))} || {(a.at (i + 3)) != (b.at (i + 3))}).if {
+          (x < bx0).if { bx0 := x }
+          (y < by0).if { by0 := y }
+          (x + 1 > bx1).if { bx1 := x + 1 }
+          (y + 1 > by1).if { by1 := y + 1 }
+        }
+      }
+    }
+  )
+
+  - repeat_percent:Int <-
+  // Share of pixels equal to their left neighbour in the first frame: high for graphics.
+  ( + f:C_array Uint8
+    + i,n:Int
+    f := frames.first
+    0.to (height - 1) do { y:Int
+      1.to (width - 1) do { x:Int
+        i := (y * width + x) * 4
+        (((f.at i) = (f.at (i - 4))) && {(f.at (i + 1)) = (f.at (i - 3))} && {(f.at (i + 2)) = (f.at (i - 2))}).if { n := n + 1 }
+      }
+    }
+    (n * 100) / (width * height)
+  )
+
+  - pick_level np:Int eps ep:Int :Int <-
+  // Tries levels 1..3 (4 from 16 Mpx) on the central 512x512 of the first frame, and level 0
+  // when the image fits a palette. Leaving the fast level 1 must save 3 %; above it, the smallest wins.
+  ( + tw,th,best,bsize,sz,top:Int
+    top := 3
+    // Level 4 (slowest) only for large photos, where each % is megabytes.
+    (width * height >= 16000000).if { top := 4 }
+    tw := width
+    th := height
+    (tw > 512).if { tw := 512 }
+    (th > 512).if { th := 512 }
+    best := 1
+    bsize := Nova_codec.trial (frames.first) stride width region ((width - tw) / 2, (height - th) / 2, tw, th) planes np level 1 eps ep
+    2.to top do { lv:Int
+      sz := Nova_codec.trial (frames.first) stride width region ((width - tw) / 2, (height - th) / 2, tw, th) planes np level lv eps ep
+      (((best = 1) && {sz * 100 < bsize * 97}) || {(best > 1) && {sz < bsize}}).if {
+        best := lv
+        bsize := sz
+      }
+    }
+    // Palette: compared on the whole first frame (it only applies when all of it fits).
+    (Nova_codec.palette_fits (frames.first) stride width region (0, 0, width, height)).if {
+      sz := Nova_codec.trial (frames.first) stride width region (0, 0, width, height) planes np level 0 eps 0
+      (sz * tw * th <= bsize * width * height).if { best := 0 }
+    }
+    best
+  )
+
+  - central np:Int level lv:Int eps ep:Int :Int <-
+  // Trial size on the central 512x512 of the first frame.
+  ( + tw,th:Int
+    tw := width
+    th := height
+    (tw > 512).if { tw := 512 }
+    (th > 512).if { th := 512 }
+    Nova_codec.trial (frames.first) stride width region ((width - tw) / 2, (height - th) / 2, tw, th) planes np level lv eps ep
+  )
+
+  - mode_name:String
+
+  - encode_frames d:Int mode md:Int level lv:Int eps ep:Int <-
+  // Frames -> Nova_codec.out. md: 0 adaptive, 1 lossless, 2 lossy. lv: 0 pick, -1 level 0, else the level.
+  // Frames are coded from `work`, which holds the reconstructed image (lossy changes pixels):
+  // a delta is coded on top of the previous reconstructed frame, as the decoder will see it.
+  ( + np,e,lvl:Int
+    + animated,photo:Boolean
+    + work,next:C_array Uint8
+    np := 3
+    (has_alpha).if { np := 4 }
+    animated := frames.count > 1
+    // Measured: photos 0-45 % (smooth iPhone shots of screens up to 45 %), text/UI/screenshots 78-96 %.
+    Nova_par.status "Analysing the image (photo or graphics, best level)..."
+    photo := repeat_percent < 65
+    e := 0
+    (md = 2).if { e := ep }
+    lvl := lv
+    // Photos without a forced level: wavelet (level 5, alpha kept exact) in adaptive and lossy
+    // modes. Graphics: lossless (adaptive) or near-lossless (lossy).
+    ((md != 1) && {lvl = 0} && {photo}).if { lvl := 5 }
+    // A level 1-4 forced on a photo in adaptive mode: near-lossless (eps 1).
+    ((md = 0) && {photo} && {lvl >= 1} && {lvl <= 4}).if { e := 1 }
+    // Level 5 carries a quality instead of eps.
+    (lvl = 5).if {
+      (md = 1).if { fail "level 5 is lossy only (-m lossy or adaptive)" }
+      e := opt_q
+      // Adaptive: smooth synthetic images pass the photo test but code smaller losslessly
+      // (best lossless level, as pick_level would choose it). Lossy must save >= 10 % to be worth it.
+      ((md = 0) && {lv = 0} && {(central np level (pick_level np eps 0) eps 0) * 9 <= (central np level 5 eps e) * 10}).if {
+        lvl := 0
+        e := 0
+      }
+    }
+    (lvl = 0).if {
+      lvl := pick_level np eps e
+      // Adaptive near-lossless that saves nothing (flat images, alpha-heavy): stay lossless.
+      ((md = 0) && {e > 0} && {lv = 0} && {(central np level lvl eps 0) <= (central np level lvl eps e)}).if { e := 0 }
+    }
+    (lvl = -1).if {
+      lvl := 0
+      (Nova_codec.palette_fits (frames.first) stride width region (0, 0, width, height)).if { } else { fail "level 0 needs an image of 256 colours or less" }
+    }
+    (e = 0).if { mode_name := "lossless" }.elseif {lvl = 5} then { mode_name := "lossy q " + e.to_string } else { mode_name := "lossy eps " + e.to_string }
+    mode_name := mode_name + ", level " + lvl.to_string
+    Nova_codec.reset_out
+    put_magic
+    begin_chunk t_ihdr
+    Nova_codec.put_u32 width
+    Nova_codec.put_u32 height
+    Nova_codec.put_byte 8          // bits per sample
+    Nova_codec.put_byte np         // planes: 3 RGB, 4 RGBA
+    Nova_codec.put_byte 2          // format version
+    (animated).if { Nova_codec.put_byte 4 } else { Nova_codec.put_byte 0 }
+    end_chunk
+    (meta_src != NULL).if { put_source_meta meta_src }
+    (animated).if {
+      begin_chunk t_anim
+      Nova_codec.put_u32 (frames.count)
+      Nova_codec.put_u16 d
+      Nova_codec.put_u16 0         // loop count, 0 = forever
+      end_chunk
+    }
+    Nova_par.status "Building the 512 px preview..."
+    put_preview np
+    // A still image is coded in place (lossy overwrites it with the reconstruction, unused after).
+    (animated).if { work := copy_frame (frames.first) } else { work := frames.first }
+    begin_chunk t_fdat
+    Nova_codec.encode work stride width region (0, 0, width, height) planes np level (region_level lvl at (0, 0, width, height) of work) eps e
+    end_chunk
+    recon := work
+    recon_np := np
+    1.to (frames.upper) do { f:Int
+      diff_box (frames.at (f - 1), frames.at f)
+      begin_chunk t_fdlt
+      (bx1 = 0).if {
+        4.times { Nova_codec.put_u32 0 }
+      } else {
+        Nova_codec.put_u32 bx0
+        Nova_codec.put_u32 by0
+        Nova_codec.put_u32 (bx1 - bx0)
+        Nova_codec.put_u32 (by1 - by0)
+        next := frames.at f
+        by0.to (by1 - 1) do { y:Int
+          ((y * width + bx0) * 4).to ((y * width + bx1) * 4 - 1) do { i:Int
+            work.at i put (next.at i)
+          }
+        }
+        Nova_codec.encode work stride width region (bx0, by0, bx1 - bx0, by1 - by0) planes np level (region_level lvl at (bx0, by0, bx1 - bx0, by1 - by0) of work) eps e
+      }
+      end_chunk
+    }
+    (live_src != NULL).if {
+      load_file live_src
+      begin_chunk t_live
+      put_bytes (0, data_size)
+      end_chunk
+    }
+    // ponytail: no IEND (12 bytes). Each chunk has a length and CRC, and the decoder checks the
+    // frame count, so a truncated file is still detected; IEND is accepted when present.
+  )
+
+  - put_preview np:Int <-
+  // PREV chunk: [u16 w][u16 h][planes][coded region], only when the long side is > 1024.
+  // Box-filtered to 512 px, wavelet q 75 (alpha exact).
+  ( + tw,th,m,sx0,sx1,sy0,sy1,n:Int
+    + t:C_array Uint8
+    + sum:C_array Int
+    m := width.max height
+    (m > 1024).if {
+      tw := ((width * 512) / m).max 1
+      th := ((height * 512) / m).max 1
+      t := C_array Uint8.create (tw * th * 4)
+      sum := C_array Int.create 4
+      0.to (th - 1) do { y:Int
+        sy0 := (y * height) / th
+        sy1 := ((y + 1) * height) / th
+        0.to (tw - 1) do { x:Int
+          sx0 := (x * width) / tw
+          sx1 := ((x + 1) * width) / tw
+          0.to 3 do { c:Int sum.at c put 0 }
+          sy0.to (sy1 - 1) do { yy:Int
+            sx0.to (sx1 - 1) do { xx:Int
+              0.to 3 do { c:Int
+                sum.at c put ((sum.at c) + ((frames.first).at ((yy * width + xx) * 4 + c)).to_int)
+              }
+            }
+          }
+          n := (sy1 - sy0) * (sx1 - sx0)
+          0.to 3 do { c:Int
+            t.at ((y * tw + x) * 4 + c) put ((((sum.at c) + n / 2) / n).to_uint8)
+          }
+        }
+      }
+      begin_chunk t_prev
+      Nova_codec.put_u16 tw
+      Nova_codec.put_u16 th
+      Nova_codec.put_byte np
+      Nova_codec.encode t stride tw region (0, 0, tw, th) planes np level 5 eps 75
+      end_chunk
+    }
+  )
+
+  - region_level lv:Int at (x0,y0,rw,rh:Int) of buf:C_array Uint8 :Int <-
+  // Level 0 needs the region to fit in a palette (a later frame can bring new colours).
+  ( + result:Int
+    result := lv
+    ((lv = 0) && {! (Nova_codec.palette_fits buf stride width region (x0, y0, rw, rh))}).if {
+      result := 2
+    }
+    result
+  )
+
+  - copy_frame src:C_array Uint8 :C_array Uint8 <-
+  ( + result:C_array Uint8
+    result := C_array Uint8.create (width * height * 4)
+    0.to (width * height * 4 - 1) do { i:Int
+      result.at i put (src.at i)
+    }
+    result
+  )
+
+  //
+  // PNG writer (uncompressed deflate): output of `decode`.
+  //
+
+  - put_zlib raw:C_array Uint8 size len:Int <-
+  // zlib stream of stored deflate blocks.
+  ( + j,n,b,s1,s2:Int
+    Nova_codec.put_byte 78h
+    Nova_codec.put_byte 01h
+    s1 := 1
+    s2 := 0
+    j := 0
+    {j < len}.while_do {
+      (j % 65535 = 0).if {
+        n := len - j
+        (n > 65535).if { n := 65535 }
+        (j + n = len).if { Nova_codec.put_byte 1 } else { Nova_codec.put_byte 0 }
+        Nova_codec.put_byte n
+        Nova_codec.put_byte (n >> 8)
+        Nova_codec.put_byte (n ^ 0FFFFh)
+        Nova_codec.put_byte ((n ^ 0FFFFh) >> 8)
+      }
+      b := (raw.at j).to_int
+      Nova_codec.put_byte b
+      s1 := (s1 + b) % 65521
+      s2 := (s2 + s1) % 65521
+      j := j + 1
+    }
+    (len = 0).if {
+      // empty final stored block
+      Nova_codec.put_byte 1
+      Nova_codec.put_u16 0000FFh
+      Nova_codec.put_u16 0FF00h
+    }
+    Nova_codec.put_u32 ((s2 << 16) | s1)
+  )
+
+  - raw_black_at p:Int :Int <- (u32 (p + 29)) + (u32 (p + 41))
+
+  - put_zlib_output <-
+  ( + d:C_array Uint8
+    d := Nova_zlib.data
+    0.to (Nova_zlib.size - 1) do { i:Int
+      Nova_codec.put_byte ((d.at i).to_int)
+    }
+  )
+
+  - put_deflated raw:C_array Uint8 size len:Int <-
+  // zlib stream of raw: deflated with zlib when present, else stored blocks.
+  (
+    (Nova_zlib.deflate raw size len).if { put_zlib_output } else { put_zlib raw size len }
+  )
+
+  - write_png buf:C_array Uint8 planes np:Int to name:String <-
+  ( + row,len,n:Int
+    + raw:C_array Uint8
+    Nova_codec.reset_out
+    Nova_codec.put_u32 89504E47h
+    Nova_codec.put_u32 0D0A1A0Ah
+    begin_png_chunk t_ihdr
+    Nova_codec.put_u32 width
+    Nova_codec.put_u32 height
+    Nova_codec.put_byte 8
+    (np = 4).if { Nova_codec.put_byte 6 } else { Nova_codec.put_byte 2 }
+    Nova_codec.put_byte 0
+    Nova_codec.put_byte 0
+    Nova_codec.put_byte 0
+    end_png_chunk
+    put_png_meta
+    begin_png_chunk t_idat
+    (Nova_zlib.png buf size (width, height) planes np).if {
+      put_zlib_output
+    } else {
+      // No zlib: stored blocks, big files that any viewer opens.
+      row := 1 + width * np
+      len := row * height
+      raw := C_array Uint8.create len
+      0.to (len - 1) do { j:Int
+        n := j % row
+        (n = 0).if {
+          raw.at j put 0
+        } else {
+          raw.at j put (buf.at (((j / row) * width + (n - 1) / np) * 4 + (n - 1) % np))
+        }
+      }
+      put_zlib raw size len
+    }
+    end_png_chunk
+    begin_png_chunk t_iend
+    end_png_chunk
+    save_out name
+  )
+
+  //
+  // Decoder / info
+  //
+
+  - data:C_array Uint8
+
+  - data_size:Int
+
+  - load_file name:String <-
+  ( + f:Pointer
+    f := File_utils.open_read name
+    (f = NULL).if { fail ("cannot read " + name) }
+    data_size := File_utils.size f
+    data := C_array Uint8.create (data_size + 1)
+    File_utils.read_raw f in data size data_size
+    File_utils.close f
+  )
+
+  - u8 pos:Int :Int <- (data.at pos).to_int
+
+  - u16 pos:Int :Int <- ((u8 pos) << 8) | (u8 (pos + 1))
+
+  - u32 pos:Int :Int <- ((u16 pos) << 16) | (u16 (pos + 2))
+
+  - frame_name (base:String, idx:Int, animated:Boolean) :String <-
+  ( + result,ext:String
+    result := base
+    (animated).if {
+      // "out.png" -> out_000.png (same for .tif, .tiff; other names get .png)
+      ext := ".png"
+      (base.has_suffix ".tif").if { ext := ".tif" }
+      (base.has_suffix ".tiff").if { ext := ".tiff" }
+      (base.has_suffix ".jpg").if { ext := ".jpg" }
+      (base.has_suffix ".jpeg").if { ext := ".jpeg" }
+      (base.has_suffix ".webp").if { ext := ".webp" }
+      (base.has_suffix ".avif").if { ext := ".avif" }
+      (base.has_suffix ".heic").if { ext := ".heic" }
+      (base.has_suffix ".heif").if { ext := ".heif" }
+      (base.has_suffix ext).if { result := base.substring 0 to (base.upper - ext.count) }
+      result := result + "_"
+      (idx < 100).if { result := result + "0" }
+      (idx < 10).if { result := result + "0" }
+      result := result + idx.to_string + ext
+    }
+    result
+  )
+
+  - read_nova name:String decode_to dst:String <-
+  // dst = NULL: print the chunk list (info). Else write each frame as PNG.
+  ( + pos,t,len,c,np,x0,y0,dw,dh,count,flags,nframes,live_pos,live_len,rawh:Int
+    + done,animated,raw:Boolean
+    + cur,next:C_array Uint8
+    + base:String
+    meta_pos.clear
+    meta_len.clear
+    (dst != NULL).if { Nova_par.status ("Reading " + (short_name name) + "...") }
+    load_file name
+    (data_size < 9).if { fail "not a NOVA file" }
+    (((u32 0) != 894E4F56h) || {(u32 4) != 410D0A1Ah} || {(u8 8) != 0Ah}).if { fail "not a NOVA file" }
+    pos := 9
+    {(! done) && {pos < data_size}}.while_do {
+      (pos + 12 > data_size).if { fail "truncated file" }
+      t := u32 pos
+      len := u32 (pos + 4)
+      (len > data_size - pos - 12).if { fail "truncated file" }
+      c := crc (0FFFFFFFFh) of data from pos until (pos + 4)
+      c := crc c of data from (pos + 8) until (pos + 8 + len)
+      ((c ^ 0FFFFFFFFh) != (u32 (pos + 8 + len))).if { fail "CRC mismatch" }
+      (dst = NULL).if {
+        "  ".print
+        0.to 3 do { i:Int
+          (data.at (pos + i)).to_char.print
+        }
+        ("  " + len.to_string + " bytes\n").print
+      }
+      pos := pos + 8
+      (t = t_ihdr).if {
+        (len < 12).if { fail "bad IHDR" }
+        width := u32 pos
+        height := u32 (pos + 4)
+        np := u8 (pos + 9)
+        flags := u8 (pos + 11)
+        animated := (flags & 4) != 0
+        raw := (flags & 8) != 0
+        ((u8 (pos + 10)) != 2).if { fail "unsupported NOVA version (only v2)" }
+        (raw).if {
+          (((u8 (pos + 8)) != 16) || {np != 1} || {animated}).if { fail "bad RAW frame header" }
+        } else {
+          ((u8 (pos + 8)) != 8).if { fail "unsupported bit depth" }
+          ((np != 3) && {np != 4}).if { fail "bad plane count" }
+        }
+        ((width = 0) || {height = 0} || {width > 65535} || {height > 65535}).if { fail "bad size" }
+        (dst != NULL).if {
+          Nova_par.clear
+          ((short_name name) + ": " + width.to_string + "x" + height.to_string).print
+          (raw).if { " RAW sensor frame\n".print }.elseif {np = 4} then { " RGBA\n".print } else { " RGB\n".print }
+        }
+        (dst = NULL).if {
+          (raw).if {
+            ("  " + width.to_string + "x" + height.to_string + ", RAW sensor frame (CFA), 16 bits").print
+          } else {
+            ("  " + width.to_string + "x" + height.to_string + ", " + np.to_string + " planes, 8 bits").print
+          }
+          (animated).if { ", animated".print }
+          '\n'.print
+        }
+      }.elseif {(t = t_fdat) || {t = t_fdlt}} then {
+        (width = 0).if { fail "frame before IHDR" }
+        (raw && {dst != NULL}).if {
+          (t != t_fdat).if { fail "RAW files have one frame" }
+          (rawh = 0).if { fail "RAW frame without RAWH" }
+          ((dst.has_suffix ".dng") || {dst.has_suffix ".pgm"} || {image_ext dst}).if { } else { fail "a RAW frame decodes to .dng, .png, .tif, .jpg (or .pgm: bare sensor frame)" }
+          Nova_raw.setup (width, height) black (raw_black_at rawh)
+          (Nova_raw.decode data from pos size len).if { } else { fail "corrupt frame" }
+          // MDAT blocks after FDAT are not seen; the encoder writes them before.
+          (dst.has_suffix ".pgm").if {
+            Nova_par.status ("Writing " + (short_name dst) + "...")
+            write_pgm dst
+          }.elseif {dst.has_suffix ".dng"} then {
+            Nova_par.status ("Writing " + (short_name dst) + "...")
+            Nova_tiff.write_dng dst data data rawh rawh metas (meta_pos, meta_len) size (width, height)
+          } else {
+            develop_raw dst rawh rawh
+          }
+          done := preview_only
+        }.elseif {dst != NULL} then {
+          (t = t_fdat).if {
+            next := C_array Uint8.create (width * height * 4)
+            0.to (width * height - 1) do { i:Int next.at (i * 4 + 3) put 255 }
+            (Nova_codec.decode data from pos size len into next stride width region (0, 0, width, height) planes np).if {
+            } else {
+              fail "corrupt frame"
+            }
+          } else {
+            (cur = NULL).if { fail "delta frame before full frame" }
+            (len < 16).if { fail "bad FDLT" }
+            next := C_array Uint8.create (width * height * 4)
+            0.to (width * height * 4 - 1) do { i:Int next.at i put (cur.at i) }
+            x0 := u32 pos
+            y0 := u32 (pos + 4)
+            dw := u32 (pos + 8)
+            dh := u32 (pos + 12)
+            ((dw > 0) && {dh > 0}).if {
+              ((x0 + dw > width) || {y0 + dh > height}).if { fail "bad FDLT region" }
+              (Nova_codec.decode data from (pos + 16) size (len - 16) into next stride width region (x0, y0, dw, dh) planes np).if {
+              } else {
+                fail "corrupt frame"
+              }
+            }
+          }
+          (preview_only).if {
+            write_image next planes np to dst
+            done := True
+            nframes := 0
+          } else {
+            Nova_par.status ("Writing " + (short_name (frame_name (dst, count, animated))) + "...")
+            write_image next planes np to (frame_name (dst, count, animated))
+          }
+          cur := next
+        }
+        count := count + 1
+      }.elseif {(t = t_prev) && {len >= 5}} then {
+        (dst = NULL).if {
+          ("        " + (u16 pos).to_string + "x" + (u16 (pos + 2)).to_string + " thumbnail\n").print
+        }.elseif {preview_only} then {
+          width := u16 pos
+          height := u16 (pos + 2)
+          np := u8 (pos + 4)
+          ((width = 0) || {height = 0} || {(np != 3) && {np != 4}}).if { fail "bad PREV" }
+          next := C_array Uint8.create (width * height * 4)
+          0.to (width * height - 1) do { i:Int next.at (i * 4 + 3) put 255 }
+          (Nova_codec.decode data from (pos + 5) size (len - 5) into next stride width region (0, 0, width, height) planes np).if { } else { fail "corrupt PREV" }
+          write_image next planes np to dst
+          count := 1
+          nframes := 0
+          done := True
+        }
+      }.elseif {t = t_rawh} then {
+        ((len < 45) || {(u8 pos) != 1}).if { fail "unsupported RAWH version" }
+        rawh := pos
+      }.elseif {(t = t_mdat) && {len >= 4}} then {
+        meta_pos.add_last pos
+        meta_len.add_last len
+        (dst = NULL).if {
+          "        ".print
+          0.to 3 do { i:Int
+            (data.at (pos + i)).to_char.print
+          }
+          '\n'.print
+        }
+      }.elseif {t = t_live} then {
+        live_pos := pos
+        live_len := len
+      }.elseif {(t = t_anim) && {len >= 4}} then {
+        nframes := u32 pos
+      }.elseif {t = t_iend} then {
+        done := True
+      }
+      pos := pos + len + 4
+    }
+    ((count = 0) || {(nframes > 0) && {count < nframes}}).if { fail "truncated file (missing frames)" }
+    (width = 0).if { fail "no IHDR" }
+    (dst = NULL).if {
+      ("  " + count.to_string + " frame(s), " + data_size.to_string + " bytes, " + ((data_size * 8 * 1000) / (width * height)).to_string + " mbit/pixel\n").print
+    } else {
+      Nova_par.clear
+      (count = 1).if {
+        ("Done: wrote " + (short_name dst) + " in " + elapsed).print
+      } else {
+        ("Done: wrote " + count.to_string + " frames (" + (short_name (frame_name (dst, 0, True))) + "...) in " + elapsed).print
+      }
+      ((live_len > 0) && {! preview_only}).if {
+        base := dst
+        (base.has_suffix ".png").if { base := base.substring 0 to (base.upper - 4) }
+        Nova_codec.reset_out
+        put_bytes (live_pos, live_pos + live_len)
+        save_out (base + ".mov")
+        (" + " + base + ".mov").print
+      }
+      '\n'.print
+    }
+  )
+
+  //
+  // Entry
+  //
+
+  // encode options
+  - opt_m:Int
+
+  - opt_l:Int
+
+  - opt_e:Int
+
+  - opt_d:Int
+
+  - opt_q:Int
+
+  - last_src:Int
+
+  - dst_name:String
+
+  - meta_src:String
+
+  - live_src:String
+
+  - preview_only:Boolean
+
+  // Still image as the decoder will rebuild it (test hook, see NOVA_RECON in main).
+  - recon:C_array Uint8
+
+  - recon_np:Int
+
+  - parse_encode_args n:Int <-
+  // Sources and destination first, then options: -m mode, -l level, -e eps, -d ms.
+  ( + i:Int
+    + a,v:String
+    opt_m := 0
+    opt_l := 0
+    opt_e := 2
+    opt_d := 100
+    opt_q := 90
+    i := 2
+    {(i < n) && {((Command_args.at i).first) != '-'}}.while_do { i := i + 1 }
+    last_src := i - 2
+    (last_src < 2).if { fail "encode needs at least one source and a destination" }
+    dst_name := Command_args.at (i - 1)
+    {i < n}.while_do {
+      a := Command_args.at i
+      (i + 1 >= n).if { fail ("missing value after " + a) }
+      v := Command_args.at (i + 1)
+      (a == "-m").if {
+        (v == "adaptive").if { opt_m := 0 }.elseif {v == "lossless"} then { opt_m := 1 }.elseif {v == "lossy"} then { opt_m := 2 } else { fail ("unknown mode " + v) }
+      }.elseif {a == "-l"} then {
+        opt_l := v.to_int
+        ((opt_l < 0) || {opt_l > Nova_codec.max_level}).if { fail ("level must be 0.." + Nova_codec.max_level.to_string) }
+        (opt_l = 0).if { opt_l := -1 }
+      }.elseif {a == "-e"} then {
+        opt_e := v.to_int
+        ((opt_e < 1) || {opt_e > 64}).if { fail "eps must be 1..64" }
+      }.elseif {a == "-q"} then {
+        opt_q := v.to_int
+        ((opt_q < 0) || {opt_q > 100}).if { fail "quality must be 0..100" }
+      }.elseif {a == "-d"} then {
+        opt_d := v.to_int
+      }.elseif {a == "-live"} then {
+        live_src := v
+        (File_utils.file_exists v).if { } else { fail ("cannot read " + v) }
+      } else {
+        fail ("unknown option " + a)
+      }
+      i := i + 2
+    }
+  )
+
+  - t0:Int
+
+  // "/a/b/IMG_1398.CR3" -> "IMG_1398.CR3"
+  - short_name name:String :String <-
+  ( + i:Int
+    i := name.upper
+    {(i >= name.lower) && {(name.at i) != '/'}}.while_do { i := i - 1 }
+    name.substring (i + 1) to (name.upper)
+  )
+
+  // 26050253 -> "26,050,253"
+  - group n:Int :String <-
+  ( + result:String
+    (n < 1000).if {
+      result := n.to_string
+    } else {
+      result := (group (n / 1000)) + "," + ((n % 1000) + 1000).to_string.substring 1 to 3
+    }
+    result
+  )
+
+  - file_size name:String :Int <-
+  ( + f:Pointer
+    + result:Int
+    f := File_utils.open_read name
+    (f != NULL).if {
+      result := File_utils.size f
+      File_utils.close f
+    }
+    result
+  )
+
+  - done_line src:Int <-
+  // "Done: 26,050,253 bytes, 80.6 % of the source (lossless, level 6 (RAW)) in 7.5 s"
+  ( + r:Int
+    + s:String
+    Nova_par.clear
+    s := "Done: " + (group (Nova_codec.out_count)) + " bytes"
+    (src > 0).if {
+      r := (Nova_codec.out_count * 1000 + src / 2) / src
+      s := s + ", " + (r / 10).to_string + "." + (r % 10).to_string + " % of the source"
+    }
+    (s + " (" + mode_name + ") in " + elapsed + "\n").print
+  )
+
+  // Time since the start of main, "7.6 s".
+  - elapsed:String <-
+  ( + d:Int
+    d := (Nova_par.ms - t0 + 50) / 100
+    (d / 10).to_string + "." + (d % 10).to_string + " s"
+  )
+
+  // Look of developed RAWs: 0 canon (the camera JPEG), 1 darktable (its default render).
+  - opt_look:Int
+
+  // WebP/AVIF/HEIC mode: 0 auto (lossless if the .nova frame is), 1 lossy, 2 lossless.
+  - opt_webp:Int
+
+  // -q given on the decode command line (else each format's default).
+  - opt_q_set:Boolean
+
+  - parse_decode_args n:Int <-
+  // nova decode src dst [-q 1-100] [-look canon|darktable] [-m lossy|lossless]
+  ( + i:Int
+    + a,v:String
+    opt_q := 90
+    opt_look := 0
+    i := 4
+    {i + 1 < n}.while_do {
+      a := Command_args.at i
+      v := Command_args.at (i + 1)
+      (a == "-q").if {
+        opt_q := v.to_int
+        opt_q_set := True
+        ((opt_q < 1) || {opt_q > 100}).if { fail "quality must be 1..100" }
+      }.elseif {a == "-m"} then {
+        (v == "lossy").if { opt_webp := 1 }.elseif {v == "lossless"} then { opt_webp := 2 } else { fail "-m: lossy or lossless" }
+      }.elseif {a == "-look"} then {
+        (v == "canon").if { opt_look := 0 }.elseif {v == "darktable"} then { opt_look := 1 } else { fail "-look: canon or darktable" }
+      } else {
+        fail ("unknown decode option " + a)
+      }
+      i := i + 2
+    }
+  )
+
+  - main <-
+  ( + n:Int
+    + cmd:String
+    t0 := Nova_par.ms
+    make_crc_table
+    n := Command_args.count
+    (n >= 2).if { cmd := Command_args.at 1 }
+    ((cmd != NULL) && {cmd == "encode"} && {n >= 4}).if {
+      parse_encode_args n
+      ((last_src = 2) && {File_utils.file_exists (Command_args.at 2)} && {is_raw (Command_args.at 2)}).if {
+        ((opt_m = 2) || {opt_l != 0}).if { fail "RAW sources are always lossless, level 6 (no -m lossy, no -l)" }
+        Nova_par.status ("Reading " + (short_name (Command_args.at 2)) + " with LibRaw...")
+        encode_raw (Command_args.at 2)
+        Nova_par.status ("Writing " + (short_name dst_name) + "...")
+        save_out dst_name
+        done_line (file_size (Command_args.at 2))
+        System.exit 0
+      }
+      load_sources (2, last_src)
+      Nova_par.clear
+      ((short_name (Command_args.at 2)) + ": " + width.to_string + "x" + height.to_string).print
+      (frames.count > 1).if { (", " + frames.count.to_string + " frames").print }
+      '\n'.print
+      meta_src := Command_args.at 2
+      encode_frames opt_d mode opt_m level opt_l eps opt_e
+      Nova_par.status ("Writing " + (short_name dst_name) + "...")
+      save_out dst_name
+      n := 0
+      2.to last_src do { i:Int n := n + file_size (Command_args.at i) }
+      done_line n
+      // Test hook: NOVA_RECON=file.png writes the encoder's reconstruction, which the decoder must match exactly.
+      ((Environment.read_variable "NOVA_RECON") != NULL).if {
+        write_png recon planes recon_np to (Environment.read_variable "NOVA_RECON")
+      }
+    }.elseif {(cmd != NULL) && {cmd == "decode"} && {n >= 4} && {(n & 1) = 0}} then {
+      parse_decode_args n
+      read_nova (Command_args.at 2) decode_to (Command_args.at 3)
+    }.elseif {(cmd != NULL) && {cmd == "preview"} && {n = 4}} then {
+      preview_only := True
+      read_nova (Command_args.at 2) decode_to (Command_args.at 3)
+    }.elseif {(cmd != NULL) && {cmd == "info"} && {n = 3}} then {
+      read_nova (Command_args.at 2) decode_to NULL
+    }.elseif {(cmd != NULL) && {cmd == "bench"} && {n >= 3}} then {
+      2.to (n - 1) do { i:Int
+        load_sources (i, i)
+        encode_frames 100 mode 1 level 0 eps 0
+        Nova_par.clear
+        ((Command_args.at i) + "  " + Nova_codec.out_count.to_string + " bytes  " + ((Nova_codec.out_count * 8 * 1000) / (width * height)).to_string + " mbit/pixel\n").print
+      }
+    } else {
+      usage
+    }
+  )

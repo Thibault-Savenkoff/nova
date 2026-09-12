@@ -1,989 +1,555 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NOVA Web Viewer</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NOVA image format</title>
+<meta name="description" content="Open and create NOVA images (.nova) in your browser: photos, screenshots, animations and camera RAW files. Nothing is uploaded.">
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  @font-face { font-family: 'Bricolage Grotesque'; src: url(fonts/bricolage.woff2) format('woff2'); font-weight: 200 800; font-display: swap; }
+  @font-face { font-family: 'Atkinson Hyperlegible Next'; src: url(fonts/atkinson.woff2) format('woff2'); font-weight: 200 800; font-display: swap; }
+  @font-face { font-family: 'Atkinson Hyperlegible Mono'; src: url(fonts/atkinson-mono.woff2) format('woff2'); font-weight: 200 800; font-display: swap; }
+  :root {
+    --ground: #edeff1; --surface: #f8f9fa; --ink: #16191d; --mut: #59616b; --line: #d2d7dd; --acc: #2945c7; --acc-ink: #fff;
+    --err: #b3261e; --stage-a: #d9dde2; --stage-b: #e8ebee;
+    --c-ihdr: #8a93a0; --c-prev: #c98314; --c-fdat: #2945c7; --c-mdat: #2e8b6e; --c-other: #9a57b3;
+    --display: 'Bricolage Grotesque', 'Helvetica Neue', Arial, sans-serif;
+    --body: 'Atkinson Hyperlegible Next', system-ui, sans-serif;
+    --mono: 'Atkinson Hyperlegible Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #101316; --surface: #181c21; --ink: #e7eaee; --mut: #9aa3ae; --line: #2b3139; --acc: #8ea2ff; --acc-ink: #0d1330;
+      --err: #ff8a80; --stage-a: #1d2228; --stage-b: #242a31;
+      --c-ihdr: #7d8794; --c-prev: #e0a13c; --c-fdat: #8ea2ff; --c-mdat: #5cc39f; --c-other: #c58ddb;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--ground); }
+  body { margin: 0; padding-inline: 20px; background: var(--ground); color: var(--ink); font: 400 16px/1.55 var(--body); -webkit-text-size-adjust: 100%; }
+  main, footer { max-width: 1120px; margin-inline: auto; }
+  a { color: var(--acc); text-underline-offset: 3px; }
+  :focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+  [hidden] { display: none !important; }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  background: #0f0f0f;
-  color: #d4d4d4;
-  min-height: 100vh;
-  padding: 2.5rem 1.25rem 4rem;
-}
-.container { max-width: 880px; margin: 0 auto; }
-header { text-align: center; margin-bottom: 2.5rem; }
-header h1 { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.4px; color: #fff; }
-header p  { margin-top: 0.45rem; color: #5a5a5a; font-size: 0.88rem; }
-header a  { color: #6c8ef5; text-decoration: none; }
-header a:hover { text-decoration: underline; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 28px; padding-block: 36px 22px; }
+  h1 { margin: 0; font: 800 clamp(44px, 8vw, 72px)/0.9 var(--display); letter-spacing: -0.035em; font-variation-settings: 'opsz' 96; }
+  header p { margin: 0; max-width: 58ch; color: var(--mut); font-size: 17px; }
+  h2 { margin: 0 0 6px; font: 700 28px/1.15 var(--display); letter-spacing: -0.015em; text-wrap: balance; }
+  h3 { margin: 0 0 8px; font: 700 17px/1.3 var(--display); }
 
-.tabs { display: flex; margin-bottom: 1.75rem; border-bottom: 1px solid #1e1e1e; }
-.tab-btn {
-  background: none; border: none; color: #5a5a5a; font-size: 0.88rem;
-  padding: 0.65rem 1.25rem; cursor: pointer;
-  border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.13s;
-}
-.tab-btn:hover { color: #aaa; }
-.tab-btn.active { color: #fff; border-bottom-color: #6c8ef5; }
-.tab-panel { display: none; }
-.tab-panel.active { display: block; }
+  /* Viewer: the stage shows the image; under it, the file's anatomy and its figures. */
+  #viewer { display: grid; gap: 14px; }
+  #stage { position: relative; display: grid; place-items: center; min-height: 220px; padding: 18px; border-radius: 6px;
+    background: repeating-conic-gradient(var(--stage-a) 0 25%, var(--stage-b) 0 50%) 0 0 / 20px 20px; }
+  #cv { display: block; max-width: 100%; max-height: 72vh; width: auto; height: auto; box-shadow: 0 1px 2px rgb(0 0 0 / .18), 0 8px 28px rgb(0 0 0 / .14); }
+  #stage.over { outline: 2px dashed var(--acc); outline-offset: -2px; }
+  #bar { position: absolute; left: 18px; right: 18px; bottom: 10px; height: 4px; border-radius: 2px; background: rgb(0 0 0 / .12); overflow: hidden; visibility: hidden; }
+  #bar div { height: 100%; width: 0; background: var(--acc); transition: width .2s; }
 
-.drop-zone {
-  border: 2px dashed #232323; border-radius: 12px;
-  padding: 2.75rem 2rem; text-align: center; cursor: pointer;
-  transition: border-color 0.15s, background 0.15s; user-select: none;
-}
-.drop-zone:hover, .drop-zone.over { border-color: #6c8ef5; background: rgba(108,142,245,0.05); }
-.drop-zone input[type=file] { display: none; }
-.dz-icon { font-size: 2.2rem; margin-bottom: 0.65rem; line-height: 1; }
-.dz-main { color: #ccc; font-size: 0.95rem; }
-.dz-main strong { color: #fff; }
-.dz-sub  { color: #444; font-size: 0.8rem; margin-top: 0.35rem; }
+  .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; justify-content: space-between; }
+  .group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .samples { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .samples span { color: var(--mut); margin-right: 4px; }
+  button, .button { font: 600 15px/1 var(--body); padding: 10px 14px; border-radius: 4px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+  button:hover, .button:hover { border-color: var(--mut); }
+  button[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+  button.primary, .button.primary { background: var(--acc); color: var(--acc-ink); border-color: var(--acc); }
+  button:disabled, select:disabled, input:disabled { opacity: .45; cursor: default; }
+  select { font: 500 15px/1 var(--body); padding: 9px 10px; border-radius: 4px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+  input[type=range] { accent-color: var(--acc); width: 120px; }
+  input[type=checkbox] { accent-color: var(--acc); width: 17px; height: 17px; margin: 0; }
+  label.q { display: inline-flex; gap: 8px; align-items: center; color: var(--mut); }
+  output, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-.status-msg { margin-top: 1rem; padding: 0.6rem 1rem; border-radius: 8px; font-size: 0.84rem; display: none; }
-.status-msg.error  { background: rgba(239,68,68,.10); border:1px solid rgba(239,68,68,.25); color:#f87171; }
-.status-msg.loading{ background: rgba(108,142,245,.08); border:1px solid rgba(108,142,245,.2); color:#93aff7; }
+  #info { margin: 0; color: var(--mut); min-height: 1.55em; }
+  .err { color: var(--err); }
 
-.canvas-wrap { margin-top: 1.5rem; text-align: center; }
-canvas {
-  max-width: 100%; height: auto; border-radius: 10px; display: block; margin: 0 auto;
-  background: repeating-conic-gradient(#1a1a1a 0% 25%, #222 0% 50%) 0 0 / 18px 18px;
-}
-.info-line {
-  font-family: "SF Mono","Fira Mono","Consolas",monospace;
-  font-size: 0.76rem; color: #444; text-align: center; margin-top: 0.7rem;
-}
+  /* Chunk map: one segment per chunk type, width proportional to its bytes (thin chunks keep a sliver). */
+  #anatomy { display: grid; gap: 8px; }
+  #map { display: flex; height: 34px; gap: 2px; }
+  #map div { min-width: 3px; background: var(--c); border-radius: 2px; }
+  #legend { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 0; padding: 0; list-style: none; font: 14px/1.4 var(--mono); color: var(--mut); }
+  #legend b { color: var(--ink); font-weight: 600; }
+  #legend li::before { content: ''; display: inline-block; width: 10px; height: 10px; margin-right: 7px; border-radius: 2px; background: var(--c); vertical-align: -1px; }
+  #specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px 24px; margin: 6px 0 0; padding-top: 14px; border-top: 1px solid var(--line); }
+  #specs dt { color: var(--mut); font-size: 14px; }
+  #specs dd { margin: 0; font: 500 17px/1.3 var(--mono); font-variant-numeric: tabular-nums; }
 
-/* EXIF panel */
-.exif-panel {
-  margin-top: 1rem; border: 1px solid #1e1e1e; border-radius: 10px; overflow: hidden;
-}
-.exif-toggle {
-  display: flex; align-items: center; justify-content: space-between;
-  background: #161616; padding: 0.6rem 1rem; cursor: pointer; user-select: none;
-}
-.exif-toggle span { font-size: 0.82rem; color: #666; }
-.exif-toggle .exif-chevron { font-size: 0.7rem; color: #444; transition: transform 0.15s; }
-.exif-toggle.open .exif-chevron { transform: rotate(180deg); }
-.exif-body { display: none; padding: 0.75rem 1rem; }
-.exif-body.visible { display: block; }
-.exif-grid {
-  display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 1rem;
-  font-family: "SF Mono","Fira Mono","Consolas",monospace; font-size: 0.76rem;
-}
-.exif-key { color: #555; text-align: right; }
-.exif-val { color: #ccc; word-break: break-word; }
+  /* Create: the drop target on the left, settings on the right; one column on phones. */
+  #create { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 20px 40px; margin-top: 64px; padding-top: 28px; border-top: 1px solid var(--line); }
+  #create > .intro { grid-column: 1 / -1; max-width: 68ch; }
+  #create > .intro p { margin: 0; color: var(--mut); }
+  #edrop { display: grid; place-items: center; align-content: center; gap: 6px; min-height: 200px; padding: 28px 20px; text-align: center; border: 2px dashed var(--line); border-radius: 6px; background: var(--surface); cursor: pointer; }
+  #edrop strong { font: 700 20px/1.2 var(--display); }
+  #edrop span { color: var(--mut); max-width: 40ch; }
+  #edrop.over { border-color: var(--acc); }
+  .settings { display: grid; gap: 14px; align-content: start; }
+  .settings .row { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  #einfo { grid-column: 1 / -1; margin: 0; color: var(--mut); min-height: 1.55em; }
+  #limits { grid-column: 1 / -1; max-width: 76ch; }
+  #limits summary { cursor: pointer; font: 700 17px/1.3 var(--display); }
+  #limits ul { margin: 10px 0 0; padding-left: 20px; color: var(--mut); display: grid; gap: 6px; }
 
-.anim-bar { display: none; align-items: center; gap: 0.75rem; margin-top: 0.9rem; justify-content: center; }
-.anim-bar.visible { display: flex; }
-.frame-lbl { font-family: monospace; font-size: 0.78rem; color: #444; }
-.actions { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-top: 1.2rem; justify-content: center; }
+  footer { margin-block: 64px 32px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--mut); font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px 24px; justify-content: space-between; }
 
-button {
-  border: 1px solid #272727; background: #181818; color: #ccc;
-  padding: 0.55rem 1.2rem; border-radius: 8px; cursor: pointer; font-size: 0.84rem;
-  transition: background 0.12s, border-color 0.12s;
-}
-button:hover { background: #212121; border-color: #3a3a3a; }
-button.primary { background: #6c8ef5; color: #fff; border-color: transparent; }
-button.primary:hover { background: #7a9af6; }
-button:disabled { opacity: 0.38; cursor: default; pointer-events: none; }
-
-/* Make tab options */
-.options-row { display: flex; flex-wrap: wrap; gap: 1.2rem; margin-top: 1.1rem; align-items: center; }
-.opt-group { display: flex; align-items: center; gap: 0.5rem; }
-.opt-group label { color: #555; font-size: 0.8rem; }
-select {
-  background: #181818; border: 1px solid #272727; color: #ccc;
-  padding: 0.35rem 0.6rem; border-radius: 6px; font-size: 0.8rem; cursor: pointer;
-}
-input[type=range] { accent-color: #6c8ef5; cursor: pointer; }
-.size-est { font-family: monospace; font-size: 0.78rem; color: #444; margin-left: auto; }
-
-/* EXIF editor (make tab) */
-.exif-editor-section { margin-top: 1.1rem; border: 1px solid #1e1e1e; border-radius: 10px; overflow: hidden; }
-.exif-editor-header {
-  display: flex; align-items: center; justify-content: space-between;
-  background: #161616; padding: 0.6rem 1rem; cursor: pointer; user-select: none;
-}
-.exif-editor-header span { font-size: 0.82rem; color: #666; }
-.exif-editor-body { display: none; padding: 0.9rem 1rem; }
-.exif-editor-body.visible { display: block; }
-.exif-steal {
-  display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.85rem;
-  font-size: 0.82rem; color: #666;
-}
-.exif-steal input[type=file] { display: none; }
-.exif-steal-btn {
-  background: #1c1c1c; border: 1px solid #2e2e2e; color: #6c8ef5;
-  padding: 0.3rem 0.8rem; border-radius: 6px; cursor: pointer; font-size: 0.8rem;
-}
-.exif-steal-btn:hover { background: #252525; }
-.exif-steal-name { color: #aaa; font-family: monospace; }
-.exif-fields { display: grid; grid-template-columns: max-content 1fr; gap: 0.4rem 0.7rem; }
-.exif-fields label { font-size: 0.78rem; color: #555; text-align: right; padding-top: 0.2rem; }
-.exif-fields input[type=text] {
-  background: #1c1c1c; border: 1px solid #2a2a2a; color: #ccc;
-  padding: 0.28rem 0.5rem; border-radius: 5px; font-size: 0.78rem; font-family: inherit;
-}
-.exif-fields input[type=text]:focus { outline: none; border-color: #6c8ef5; }
-
-#compat-warn { text-align: center; color: #f87171; padding: 3rem 1rem; font-size: 0.9rem; display: none; }
+  @media (max-width: 760px) {
+    #create { grid-template-columns: 1fr; margin-top: 44px; }
+    #stage { padding: 10px; min-height: 160px; }
+    .tools { justify-content: flex-start; }
+  }
+  @media (prefers-reduced-motion: reduce) { #bar div { transition: none; } }
 </style>
-<script src="raw_decoder.js" onerror="console.warn('LibRaw WASM unavailable — RAW decoding disabled')"></script>
 </head>
 <body>
-<div class="container">
+<main>
+  <header>
+    <h1>NOVA</h1>
+    <p>An open image format for photos, screenshots, animations and camera RAW files. This page opens and creates .nova files on your device; nothing is uploaded.</p>
+  </header>
 
-<div id="compat-warn">
-  Your browser does not support the required APIs.<br>
-  Please use Chrome 80+, Firefox 113+, or Safari 16.4+.
-</div>
-
-<header>
-  <h1>NOVA Viewer</h1>
-  <p>Open and convert <strong>.nova</strong> files in your browser — no install needed &nbsp;·&nbsp;
-     <a href="https://github.com/Thibault-Savenkoff/nova" target="_blank" rel="noopener">GitHub</a></p>
-</header>
-
-<div class="tabs">
-  <button class="tab-btn active" data-tab="view">Open .nova</button>
-  <button class="tab-btn" data-tab="make">Make .nova</button>
-</div>
-
-<!-- ═══ VIEW TAB ════════════════════════════════════════════════════════════ -->
-<div class="tab-panel active" id="tab-view">
-  <div class="drop-zone" id="view-drop">
-    <input type="file" id="view-input" accept=".nova">
-    <div class="dz-icon">🖼</div>
-    <div class="dz-main">Drop a <strong>.nova</strong> file here</div>
-    <div class="dz-sub">or click to browse</div>
-  </div>
-  <div class="status-msg" id="view-status"></div>
-
-  <div id="view-result" style="display:none">
-    <div class="canvas-wrap"><canvas id="view-canvas"></canvas></div>
-    <div class="info-line" id="view-info"></div>
-
-    <!-- EXIF display panel -->
-    <div class="exif-panel" id="exif-panel" style="display:none">
-      <div class="exif-toggle" id="exif-toggle">
-        <span id="exif-toggle-lbl">EXIF metadata</span>
-        <span class="exif-chevron">▼</span>
+  <section id="viewer" aria-label="Viewer">
+    <div id="stage">
+      <canvas id="cv" width="0" height="0" aria-label="Opened image"></canvas>
+      <input type="file" id="file" accept=".nova" hidden>
+      <div id="bar"><div></div></div>
+    </div>
+    <div class="tools">
+      <div class="samples" role="group" aria-label="Examples">
+        <span>Examples</span>
+        <button data-k="photo" aria-pressed="false">Photo</button>
+        <button data-k="screen" aria-pressed="false">Screenshot</button>
+        <button data-k="wheel" aria-pressed="false">Animation</button>
+        <label class="button primary" for="file">Open a .nova</label>
       </div>
-      <div class="exif-body" id="exif-body">
-        <div class="exif-grid" id="exif-grid"></div>
-      </div>
-    </div>
-
-    <div class="anim-bar" id="anim-bar">
-      <button id="btn-play">⏸ Pause</button>
-      <span class="frame-lbl" id="frame-lbl">Frame 1 / ?</span>
-    </div>
-    <div class="actions">
-      <button class="primary" id="btn-png">Export PNG</button>
-      <button id="btn-jpg">Export JPEG (with EXIF)</button>
-      <button id="btn-view-new">Open another file</button>
-    </div>
-  </div>
-</div>
-
-<!-- ═══ MAKE TAB ════════════════════════════════════════════════════════════ -->
-<div class="tab-panel" id="tab-make">
-  <div class="drop-zone" id="make-drop">
-    <input type="file" id="make-input" accept="image/*,.dng,.cr2,.cr3,.nef,.arw,.orf,.rw2,.pef,.srw,.raf,.3fr,.erf,.mrw">
-    <div class="dz-icon">✨</div>
-    <div class="dz-main">Drop any image here</div>
-    <div class="dz-sub">PNG · JPEG · WebP · TIFF · HEIC · DNG · RAW — converts to .nova</div>
-  </div>
-  <div class="status-msg" id="make-status"></div>
-
-  <div id="make-result" style="display:none">
-    <div class="canvas-wrap"><canvas id="make-canvas"></canvas></div>
-    <div class="info-line" id="make-info"></div>
-    <div class="options-row">
-      <div class="opt-group">
-        <label for="make-mode">Mode</label>
-        <select id="make-mode">
-          <option value="adaptive">adaptive (auto)</option>
-          <option value="lossless">lossless (exact)</option>
-          <option value="lossy">lossy (smaller)</option>
+      <div class="group">
+        <button id="play" hidden>Pause</button>
+        <select id="fmt" disabled aria-label="Export format">
+          <option value="image/png">PNG</option>
+          <option value="image/jpeg">JPEG</option>
+          <option value="image/webp">WebP</option>
         </select>
-      </div>
-      <div class="opt-group">
-        <label for="make-quality">Quality <span id="q-val">85</span></label>
-        <input type="range" id="make-quality" min="10" max="100" value="85" step="5">
-      </div>
-      <span class="size-est" id="size-est"></span>
-    </div>
-
-    <!-- EXIF editor -->
-    <div class="exif-editor-section">
-      <div class="exif-editor-header" id="exif-editor-toggle">
-        <span id="exif-editor-lbl">EXIF metadata — none</span>
-        <span class="exif-chevron" id="exif-editor-chevron">▼</span>
-      </div>
-      <div class="exif-editor-body" id="exif-editor-body">
-        <div class="exif-steal">
-          <span>Copy from a photo:</span>
-          <input type="file" id="exif-steal-input" accept="image/jpeg,image/tiff,.jpg,.jpeg,.tiff,.tif">
-          <button class="exif-steal-btn" id="exif-steal-btn">Choose JPEG/TIFF…</button>
-          <span class="exif-steal-name" id="exif-steal-name"></span>
-        </div>
-        <div class="exif-fields">
-          <label>Description</label><input type="text" id="ef-desc" placeholder="">
-          <label>Make</label>       <input type="text" id="ef-make" placeholder="e.g. Canon">
-          <label>Model</label>      <input type="text" id="ef-model" placeholder="e.g. EOS R5">
-          <label>Software</label>   <input type="text" id="ef-soft" placeholder="">
-          <label>DateTime</label>   <input type="text" id="ef-dt" placeholder="YYYY:MM:DD HH:MM:SS">
-          <label>Artist</label>     <input type="text" id="ef-artist" placeholder="">
-          <label>Copyright</label>  <input type="text" id="ef-copy" placeholder="">
-        </div>
+        <label class="q" id="qbox" hidden>Quality <input type="range" id="q" min="1" max="100" value="90" disabled> <output id="qv">90</output></label>
+        <button id="save" disabled>Save image</button>
       </div>
     </div>
-
-    <div class="actions">
-      <button class="primary" id="btn-dl-nova" disabled>Download .nova</button>
-      <button id="btn-make-new">Convert another image</button>
+    <p id="info" aria-live="polite"></p>
+    <div id="anatomy" hidden>
+      <div id="map" role="img" aria-label="Chunks of the file, by size"></div>
+      <ul id="legend"></ul>
     </div>
-  </div>
-</div>
+    <dl id="specs" hidden></dl>
+  </section>
 
-</div><!-- /container -->
+  <section id="create" aria-labelledby="create-h">
+    <div class="intro">
+      <h2 id="create-h">Make a .nova</h2>
+      <p>Your image is encoded in this browser and the .nova file is saved to your downloads. EXIF, XMP and the colour profile are kept for PNG, JPEG, HEIC and CR3 files.</p>
+    </div>
+    <label id="edrop">
+      <strong>Choose or drop an image</strong>
+      <span>PNG, JPEG, HEIC, camera RAW, or any format this browser opens</span>
+      <input type="file" id="efile" accept="image/*,.cr2,.cr3,.nef,.nrw,.arw,.dng,.raf,.orf,.rw2,.pef,.srw,.x3f,.3fr,.iiq" hidden>
+    </label>
+    <div class="settings">
+      <div class="row">
+        <label class="q">Mode <select id="emode"><option value="adaptive">Adaptive</option><option value="lossless">Lossless</option><option value="lossy">Lossy</option></select></label>
+        <label class="q">Quality <input type="range" id="eq" min="0" max="100" value="90"> <output id="eqv">90</output></label>
+      </div>
+      <p style="margin:0;color:var(--mut)">Adaptive keeps graphics and screenshots exact and compresses photos at the chosen quality; 90 looks identical to the source.</p>
+      <label class="q"><input type="checkbox" id="ekeep" checked> Keep metadata</label>
+      <label class="q"><input type="checkbox" id="egps"> Remove location (GPS)</label>
+    </div>
+    <p id="einfo" aria-live="polite"></p>
+    <details id="limits">
+      <summary>What only the nova program can do</summary>
+      <ul>
+        <li>HEIC images can be converted in Safari only, and their HDR rendition is not kept.</li>
+        <li>Other formats opened by the browser (WebP, GIF…) are converted without their metadata.</li>
+        <li>Animations and Live Photos can only be created with the program.</li>
+        <li>RAW files are developed with the camera's look only; the darktable look needs the program.</li>
+        <li>Export is limited to PNG, JPEG and WebP; the program also writes TIFF, AVIF, HEIC and DNG.</li>
+        <li>Encoding and RAW development are slower than in the program: about 20 seconds each for a 24-megapixel RAW file on a recent computer, longer on a phone.</li>
+      </ul>
+    </details>
+  </section>
+</main>
+<footer>
+  <span>NOVA v2. Images never leave your device.</span>
+  <a href="https://github.com/Thibault-Savenkoff/nova">Source on GitHub</a>
+</footer>
+<script src="nova_decode.js"></script>
+<script src="heif_meta.js"></script>
+<script src="meta_strip.js"></script>
 <script>
-"use strict";
+'use strict';
+const $ = id => document.getElementById(id);
+let cv = $('cv'), ctx = cv.getContext('2d');
+const info = $('info'), bar = $('bar'), fill = bar.firstElementChild;
+let name = 'image', timer = null, token = 0;
 
-if (!window.DecompressionStream || !window.CompressionStream || !window.OffscreenCanvas || !window.createImageBitmap) {
-  document.getElementById('compat-warn').style.display = 'block';
-  document.querySelector('.tabs').style.display = 'none';
-  document.querySelector('header').style.display = 'none';
-  document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
-}
-
-// ── NOVA magic ────────────────────────────────────────────────────────────────
-const MAGIC = new Uint8Array([0x89,0x4E,0x4F,0x56,0x41,0x0D,0x0A,0x1A,0x0A]);
-const _RAW_EXTS = new Set(['.dng','.cr2','.cr3','.nef','.arw','.orf','.rw2','.pef','.srw','.raf','.3fr','.erf','.mrw']);
-
-// ── CRC32 ─────────────────────────────────────────────────────────────────────
-const CRC_TABLE = (() => {
-  const t = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-    t[n] = c >>> 0;
+// Stripe runner: one Web Worker per core; falls back to this thread (file:// blocks workers).
+let pool = null;
+function workers() {
+  if (pool === null) {
+    try {
+      pool = [];
+      for (let i = 0; i < Math.min(navigator.hardwareConcurrency || 4, 16); i++) pool.push(new Worker('worker.js'));
+    } catch (e) { pool = []; }
   }
-  return t;
-})();
-function crc32(...parts) {
-  let c = 0xFFFFFFFF;
-  for (const p of parts) for (const b of p) c = (CRC_TABLE[(c ^ b) & 0xFF] ^ (c >>> 8)) >>> 0;
-  return (c ^ 0xFFFFFFFF) >>> 0;
+  return pool;
 }
-
-// ── zlib inflate / deflate ────────────────────────────────────────────────────
-async function xform(stream, data) {
-  const w = stream.writable.getWriter(), r = stream.readable.getReader();
-  w.write(data instanceof Uint8Array ? data : new Uint8Array(data)); w.close();
-  const chunks = [];
-  for (;;) { const {done,value} = await r.read(); if (done) break; chunks.push(value); }
-  const out = new Uint8Array(chunks.reduce((s,c) => s+c.length, 0));
-  let pos = 0; for (const c of chunks) { out.set(c, pos); pos += c.length; }
-  return out;
-}
-const inflate = d => xform(new DecompressionStream('deflate'), d);
-const deflate = d => xform(new CompressionStream('deflate'), d);
-
-// ── Photographic tone mapping (linear → display) ──────────────────────────────
-// Standard sRGB gamma, no per-channel hue shift (ACES shifted hues in sRGB).
-// LibRaw's auto-brightness places scene white at ~65535, so hard clip is clean.
-function _aces8(x) {
-  const c = Math.max(0, Math.min(1, x));
-  return Math.round((c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055) * 255);
-}
-function _u16WhitePoint(u16) {
-  // Sample up to 20 000 values to find the scene white point.
-  // Handles sensors with white levels well below 65535 (e.g. Apple ProRAW
-  // where LibRaw may not apply BaselineExposure with no_auto_bright=1).
-  let wp = 0;
-  const step = Math.max(3, Math.floor(u16.length / 20000) * 3);
-  for (let i = 0; i < u16.length; i += step) if (u16[i] > wp) wp = u16[i];
-  return wp > 0 ? wp : 65535;
-}
-
-// ── block decoder ─────────────────────────────────────────────────────────────
-async function decodeBlock(data, w, h, colorSpace='srgb') {
-  const marker = data[0], payload = data.subarray(1);
-  if (marker === 0x50) return createImageBitmap(new Blob([payload], {type:'image/png'}));
-  if (marker === 0x4A) return createImageBitmap(new Blob([payload], {type:'image/jpeg'}));
-  if (marker === 0x41) {
-    const dv = new DataView(payload.buffer, payload.byteOffset);
-    const jLen = dv.getUint32(0, false);
-    const [bm, alphaRaw] = await Promise.all([
-      createImageBitmap(new Blob([payload.subarray(4, 4+jLen)], {type:'image/jpeg'})),
-      inflate(payload.subarray(4+jLen)),
-    ]);
-    const oc = new OffscreenCanvas(w, h); const cx = oc.getContext('2d', {colorSpace});
-    cx.drawImage(bm, 0, 0);
-    const id = cx.getImageData(0, 0, w, h);
-    for (let i = 0; i < w*h; i++) id.data[i*4+3] = alphaRaw[i];
-    cx.putImageData(id, 0, 0);
-    return createImageBitmap(oc);
-  }
-  if (marker === 0x48) {
-    const raw = await inflate(payload);
-    const floats = new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength/4);
-    let mn = Infinity, mx = -Infinity;
-    for (const v of floats) { if (v<mn) mn=v; if (v>mx) mx=v; }
-    const rng = mx===mn ? 1 : mx-mn;
-    const id = new ImageData(w, h);
-    for (let i = 0; i < floats.length; i++) {
-      const v = Math.round(((floats[i]-mn)/rng)*255);
-      id.data[i*4]=v; id.data[i*4+1]=v; id.data[i*4+2]=v; id.data[i*4+3]=255;
+function runner(progress) {
+  return async jobs => {
+    const ws = workers();
+    if (!ws.length) return jobs.map(NovaDecode.runJob);
+    try { return await onWorkers(ws, jobs, progress); }
+    catch (e) {
+      // Workers can fail to load after creation (file://, blocked script): decode here instead.
+      if (!e.workerFailed) throw e;
+      pool.forEach(w => w.terminate());
+      pool = [];
+      return jobs.map(NovaDecode.runJob);
     }
-    return createImageBitmap(id);
-  }
-  if (marker === 0x4E) { // 'N' = HDR16 linear uint16 RGB → ACES tone mapping
-    const raw = await inflate(payload);
-    const u16 = new Uint16Array(raw.buffer, raw.byteOffset, raw.byteLength >>> 1);
-    const wp = _u16WhitePoint(u16);
-    const id = new ImageData(w, h);
-    const d = id.data;
-    for (let i = 0, j = 0; i < w*h; i++, j += 3) {
-      d[i*4]   = _aces8(u16[j]   / wp);
-      d[i*4+1] = _aces8(u16[j+1] / wp);
-      d[i*4+2] = _aces8(u16[j+2] / wp);
-      d[i*4+3] = 255;
-    }
-    return createImageBitmap(id);
-  }
-  throw new Error(`Unknown compression marker 0x${marker.toString(16).padStart(2,'0')}`);
+  };
+}
+async function onWorkers(ws, jobs, progress) {
+  const total = jobs.reduce((s, j) => s + (j.rows || 1), 0);
+  let done = 0, next = 0;
+  const res = new Array(jobs.length);
+  const tick = n => { done += n; progress(done / total); };
+  await Promise.all(ws.slice(0, jobs.length).map(w => new Promise((ok, ko) => {
+    const go = () => {
+      if (next >= jobs.length) return ok();
+      const i = next++, j = Object.assign({}, jobs[i]);
+      j.data = jobs[i].data.slice(j.off, j.off + j.len);
+      j.off = 0;
+      if (j.img) j.img = j.img.slice();   // transferred: keep jobs[i] intact for the fallback
+      let sent = 0;
+      w.onmessage = e => {
+        if (!e.data.done) { sent += e.data.rows; tick(e.data.rows); return; }
+        tick((j.rows || 1) - sent);
+        res[i] = e.data;
+        go();
+      };
+      w.onerror = e => { if (e.preventDefault) e.preventDefault(); ko(Object.assign(new Error(e.message || 'worker failed'), { workerFailed: true })); };
+      w.postMessage(j, j.img ? [j.img.buffer] : []);
+    };
+    go();
+  })));
+  return res;
 }
 
-// ── NOVA parser ───────────────────────────────────────────────────────────────
-async function parseNOVA(buf) {
-  const bytes = new Uint8Array(buf), view = new DataView(buf);
-  let off = 0;
-  for (let i = 0; i < MAGIC.length; i++)
-    if (bytes[off+i] !== MAGIC[i]) throw new Error('Not a valid NOVA file');
-  off += MAGIC.length;
-
-  const chunks = [];
-  while (off + 8 <= bytes.byteLength) {
-    const typeU8 = bytes.subarray(off, off+4);
-    const type = String.fromCharCode(...typeU8); off += 4;
-    const len = view.getUint32(off, false); off += 4;
-    const data = bytes.slice(off, off+len); off += len;
-    const storedCRC = view.getUint32(off, false); off += 4;
-    if (crc32(typeU8, data) !== storedCRC) throw new Error(`CRC mismatch in ${type} chunk`);
-    chunks.push({type, data});
-    if (type === 'IEND') break;
-  }
-
-  const ihdr = chunks.find(c => c.type==='IHDR');
-  if (!ihdr) throw new Error('Missing IHDR chunk');
-  const iv = new DataView(ihdr.data.buffer, ihdr.data.byteOffset);
-  const w = iv.getUint32(0,false), h = iv.getUint32(4,false);
-  const colorSpaceCode = ihdr.data[9]; // 0=sRGB, 1=Display P3
-  const cs = colorSpaceCode === 1 ? 'display-p3' : 'srgb';
-  const flags = ihdr.data[10], cmode = ihdr.data[11];
-  const hasAlpha = !!(flags&1), isHDR = !!(flags&2), isAnimated = !!(flags&4);
-
-  let frameDuration = 100;
-  const anim = chunks.find(c => c.type==='ANIM');
-  if (anim) {
-    const av = new DataView(anim.data.buffer, anim.data.byteOffset);
-    frameDuration = av.getUint16(4,false) || 100;
-  }
-
-  // Extract EXIF from MDAT
-  let exifBytes = null;
-  const mdat = chunks.find(c => c.type==='MDAT');
-  if (mdat) {
-    const mv = new DataView(mdat.data.buffer, mdat.data.byteOffset);
-    const iccLen = mv.getUint32(0, false);
-    const exOff = 4 + iccLen;
-    const exLen = mv.getUint32(exOff, false);
-    if (exLen > 0) exifBytes = mdat.data.slice(exOff+4, exOff+4+exLen);
-  }
-
-  const frames = [];
-  let baseCanvas = null, baseCx = null;
-  for (const {type, data} of chunks) {
-    if (type === 'FDAT') {
-      const bm = await decodeBlock(data, w, h, cs);
-      if (!baseCanvas) { baseCanvas = new OffscreenCanvas(w,h); baseCx = baseCanvas.getContext('2d', {colorSpace:cs}); }
-      baseCx.clearRect(0,0,w,h); baseCx.drawImage(bm,0,0);
-      frames.push(await createImageBitmap(baseCanvas));
-    } else if (type === 'FDLT') {
-      if (!baseCanvas) throw new Error('Delta before base frame');
-      const dv = new DataView(data.buffer, data.byteOffset);
-      const x0=dv.getUint32(0,false), y0=dv.getUint32(4,false);
-      const dw=dv.getUint32(8,false), dh=dv.getUint32(12,false);
-      if (dw>0 && dh>0) { const bm=await decodeBlock(data.subarray(16),dw,dh,cs); baseCx.drawImage(bm,x0,y0); }
-      frames.push(await createImageBitmap(baseCanvas));
-    }
-  }
-  if (!frames.length) throw new Error('No image frames found');
-  const modeNames = ['adaptive','lossless','lossy','express'];
-  const isHDR16 = chunks.some(c => c.type==='FDAT' && c.data[0]===0x4E);
-  return {w, h, frames, frameDuration, mode: modeNames[cmode]??'?', hasAlpha, isHDR, isHDR16, isAnimated, exifBytes, colorSpaceCode};
+let cur = null;   // frame on screen, as decoded (the canvas premultiplies alpha)
+// Colour: a .nova with a Display P3 profile (iPhone photos) is shown in P3 where the browser can,
+// on a canvas created for it (a canvas keeps its colour space); icc goes into the PNG export.
+const P3 = (() => { try { return document.createElement('canvas').getContext('2d', { colorSpace: 'display-p3' }).getContextAttributes().colorSpace === 'display-p3'; } catch (e) { return false; } })();
+let space = 'srgb', icc = null;
+function useSpace(s) {
+  space = s;
+  if (((ctx.getContextAttributes && ctx.getContextAttributes().colorSpace) || 'srgb') === s) return;
+  const n = document.createElement('canvas');
+  n.id = 'cv';
+  n.setAttribute('aria-label', 'Opened image');
+  cv.replaceWith(n);
+  cv = n;
+  ctx = cv.getContext('2d', { colorSpace: s });
 }
-
-// ── EXIF parser (TIFF IFD) ────────────────────────────────────────────────────
-const EXIF_TAG_NAMES = {
-  270:'ImageDescription', 271:'Make', 272:'Model', 274:'Orientation',
-  282:'XResolution', 283:'YResolution', 296:'ResolutionUnit',
-  305:'Software', 306:'DateTime', 315:'Artist', 33432:'Copyright',
-  33434:'ExposureTime', 33437:'FNumber', 34850:'ExposureProgram',
-  34855:'ISOSpeed', 36867:'DateTimeOriginal', 36868:'DateTimeDigitized',
-  37385:'Flash', 37386:'FocalLength', 41986:'ExposureMode',
-  41987:'WhiteBalance', 42036:'LensModel', 42037:'LensSerialNumber',
-};
-
-function parseExif(exifBytes) {
-  if (!exifBytes || exifBytes.length < 14) return {};
-  // Check "Exif\x00\x00" header
-  if (String.fromCharCode(exifBytes[0],exifBytes[1],exifBytes[2],exifBytes[3]) !== 'Exif') return {};
-  const tiff = exifBytes.subarray(6);
-  const le = tiff[0] === 0x49;
-  const view = new DataView(tiff.buffer, tiff.byteOffset);
-  const u16 = o => view.getUint16(o, le);
-  const u32 = o => view.getUint32(o, le);
-  const i32 = o => view.getInt32(o, le);
-  const TYPE_SZ = [0,1,1,2,4,8,0,1,0,4,8];
-
-  function readIFD(off, result={}) {
-    if (off + 2 > tiff.length) return result;
-    const count = u16(off); off += 2;
-    for (let i = 0; i < count && off+12 <= tiff.length; i++, off += 12) {
-      const tag = u16(off), type = u16(off+2), cnt = u32(off+4);
-      const sz = (TYPE_SZ[type]||1) * cnt;
-      const dataOff = sz > 4 ? u32(off+8) : off+8;
-      if (tag === 34665) { readIFD(u32(off+8), result); continue; } // ExifIFD pointer
-      const name = EXIF_TAG_NAMES[tag]; if (!name) continue;
-      try {
-        if (type === 2) { // ASCII
-          let end = dataOff; while (end < dataOff+cnt && tiff[end]) end++;
-          result[name] = new TextDecoder().decode(tiff.subarray(dataOff, end));
-        } else if (type === 3) result[name] = cnt===1 ? u16(dataOff) : Array.from({length:cnt},(_,k)=>u16(dataOff+k*2));
-        else if (type === 4) result[name] = cnt===1 ? u32(dataOff) : Array.from({length:cnt},(_,k)=>u32(dataOff+k*4));
-        else if (type === 5) result[name] = cnt===1 ? `${u32(dataOff)}/${u32(dataOff+4)}` : Array.from({length:cnt},(_,k)=>`${u32(dataOff+k*8)}/${u32(dataOff+k*8+4)}`);
-        else if (type === 9) result[name] = i32(dataOff);
-        else if (type === 10) result[name] = `${i32(dataOff)}/${i32(dataOff+4)}`;
-      } catch {}
+// ICC profile kept in a .nova: MDAT iCCP (from PNG: name, 0, method, zlib data) or APP2 ICC_PROFILE
+// (from JPEG). ponytail: first APP2 segment only (profiles over 64 KB are split; none seen in photos).
+async function iccOf(data, f) {
+  try {
+    for (const c of f.chunks) {
+      if (c.type !== 0x4D444154 || c.len < 4) continue;
+      const kind = String.fromCharCode(...data.subarray(c.pos, c.pos + 4)), raw = data.subarray(c.pos + 4, c.pos + c.len);
+      if (kind === 'iCCP') return new Uint8Array(await new Response(new Blob([raw.subarray(raw.indexOf(0) + 2)]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer());
+      if (kind === 'APP2' && String.fromCharCode(...raw.subarray(0, 12)) === 'ICC_PROFILE\0') return raw.slice(14);
     }
-    return result;
-  }
-  try { return readIFD(u32(4)); } catch { return {}; }
-}
-
-// ── EXIF builder (minimal TIFF IFD, LE) ──────────────────────────────────────
-const EDITABLE_TAGS = [
-  {id:270, name:'ImageDescription'}, {id:271, name:'Make'}, {id:272, name:'Model'},
-  {id:305, name:'Software'},         {id:306, name:'DateTime'},
-  {id:315, name:'Artist'},           {id:33432, name:'Copyright'},
-];
-
-function buildExif(fields) {
-  // fields: {ImageDescription, Make, Model, Software, DateTime, Artist, Copyright}
-  const enc = new TextEncoder();
-  const entries = [];
-  for (const {id, name} of EDITABLE_TAGS) {
-    const v = (fields[name]||'').trim();
-    if (v) entries.push({tag: id, bytes: enc.encode(v + '\x00')});
-  }
-  if (!entries.length) return null;
-  entries.sort((a,b) => a.tag - b.tag);
-
-  // Layout: "Exif\x00\x00" (6) + TIFF header (8) + IFD (2 + N*12 + 4) + data
-  const ifdOff = 8;
-  const ifdSize = 2 + entries.length*12 + 4;
-  let dataStart = ifdOff + ifdSize;
-  // Assign data offsets
-  let dataOff = dataStart;
-  for (const e of entries) {
-    if (e.bytes.length > 4) { e.valOff = dataOff; dataOff += e.bytes.length; if (dataOff%2) dataOff++; }
-  }
-  const tiff = new Uint8Array(dataOff);
-  const view = new DataView(tiff.buffer);
-  const w16 = (o,v) => view.setUint16(o,v,true);
-  const w32 = (o,v) => view.setUint32(o,v,true);
-  // TIFF header LE
-  tiff[0]=0x49; tiff[1]=0x49; w16(2,0x002A); w32(4,ifdOff);
-  let off = ifdOff;
-  w16(off, entries.length); off+=2;
-  for (const e of entries) {
-    w16(off, e.tag); w16(off+2, 2); w32(off+4, e.bytes.length); // type=ASCII
-    if (e.bytes.length <= 4) tiff.set(e.bytes, off+8);
-    else w32(off+8, e.valOff);
-    off += 12;
-  }
-  w32(off, 0); // next IFD = none
-  for (const e of entries) if (e.valOff != null) tiff.set(e.bytes, e.valOff);
-
-  const result = new Uint8Array(6+tiff.length);
-  result.set([0x45,0x78,0x69,0x66,0x00,0x00]);
-  result.set(tiff, 6);
-  return result;
-}
-
-// ── Extract EXIF from JPEG bytes ──────────────────────────────────────────────
-function extractJpegExif(bytes) {
-  if (bytes[0]!==0xFF || bytes[1]!==0xD8) return null;
-  let off = 2;
-  while (off + 4 < bytes.length) {
-    if (bytes[off] !== 0xFF) break;
-    const marker = bytes[off+1];
-    const segLen = (bytes[off+2]<<8)|bytes[off+3]; // includes 2-byte length
-    if (marker === 0xE1) { // APP1
-      if (String.fromCharCode(...bytes.subarray(off+4,off+10)) === 'Exif\x00\x00')
-        return bytes.slice(off+4, off+2+segLen);
-    }
-    if (marker === 0xDA) break; // SOS
-    off += 2 + segLen;
-  }
+  } catch (e) { }
   return null;
 }
-
-// ── Inject EXIF into JPEG bytes ───────────────────────────────────────────────
-function injectExifJpeg(jpegBytes, exifBytes) {
-  // exifBytes starts with "Exif\x00\x00"
-  const app1Len = 2 + exifBytes.length; // length field (2) + payload
-  const app1 = new Uint8Array(4 + exifBytes.length);
-  app1[0]=0xFF; app1[1]=0xE1;
-  app1[2]=(app1Len>>8)&0xFF; app1[3]=app1Len&0xFF;
-  app1.set(exifBytes, 4);
-  const out = new Uint8Array(jpegBytes.length + app1.length);
-  out.set(jpegBytes.subarray(0,2)); // SOI
-  out.set(app1, 2);
-  out.set(jpegBytes.subarray(2), 2+app1.length);
-  return out;
+const isP3 = p => !!p && /Display P3/.test(new TextDecoder('latin1').decode(p).replace(/\0/g, ''));
+function show(w, h, rgba) {
+  cur = { w, h, rgba };
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, w * h * 4), w, h, { colorSpace: space }), 0, 0);
 }
 
-// ── NOVA encoder ──────────────────────────────────────────────────────────────
-const u32be = v => new Uint8Array([(v>>>24)&0xFF,(v>>>16)&0xFF,(v>>>8)&0xFF,v&0xFF]);
+const mb = n => n >= 1e6 ? (n / 1e6).toFixed(1) + ' MB' : n >= 1e3 ? (n / 1e3).toFixed(0) + ' KB' : n + ' B';
 
-function buildChunk(type, data) {
-  const tU8 = new TextEncoder().encode(type).subarray(0,4);
-  const dU8 = data instanceof Uint8Array ? data : new Uint8Array(data);
-  const chunk = new Uint8Array(4+4+dU8.length+4);
-  chunk.set(tU8,0); chunk.set(u32be(dU8.length),4); chunk.set(dU8,8);
-  chunk.set(u32be(crc32(tU8,dU8)), 8+dU8.length);
-  return chunk;
-}
-
-async function losslessBlock(oc) {
-  const png = new Uint8Array(await (await oc.convertToBlob({type:'image/png'})).arrayBuffer());
-  const out = new Uint8Array(1+png.length); out[0]=0x50; out.set(png,1); return out;
-}
-async function lossyBlock(oc, quality, hasAlpha) {
-  const blob = await oc.convertToBlob({type:'image/jpeg', quality:quality/100});
-  const jpg = new Uint8Array(await blob.arrayBuffer());
-  if (!hasAlpha) { const out=new Uint8Array(1+jpg.length); out[0]=0x4A; out.set(jpg,1); return out; }
-  const id = oc.getContext('2d').getImageData(0,0,oc.width,oc.height);
-  const alpha = new Uint8Array(oc.width*oc.height);
-  for (let i=0;i<alpha.length;i++) alpha[i]=id.data[i*4+3];
-  const ac = await deflate(alpha);
-  const out = new Uint8Array(1+4+jpg.length+ac.length);
-  out[0]=0x41; out.set(u32be(jpg.length),1); out.set(jpg,5); out.set(ac,5+jpg.length);
-  return out;
-}
-
-async function encodeNOVA(file, mode, quality, exifBytes) {
-  const bitmap = await createImageBitmap(file);
-  const {width:w, height:h} = bitmap;
-  const oc = new OffscreenCanvas(w,h);
-  const cx = oc.getContext('2d', {colorSpace:'display-p3'});
-  cx.drawImage(bitmap,0,0);
-  const id = cx.getImageData(0,0,w,h);
-  const colorSpaceCode = id.colorSpace === 'display-p3' ? 1 : 0;
-  let hasAlpha = false;
-  for (let i=3;i<id.data.length;i+=4) if (id.data[i]<255){hasAlpha=true;break;}
-
-  let fdatPayload, cmode;
-  if (mode==='lossless') { fdatPayload=await losslessBlock(oc); cmode=1; }
-  else if (mode==='lossy') { fdatPayload=await lossyBlock(oc,quality,hasAlpha); cmode=2; }
-  else {
-    const [ll,jj]=await Promise.all([losslessBlock(oc),lossyBlock(oc,quality,hasAlpha)]);
-    fdatPayload=ll.length<=jj.length?ll:jj; cmode=0;
+// The file's anatomy: bytes per chunk type (12 bytes of header and CRC each), in file order.
+const COLOURS = { IHDR: '--c-ihdr', PREV: '--c-prev', FDAT: '--c-fdat', MDAT: '--c-mdat' };
+const WHAT = { IHDR: 'header', PREV: 'preview', FDAT: 'pixels', MDAT: 'metadata', ANIM: 'animation', FDLT: 'frame changes', RAWI: 'RAW info' };
+function anatomy(data, f) {
+  const parts = [];
+  for (const c of f.chunks) {
+    const t = String.fromCharCode(c.type >>> 24, c.type >>> 16 & 255, c.type >>> 8 & 255, c.type & 255);
+    const p = parts.find(p => p.t === t);
+    if (p) { p.n++; p.b += c.len + 12; } else parts.push({ t, n: 1, b: c.len + 12 });
   }
-
-  const ihdrData = new Uint8Array(12);
-  ihdrData.set(u32be(w),0); ihdrData.set(u32be(h),4);
-  ihdrData[8]=8; ihdrData[9]=colorSpaceCode; ihdrData[10]=hasAlpha?1:0; ihdrData[11]=cmode;
-
-  const chunks = [buildChunk('IHDR', ihdrData)];
-  if (exifBytes && exifBytes.length > 0) {
-    const mdat = new Uint8Array(4+4+exifBytes.length);
-    mdat.set(u32be(0),0);                   // icc_len = 0
-    mdat.set(u32be(exifBytes.length),4);
-    mdat.set(exifBytes,8);
-    chunks.push(buildChunk('MDAT', mdat));
-  }
-  chunks.push(buildChunk('FDAT', fdatPayload));
-  chunks.push(buildChunk('IEND', new Uint8Array(0)));
-
-  const total = MAGIC.length + chunks.reduce((s,c)=>s+c.length,0);
-  const out = new Uint8Array(total); let pos=0;
-  out.set(MAGIC,pos); pos+=MAGIC.length;
-  for (const c of chunks) { out.set(c,pos); pos+=c.length; }
-  return out;
+  $('map').replaceChildren(...parts.map(p => {
+    const d = document.createElement('div');
+    d.style.flex = p.b + ' 1 0';
+    d.style.setProperty('--c', `var(${COLOURS[p.t] || '--c-other'})`);
+    d.title = `${p.t}: ${mb(p.b)}`;
+    return d;
+  }));
+  $('legend').replaceChildren(...parts.map(p => {
+    const li = document.createElement('li');
+    li.style.setProperty('--c', `var(${COLOURS[p.t] || '--c-other'})`);
+    li.innerHTML = `<b>${p.t}</b>${p.n > 1 ? ' ×' + p.n : ''} ${WHAT[p.t] || ''} · ${mb(p.b)}`;
+    return li;
+  }));
+  $('anatomy').hidden = false;
+}
+function specs(rows) {
+  $('specs').replaceChildren(...rows.flatMap(([k, v]) => {
+    const dt = document.createElement('dt'), dd = document.createElement('dd');
+    dt.textContent = k;
+    dd.textContent = v;
+    const box = document.createElement('div');
+    box.append(dt, dd);
+    return box;
+  }));
+  $('specs').hidden = false;
 }
 
-// ── HDR16 helpers ─────────────────────────────────────────────────────────────
-const _SAT = 1.1; // display-only saturation boost (linear space, Rec.709 luma)
-
-function _drawHDR16ToCanvas(ctx, u16, srcW, srcH) {
-  // Fit canvas to the container's physical pixels — no CSS rescaling → no blur.
-  // parentElement.clientWidth is 0 when the result panel is still display:none,
-  // so fall back to viewport width capped at the 880px CSS max-width.
-  const dpr = Math.min(3, window.devicePixelRatio || 1);
-  const cssW = ctx.canvas.parentElement?.clientWidth
-    || Math.min(window.innerWidth, 880);
-  const scale = Math.min(1, (cssW * dpr) / Math.max(srcW, srcH));
-  const dw = Math.round(srcW * scale);
-  const dh = Math.round(srcH * scale);
-  ctx.canvas.width = dw;
-  ctx.canvas.height = dh;
-  ctx.canvas.style.width  = Math.round(dw / dpr) + 'px';
-  ctx.canvas.style.height = Math.round(dh / dpr) + 'px';
-
-  const wp = _u16WhitePoint(u16);
-  const id = ctx.createImageData(dw, dh);
-  const d = id.data;
-  for (let dy = 0; dy < dh; dy++) {
-    const sy = Math.min(srcH - 1, Math.round(dy / scale));
-    for (let dx = 0; dx < dw; dx++) {
-      const sx = Math.min(srcW - 1, Math.round(dx / scale));
-      const j = (sy * srcW + sx) * 3;
-      let r = u16[j] / wp, g = u16[j+1] / wp, b = u16[j+2] / wp;
-      const lum = 0.2126*r + 0.7152*g + 0.0722*b;
-      r = lum + (r-lum)*_SAT; g = lum + (g-lum)*_SAT; b = lum + (b-lum)*_SAT;
-      const i = dy*dw + dx;
-      d[i*4] = _aces8(r); d[i*4+1] = _aces8(g); d[i*4+2] = _aces8(b); d[i*4+3] = 255;
-    }
-  }
-  ctx.putImageData(id, 0, 0);
-}
-
-async function encodeNOVAFromRAW(raw, exifBytes) {
-  const {width:w, height:h, data:u16} = raw;
-  const n = w * h * 3;
-  const buf = new Uint8Array(n * 2);
-  const dv = new DataView(buf.buffer);
-  for (let i = 0; i < n; i++) dv.setUint16(i*2, u16[i], true); // little-endian
-  const compressed = await deflate(buf);
-  const fdatPayload = new Uint8Array(1 + compressed.length);
-  fdatPayload[0] = 0x4E; // 'N' marker
-  fdatPayload.set(compressed, 1);
-
-  const ihdrData = new Uint8Array(12);
-  ihdrData.set(u32be(w),0); ihdrData.set(u32be(h),4);
-  ihdrData[8]=16; ihdrData[9]=0; ihdrData[10]=2; ihdrData[11]=1; // bd=16, sRGB, is_hdr, lossless
-
-  const chunks = [buildChunk('IHDR', ihdrData)];
-  if (exifBytes && exifBytes.length > 0) {
-    const mdat = new Uint8Array(8+exifBytes.length);
-    mdat.set(u32be(0),0); mdat.set(u32be(exifBytes.length),4); mdat.set(exifBytes,8);
-    chunks.push(buildChunk('MDAT', mdat));
-  }
-  chunks.push(buildChunk('FDAT', fdatPayload));
-  chunks.push(buildChunk('IEND', new Uint8Array(0)));
-
-  const total = MAGIC.length + chunks.reduce((s,c)=>s+c.length,0);
-  const out = new Uint8Array(total); let pos=0;
-  out.set(MAGIC,pos); pos+=MAGIC.length;
-  for (const c of chunks) { out.set(c,pos); pos+=c.length; }
-  return out;
-}
-
-// ── utils ─────────────────────────────────────────────────────────────────────
-function fmtSize(n) {
-  if (n<1024) return `${n} B`;
-  if (n<1e6) return `${(n/1024).toFixed(1)} KB`;
-  return `${(n/1e6).toFixed(2)} MB`;
-}
-function dlBlob(blob, name) {
-  const url = URL.createObjectURL(blob instanceof Blob ? blob : new Blob([blob],{type:'application/octet-stream'}));
-  const a = Object.assign(document.createElement('a'),{href:url,download:name});
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(()=>URL.revokeObjectURL(url),5000);
-}
-function setStatus(el, msg, type) {
-  el.textContent=msg; el.className=`status-msg${msg?' '+type:''}`; el.style.display=msg?'block':'none';
-}
-function wireDropZone(zone, input, onFile) {
-  zone.addEventListener('click', ()=>input.click());
-  zone.addEventListener('dragover', e=>{e.preventDefault();zone.classList.add('over');});
-  zone.addEventListener('dragleave', ()=>zone.classList.remove('over'));
-  zone.addEventListener('drop', e=>{e.preventDefault();zone.classList.remove('over');if(e.dataTransfer.files[0])onFile(e.dataTransfer.files[0]);});
-  input.addEventListener('change', ()=>{if(input.files[0])onFile(input.files[0]);input.value='';});
-}
-
-document.querySelectorAll('.tab-btn').forEach(btn=>btn.addEventListener('click',()=>{
-  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
-}));
-
-// ══ VIEW TAB ══════════════════════════════════════════════════════════════════
-const vCanvas=document.getElementById('view-canvas'), vCtx=vCanvas.getContext('2d',{colorSpace:'display-p3'});
-const vStatus=document.getElementById('view-status'), vResult=document.getElementById('view-result');
-const vInfo=document.getElementById('view-info'), animBar=document.getElementById('anim-bar');
-const frameLbl=document.getElementById('frame-lbl');
-
-let cur=null, animIdx=0, animPlaying=false, animTid=null;
-
-wireDropZone(document.getElementById('view-drop'),document.getElementById('view-input'),loadNOVA);
-
-async function loadNOVA(file) {
-  if (!file.name.toLowerCase().endsWith('.nova')) {
-    setStatus(vStatus,'Please drop a .nova file.','error'); return;
-  }
-  setStatus(vStatus,'Decoding…','loading');
-  vResult.style.display='none'; stopAnim();
+async function open(file) {
+  const my = ++token;
+  clearInterval(timer);
+  $('play').hidden = true;
+  ['fmt', 'q', 'save'].forEach(id => $(id).disabled = true);
+  if (!(file.sample)) document.querySelectorAll('[data-k]').forEach(b => b.setAttribute('aria-pressed', 'false'));
+  name = file.name.replace(/\.nova$/i, '');
+  const data = new Uint8Array(await file.arrayBuffer());
   try {
-    cur = await parseNOVA(await file.arrayBuffer());
-    vCanvas.width=cur.w; vCanvas.height=cur.h;
-    const tags=[`${cur.w}×${cur.h}`,cur.mode,cur.hasAlpha?'RGBA':'RGB',
-      cur.isHDR16?'HDR16 RAW':cur.isHDR?'HDR':'8-bit',cur.colorSpaceCode===1?'Display P3':'',fmtSize(file.size),
-      cur.isAnimated?`${cur.frames.length} frames @ ${cur.frameDuration}ms`:''
-    ].filter(Boolean);
-    vInfo.textContent=`${file.name}  ·  ${tags.join(' · ')}`;
+    const f = NovaDecode.parse(data);
+    icc = f.raw ? null : await iccOf(data, f);   // a developed RAW is sRGB
+    if (my !== token) return;
+    useSpace(P3 && isP3(icc) ? 'display-p3' : 'srgb');
+    anatomy(data, f);
+    const kind = f.raw ? 'RAW sensor frame' : (f.np === 4 ? 'RGBA' : 'RGB') + (f.animated ? ', animated' : '');
+    const base = [['Size', `${f.width} × ${f.height}`], ['File', mb(data.length)], ['Bits per pixel', (data.length * 8 / (f.width * f.height)).toFixed(2)]];
+    specs([...base, ['Content', kind]]);
+    info.textContent = file.name;
+    const t0 = performance.now();
+    const prev = await NovaDecode.decodePreview(data);
+    if (my !== token) return;
+    // The preview is small: stretch it to where the full image will sit (same aspect ratio).
+    if (prev) { cv.style.width = `min(${f.width}px, 100%, calc(72vh * ${f.width / f.height}))`; show(prev.width, prev.height, prev.rgba); }
+    if (f.raw) {
+      // Developed by nova + LibRaw (wasm): camera white balance and look, 8-bit sRGB, as PAM (RGBA as is).
+      info.textContent = `${file.name}: preview shown, developing the RAW…`;
+      const dev = await nova(name + '.nova', data.slice(), ['decode', 'IN', 'OUT'], 'dev.pam');
+      if (my !== token) return;
+      const hdr = new TextDecoder().decode(dev.subarray(0, 128)), end = hdr.indexOf('ENDHDR\n') + 7;
+      const dw = +/WIDTH (\d+)/.exec(hdr)[1], dh = +/HEIGHT (\d+)/.exec(hdr)[1];
+      cv.style.width = '';
+      show(dw, dh, dev.subarray(end, end + dw * dh * 4));
+      info.textContent = `${file.name}: RAW developed.`;
+      specs([['Size', `${dw} × ${dh}`], base[1], base[2], ['Content', 'RAW, developed'], ['Developed in', `${((performance.now() - t0) / 1000).toFixed(1)} s on ${CORES} ${CORES > 1 ? 'cores' : 'core'}`]]);
+      ['fmt', 'q', 'save'].forEach(id => $(id).disabled = false);
+      return;
+    }
+    bar.style.visibility = 'visible';
+    fill.style.width = '0';
+    info.textContent = `${file.name}: decoding…`;
+    const r = await NovaDecode.decode(data, { run: runner(x => { if (my === token) fill.style.width = (x * 100).toFixed(1) + '%'; }) });
+    if (my !== token) return;
+    bar.style.visibility = 'hidden';
+    cv.style.width = '';
+    show(r.width, r.height, r.frames[0]);
+    info.textContent = file.name;
+    const n = workers().length || 1;
+    specs([...base, ['Content', `${kind}, ${r.lossy ? 'lossy' : 'lossless'}${r.frames.length > 1 ? `, ${r.frames.length} frames` : ''}`],
+      ['Decoded in', `${((performance.now() - t0) / 1000).toFixed(1)} s on ${n} ${n > 1 ? 'cores' : 'core'}`]]);
+    ['fmt', 'q', 'save'].forEach(id => $(id).disabled = false);
+    if (r.frames.length > 1) {
+      let i = 0;
+      const play = () => { timer = setInterval(() => { i = (i + 1) % r.frames.length; show(r.width, r.height, r.frames[i]); }, Math.max(r.delay, 10)); };
+      $('play').hidden = false;
+      $('play').textContent = 'Pause';
+      $('play').onclick = () => {
+        if ($('play').textContent === 'Pause') { clearInterval(timer); $('play').textContent = 'Play'; }
+        else { play(); $('play').textContent = 'Pause'; }
+      };
+      play();
+    }
+  } catch (e) {
+    if (my !== token) return;
+    bar.style.visibility = 'hidden';
+    info.innerHTML = '';
+    const s = document.createElement('span');
+    s.className = 'err';
+    s.textContent = `${file.name}: ${e.message}`;
+    info.append(s);
+  }
+}
 
-    // Display EXIF panel
-    const exifPanel=document.getElementById('exif-panel');
-    if (cur.exifBytes) {
-      const parsed=parseExif(cur.exifBytes);
-      const keys=Object.keys(parsed);
-      document.getElementById('exif-toggle-lbl').textContent=`EXIF metadata — ${keys.length} tag${keys.length!==1?'s':''}`;
-      const grid=document.getElementById('exif-grid');
-      grid.innerHTML='';
-      for (const [k,v] of Object.entries(parsed)) {
-        const kEl=document.createElement('div'); kEl.className='exif-key'; kEl.textContent=k;
-        const vEl=document.createElement('div'); vEl.className='exif-val'; vEl.textContent=String(v);
-        grid.appendChild(kEl); grid.appendChild(vEl);
+// Examples: small .nova files next to this page (no metadata in them).
+const SAMPLES = { photo: 'photo.nova', screen: 'screenshot.nova', wheel: 'animation.nova' };
+async function sample(k) {
+  document.querySelectorAll('[data-k]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === k)));
+  try {
+    const r = await fetch('samples/' + SAMPLES[k]);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const f = new File([await r.blob()], SAMPLES[k]);
+    f.sample = true;
+    open(f);
+  } catch (e) {
+    info.innerHTML = '';
+    const s = document.createElement('span');
+    s.className = 'err';
+    s.textContent = `The example could not be loaded (${e.message}). Open this page from a web server, not as a local file.`;
+    info.append(s);
+  }
+}
+document.querySelectorAll('[data-k]').forEach(b => b.onclick = () => sample(b.dataset.k));
+
+function dropZone(zone, input, fn) {
+  $(input).onchange = e => e.target.files[0] && fn(e.target.files[0]);
+  const d = $(zone);
+  d.ondragover = e => { e.preventDefault(); d.classList.add('over'); };
+  d.ondragleave = () => d.classList.remove('over');
+  d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files[0] && fn(e.dataTransfer.files[0]); };
+}
+dropZone('stage', 'file', open);   // drop a .nova on the image
+dropZone('edrop', 'efile', encode);
+$('eq').oninput = () => { $('eqv').textContent = $('eq').value; };
+$('ekeep').onchange = () => { $('egps').disabled = !$('ekeep').checked; };
+
+// Encoder: nova itself (wasm) in a worker. PNG/JPEG go in as they are (metadata kept);
+// anything else is decoded by the browser and handed over as an exact PNG.
+// HEIC: pixels from the browser (Safari only: no HEVC decoder is shipped here), metadata from heif_meta.js.
+const RAW = /\.(3fr|arw|cr2|cr3|crw|dcr|dng|erf|iiq|k25|kdc|mef|mos|mrw|nef|nrw|orf|pef|raf|raw|rw2|rwl|sr2|srf|srw|x3f)$/i;
+// One nova command on n cores: n workers run it as replicas (enc_worker.js); at each barrier every
+// replica sends its changes straight to the others (a MessageChannel per pair). Falls back to one
+// core if the replicas fail (out of memory with n copies).
+// Phones: one replica (each holds a whole copy of the image, up to ~1 GB for a 24 Mpx RAW, and iOS
+// closes the tab beyond its memory limit); 8 elsewhere.
+const CORES = /iPhone|iPad|Android/.test(navigator.userAgent) ? 1 : Math.min(navigator.hardwareConcurrency || 1, 8);
+async function nova(name, data, argv, out, n = CORES) {
+  const ws = [...Array(n)].map(() => new Worker('enc_worker.js')), peers = ws.map(() => []);
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    const c = new MessageChannel();
+    peers[i].push(c.port1);
+    peers[j].push(c.port2);
+  }
+  try {
+    const rs = await Promise.all(ws.map((w, i) => new Promise((ok, ko) => {
+      w.onmessage = e => ok(e.data);
+      w.onerror = e => { if (e.preventDefault) e.preventDefault(); ko(new Error(e.message || 'nova failed to load')); };
+      w.postMessage({ name, data, argv, out, replica: i, n, peers: peers[i] }, peers[i]);
+    }).then(r => { if (!r.ok) throw new Error(r.error); return r; })));
+    return rs[0].out;
+  } catch (x) {
+    if (n === 1) throw x;
+    console.warn('nova on ' + n + ' cores failed, retrying on one:', x.message);
+    return nova(name, data, argv, out, 1);
+  } finally { ws.forEach(w => w.terminate()); }
+}
+async function encode(file) {
+  const ei = $('einfo'), base = file.name.replace(/\.[^.]*$/, '');
+  let data = new Uint8Array(await file.arrayBuffer()), src = file.name;
+  const native = (data[0] === 0x89 && data[1] === 0x50) || (data[0] === 0xFF && data[1] === 0xD8) || RAW.test(file.name);
+  try {
+    if (!native) {
+      ei.textContent = `${file.name}: decoding with the browser…`;
+      const heif = HeifMeta.isHeif(data), meta = heif ? HeifMeta.read(data) : {};
+      let bm;
+      try { bm = await createImageBitmap(file); }
+      catch (e) {
+        throw new Error(heif
+          ? 'HEIC images can only be opened in Safari (macOS, iPhone, iPad), as other browsers do not include the required decoder. Please open this page in Safari, or convert the image to JPEG beforehand.'
+          : 'This browser cannot open this image format. Please convert it to PNG or JPEG beforehand.');
       }
-      exifPanel.style.display='block';
-    } else {
-      exifPanel.style.display='none';
+      // Display P3 photos (iPhone) stay in P3 with their profile where the canvas supports it; otherwise
+      // the browser converts to sRGB and the profile is dropped. Other formats: pixels only.
+      const p3 = meta.icc && /Display P3/.test(String.fromCharCode(...meta.icc).replace(/\0/g, ''));
+      const c = document.createElement('canvas');
+      c.width = bm.width; c.height = bm.height;
+      const g = c.getContext('2d', p3 ? { colorSpace: 'display-p3' } : {});
+      const inP3 = p3 && g.getContextAttributes && g.getContextAttributes().colorSpace === 'display-p3';
+      if (!inP3) meta.icc = null;
+      g.drawImage(bm, 0, 0);
+      const px = g.getImageData(0, 0, bm.width, bm.height, inP3 ? { colorSpace: 'display-p3' } : undefined);
+      const w = bm.width, h = bm.height;
+      bm.close();                  // phones: free the bitmap and the canvas before nova needs the memory
+      c.width = c.height = 0;
+      data = new Uint8Array(await (await png(w, h, new Uint8Array(px.data.buffer), meta)).arrayBuffer());
+      src = base + '.png';
     }
-
-    if (cur.frames.length>1) {
-      animBar.classList.add('visible');
-      document.getElementById('btn-play').textContent='⏸ Pause';
-      animIdx=0; animPlaying=true; startAnim();
-    } else {
-      animBar.classList.remove('visible');
-      vCtx.drawImage(cur.frames[0],0,0);
-    }
-    vResult.style.display='block';
-    setStatus(vStatus,'','');
-  } catch(e) { setStatus(vStatus,`Error: ${e.message}`,'error'); }
-}
-
-// EXIF panel toggle
-const exifToggle=document.getElementById('exif-toggle');
-const exifBody=document.getElementById('exif-body');
-exifToggle.addEventListener('click',()=>{
-  const open=exifBody.classList.toggle('visible');
-  exifToggle.classList.toggle('open',open);
-});
-
-function startAnim() {
-  if (animTid) return;
-  const step=()=>{
-    if (!cur||!animPlaying) return;
-    vCtx.drawImage(cur.frames[animIdx],0,0);
-    frameLbl.textContent=`Frame ${animIdx+1} / ${cur.frames.length}`;
-    animIdx=(animIdx+1)%cur.frames.length;
-    animTid=setTimeout(step,cur.frameDuration);
-  }; step();
-}
-function stopAnim(){clearTimeout(animTid);animTid=null;animPlaying=false;}
-
-document.getElementById('btn-play').addEventListener('click',()=>{
-  const btn=document.getElementById('btn-play');
-  if (animPlaying){stopAnim();btn.textContent='▶ Play';}
-  else {animPlaying=true;startAnim();btn.textContent='⏸ Pause';}
-});
-
-document.getElementById('btn-png').addEventListener('click',()=>
-  vCanvas.toBlob(b=>dlBlob(b,'nova-export.png'),'image/png'));
-
-document.getElementById('btn-jpg').addEventListener('click',()=>{
-  vCanvas.toBlob(async b=>{
-    let jpegBytes=new Uint8Array(await b.arrayBuffer());
-    if (cur&&cur.exifBytes) jpegBytes=injectExifJpeg(jpegBytes,cur.exifBytes);
-    dlBlob(new Blob([jpegBytes],{type:'image/jpeg'}),'nova-export.jpg');
-  },'image/jpeg',0.92);
-});
-
-document.getElementById('btn-view-new').addEventListener('click',()=>{
-  stopAnim(); cur=null;
-  vResult.style.display='none'; setStatus(vStatus,'','');
-});
-
-// ══ MAKE TAB ══════════════════════════════════════════════════════════════════
-const mCanvas=document.getElementById('make-canvas'), mCtx=mCanvas.getContext('2d',{colorSpace:'display-p3'});
-const mStatus=document.getElementById('make-status'), mResult=document.getElementById('make-result');
-const mModeEl=document.getElementById('make-mode'), mQualEl=document.getElementById('make-quality');
-const qValEl=document.getElementById('q-val'), sizeEst=document.getElementById('size-est');
-const btnDl=document.getElementById('btn-dl-nova');
-
-let srcFile=null, srcRawData=null, novaBytes=null, encDebounce=null;
-let makeExifBytes=null; // EXIF to embed (from steal or from manual fields)
-
-mQualEl.addEventListener('input',()=>{qValEl.textContent=mQualEl.value;scheduleEncode();});
-mModeEl.addEventListener('change',scheduleEncode);
-function scheduleEncode(){clearTimeout(encDebounce);if(!srcFile&&!srcRawData)return;encDebounce=setTimeout(doEncode,350);}
-
-wireDropZone(document.getElementById('make-drop'),document.getElementById('make-input'),loadSource);
-
-async function loadSource(file) {
-  const _ext = (file.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
-  if (_RAW_EXTS.has(_ext)) {
-    if (typeof decodeRAW === 'undefined') {
-      setStatus(mStatus,'LibRaw WASM not loaded — RAW decoding unavailable.','error'); return;
-    }
-    srcFile=file; srcRawData=null; novaBytes=null;
-    setStatus(mStatus,'Decoding RAW with LibRaw…','loading'); mResult.style.display='none';
-    try {
-      const raw = await decodeRAW(await file.arrayBuffer());
-      _drawHDR16ToCanvas(mCtx, raw.data, raw.width, raw.height);
-      document.getElementById('make-info').textContent=
-        `${file.name}  ·  ${raw.width}×${raw.height}  ·  ${fmtSize(file.size)}  ·  HDR16 RAW`;
-      srcRawData=raw;
-      mResult.style.display='block';
-      setStatus(mStatus,'','');
-      doEncode();
-    } catch(e){ setStatus(mStatus,`RAW decode error: ${e.message}`,'error'); }
-    return;
-  }
-  if (!file.type.startsWith('image/')) {
-    setStatus(mStatus,'Please drop an image file.','error'); return;
-  }
-  srcFile=file; srcRawData=null; novaBytes=null;
-  setStatus(mStatus,'Loading…','loading'); mResult.style.display='none';
-
-  // Try to steal EXIF from the source itself if it's a JPEG
-  makeExifBytes=null;
-  if (file.type==='image/jpeg'||file.name.toLowerCase().endsWith('.jpg')||file.name.toLowerCase().endsWith('.jpeg')) {
-    const srcBytes=new Uint8Array(await file.arrayBuffer());
-    const stolen=extractJpegExif(srcBytes);
-    if (stolen) {
-      makeExifBytes=stolen;
-      _populateExifFields(parseExif(stolen));
-      _updateExifEditorLabel();
-    }
-  }
-
-  try {
-    const bm=await createImageBitmap(file);
-    mCanvas.width=bm.width; mCanvas.height=bm.height; mCtx.drawImage(bm,0,0);
-    document.getElementById('make-info').textContent=
-      `${file.name}  ·  ${bm.width}×${bm.height}  ·  ${fmtSize(file.size)}`;
-    mResult.style.display='block';
-    setStatus(mStatus,'','');
-    doEncode();
-  } catch(e){setStatus(mStatus,`Error: ${e.message}`,'error');}
-}
-
-// EXIF editor toggle
-const exifEditorToggle=document.getElementById('exif-editor-toggle');
-const exifEditorBody=document.getElementById('exif-editor-body');
-const exifEditorChevron=document.getElementById('exif-editor-chevron');
-exifEditorToggle.addEventListener('click',()=>{
-  const open=exifEditorBody.classList.toggle('visible');
-  exifEditorChevron.style.transform=open?'rotate(180deg)':'';
-});
-
-// "Steal from JPEG" button
-const stealInput=document.getElementById('exif-steal-input');
-document.getElementById('exif-steal-btn').addEventListener('click',()=>stealInput.click());
-stealInput.addEventListener('change',async()=>{
-  const f=stealInput.files[0]; if(!f){return;} stealInput.value='';
-  const bytes=new Uint8Array(await f.arrayBuffer());
-  const stolen=extractJpegExif(bytes);
-  if (stolen) {
-    makeExifBytes=stolen;
-    _populateExifFields(parseExif(stolen));
-    document.getElementById('exif-steal-name').textContent=f.name;
-    _updateExifEditorLabel();
-    scheduleEncode();
-  } else {
-    document.getElementById('exif-steal-name').textContent='No EXIF found';
-  }
-});
-
-// Manual fields → rebuild EXIF on change
-['ef-desc','ef-make','ef-model','ef-soft','ef-dt','ef-artist','ef-copy'].forEach(id=>{
-  document.getElementById(id).addEventListener('input',()=>{
-    _rebuildExifFromFields(); scheduleEncode();
-  });
-});
-
-function _populateExifFields(parsed) {
-  const map={270:'ef-desc',271:'ef-make',272:'ef-model',305:'ef-soft',306:'ef-dt',315:'ef-artist',33432:'ef-copy'};
-  const nameMap={ImageDescription:'ef-desc',Make:'ef-make',Model:'ef-model',
-    Software:'ef-soft',DateTime:'ef-dt',Artist:'ef-artist',Copyright:'ef-copy'};
-  for (const [name,id] of Object.entries(nameMap)) {
-    document.getElementById(id).value=parsed[name]||'';
+    ei.textContent = `${file.name}: encoding (${mb(file.size)})…`;
+    const t0 = performance.now();
+    const r = await nova(src, data, ['encode', 'IN', 'OUT', '-m', $('emode').value, '-q', $('eq').value], 'out.nova');
+    const out = new File([MetaStrip.apply(r, { keep: $('ekeep').checked, gps: $('egps').checked })], base + '.nova');
+    ei.textContent = `${file.name} → ${out.name}: ${mb(out.size)}, ${(out.size / file.size * 100).toFixed(0)} % of the source, encoded in ${((performance.now() - t0) / 1000).toFixed(1)} s on ${CORES} ${CORES > 1 ? 'cores' : 'core'}. Saved to your downloads; shown above.`;
+    download(out, out.name);
+    open(out);
+    $('viewer').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  } catch (e) {
+    ei.innerHTML = '';
+    const s = document.createElement('span');
+    s.className = 'err';
+    s.textContent = `${file.name}: ${e.message}`;
+    ei.append(s);
   }
 }
-
-function _rebuildExifFromFields() {
-  const fields={
-    ImageDescription: document.getElementById('ef-desc').value,
-    Make:    document.getElementById('ef-make').value,
-    Model:   document.getElementById('ef-model').value,
-    Software:document.getElementById('ef-soft').value,
-    DateTime:document.getElementById('ef-dt').value,
-    Artist:  document.getElementById('ef-artist').value,
-    Copyright:document.getElementById('ef-copy').value,
+// Export: the browser encodes the canvas (the frame on screen for animations).
+// ponytail: current frame only for animations; add an all-frames export if asked.
+const fmt = $('fmt'), q = $('q');
+fmt.onchange = () => { $('qbox').hidden = fmt.value === 'image/png'; };
+q.oninput = () => { $('qv').textContent = q.value; };
+// Exact PNG of the decoded RGBA (8-bit, colour type 6), zlib via the browser's CompressionStream.
+// meta: {exif, xmp, icc} as eXIf, iTXt and iCCP chunks (nova keeps them as they are).
+const deflate = async b => new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
+const bytes = s => Uint8Array.from(s, c => c.charCodeAt(0));
+async function png(w, h, rgba, meta = {}) {
+  const raw = new Uint8Array((w * 4 + 1) * h);
+  for (let y = 0; y < h; y++) raw.set(rgba.subarray(y * w * 4, (y + 1) * w * 4), y * (w * 4 + 1) + 1);
+  const z = await deflate(raw);
+  const cat = (...a) => { const r = new Uint8Array(a.reduce((s, x) => s + x.length, 0)); let o = 0; for (const x of a) { r.set(x, o); o += x.length; } return r; };
+  const chunk = (type, data) => {
+    const c = new Uint8Array(12 + data.length), v = new DataView(c.buffer);
+    v.setUint32(0, data.length);
+    for (let i = 0; i < 4; i++) c[4 + i] = type.charCodeAt(i);
+    c.set(data, 8);
+    v.setUint32(8 + data.length, (NovaDecode.crc(0xFFFFFFFF, c, 4, 8 + data.length) ^ 0xFFFFFFFF) >>> 0);
+    return c;
   };
-  makeExifBytes=buildExif(fields);
-  _updateExifEditorLabel();
+  const ih = new Uint8Array(13), v = new DataView(ih.buffer);
+  v.setUint32(0, w); v.setUint32(4, h); ih[8] = 8; ih[9] = 6;
+  const extra = [];
+  if (meta.exif) extra.push(chunk('eXIf', meta.exif));
+  if (meta.xmp) extra.push(chunk('iTXt', cat(bytes('XML:com.adobe.xmp'), new Uint8Array(5), meta.xmp)));
+  if (meta.icc) extra.push(chunk('iCCP', cat(bytes('ICC Profile\0\0'), await deflate(meta.icc))));
+  return new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ih), ...extra, chunk('IDAT', z), chunk('IEND', new Uint8Array(0))], { type: 'image/png' });
 }
-
-function _updateExifEditorLabel() {
-  const lbl=document.getElementById('exif-editor-lbl');
-  if (!makeExifBytes){lbl.textContent='EXIF metadata — none';return;}
-  const parsed=parseExif(makeExifBytes);
-  const n=Object.keys(parsed).length;
-  lbl.textContent=`EXIF metadata — ${n} tag${n!==1?'s':''}`;
+function download(b, file) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b);
+  a.download = file || name + '.' + { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[b.type];
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
-
-let pendingNOVABytes=null;
-async function doEncode() {
-  if (!srcFile && !srcRawData) return;
-  const mode=mModeEl.value, quality=parseInt(mQualEl.value,10);
-  sizeEst.textContent='encoding…'; btnDl.disabled=true; pendingNOVABytes=null;
-  try {
-    pendingNOVABytes = srcRawData
-      ? await encodeNOVAFromRAW(srcRawData, makeExifBytes)
-      : await encodeNOVA(srcFile, mode, quality, makeExifBytes);
-    sizeEst.textContent=`→ ${fmtSize(pendingNOVABytes.length)} as .nova`;
-    btnDl.disabled=false;
-  } catch(e){sizeEst.textContent=`Error: ${e.message}`;}
-}
-
-btnDl.addEventListener('click',()=>{
-  if (!pendingNOVABytes||!srcFile) return;
-  const name=srcFile.name.replace(/\.[^.]+$/,'')+'.nova';
-  dlBlob(new Blob([pendingNOVABytes],{type:'application/octet-stream'}),name);
-});
-
-document.getElementById('btn-make-new').addEventListener('click',()=>{
-  srcFile=null; srcRawData=null; novaBytes=null; makeExifBytes=null;
-  mResult.style.display='none'; setStatus(mStatus,'','');
-  _populateExifFields({}); _updateExifEditorLabel();
-});
+$('save').onclick = async () => {
+  if (fmt.value === 'image/png' && cur && self.CompressionStream) return download(await png(cur.w, cur.h, cur.rgba, icc ? { icc } : {}));
+  let src = cv;
+  if (fmt.value === 'image/jpeg') {   // no alpha in JPEG: flatten on white
+    src = document.createElement('canvas');
+    src.width = cv.width; src.height = cv.height;
+    const c = src.getContext('2d');
+    c.fillStyle = '#fff'; c.fillRect(0, 0, cv.width, cv.height); c.drawImage(cv, 0, 0);
+  }
+  src.toBlob(b => {
+    if (!b) { info.textContent = 'Export failed.'; return; }
+    if (b.type !== fmt.value) { info.textContent = `This browser cannot write ${fmt.selectedOptions[0].text}: choose PNG or JPEG.`; return; }
+    download(b);
+  }, fmt.value, q.value / 100);
+};
+sample('photo');
 </script>
 </body>
 </html>

@@ -1,168 +1,124 @@
-# NOVA Image Format
+<div align="center">
 
-An open, patent-free binary image format combining the best of PNG, JPEG, WebP, GIF and HEIC.
+# NOVA
 
-**Features:** adaptive/lossless/lossy/express compression · alpha channel · HDR · animation · structured metadata · competitive size vs PNG/JPEG
+**One image format for photos, screenshots, animations and camera RAW files.**<br>
+Half the size of PNG and usually smaller than WebP when every pixel must stay exact, on par with AVIF when it need not.
 
----
+[![Try it in your browser](https://img.shields.io/badge/try_it-in_your_browser-2945c7)](https://thibault-savenkoff.github.io/nova/)
+[![Status: v2 in progress](https://img.shields.io/badge/status-v2_in_progress-c98314)](#status)
+[![Written in Lisaac Ω](https://img.shields.io/badge/written_in-Lisaac_%CE%A9-16191d)](https://github.com/lisaac-omega/lisaac)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2e8b6e)](LICENSE)
 
-## Requirements
+<a href="https://thibault-savenkoff.github.io/nova/"><img src=".github/images/site.jpg" width="760" alt="The NOVA web page: a photo opened from a .nova file, with the file's chunks drawn to scale under it"></a>
 
-- Python 3.11+
-- Pillow (`pip install pillow`)
+</div>
 
----
+## Status
 
-## Format spec
+This is the `v2` branch: NOVA rewritten from scratch in [Lisaac Ω](https://github.com/lisaac-omega/lisaac), with its own codec.
+NOVA v1, on `main`, is a Python container around PNG and JPEG data. v2 replaces it on `main` once it is finished.
+v1 and v2 files are not compatible. The web page linked here is still v1 until v2 reaches `main`.
 
-```
-Magic  (8 bytes) : \x89NOVA\r\n\x1a\n
-Chunks           : [4b type][4b length][data][4b CRC32]
-```
+## Numbers
 
-| Chunk | Description |
-|-------|-------------|
-| `IHDR` | Width, height, bit depth, flags (alpha/HDR/animated), compression mode |
-| `MDAT` | ICC profile + EXIF (length-prefixed) |
-| `ANIM` | Frame count, duration (ms), loop count |
-| `PREV` | Express mode: low-res JPEG thumbnail (~10% size) for instant preview |
-| `FDAT` | Full frame data |
-| `FDLT` | Animation delta frame: bounding box + compressed region |
-| `IEND` | End marker |
+**Lossless.** Every pixel comes back exactly. Sizes against PNG (optimised) and WebP lossless (method 6):
 
-### Compression modes
+| Image | NOVA vs PNG | NOVA vs WebP |
+| --- | --- | --- |
+| Photos, 12–24 Mpx (10 photos) | **50 %** on average (45–63 %) | **84 %** on average (80–99 %) |
+| iPhone screenshots (2) | 42 % | 86–87 % |
+| Terminal screenshot, 1920 × 1080 | 32 % | 100.6 % (WebP wins by 356 bytes) |
+| Synthetic text, gradient, alpha | 15–73 % | 82–98 % |
+| Pure noise (nothing to compress) | 100 % | 100 % |
 
-| Mode | Behaviour |
-|------|-----------|
-| `adaptive` | Tries lossless and lossy on the whole frame, keeps the smaller result |
-| `lossless` | PNG-compressed (all 5 adaptive filters), pixel-perfect |
-| `lossy` | JPEG whole frame — smallest for photos |
-| `express` | JPEG + embedded thumbnail (`PREV` chunk) for instant preview on slow storage |
+**Lossy.** Same quality as the other formats (PSNR / SSIM), three photo crops:
 
----
+| Against | Size of the NOVA file |
+| --- | --- |
+| WebP | **69 %** (PSNR), 80 % (SSIM) |
+| AVIF | 100 % (PSNR), 108 % (SSIM) |
+| HEIC | 100 % (PSNR), 104 % (SSIM) |
 
-## Python API
+**Camera RAW.** The sensor data of a Canon CR3 is kept bit for bit in 80–85 % of the CR3's size.
 
-```python
-from nova import encode, decode, decode_preview
+Measured with `test/check.sh` and `test/rd_summary.sh`. The photos themselves are not in the repository.
 
-# Encode
-encode("input.png", "output.nova")
-encode("input.jpg", "output.nova", quality=75, mode="lossy")
-encode("input.png", "output.nova", mode="express", quality=60)
+## Try it
 
-# Encode animation
-frames = [Image.open(f) for f in frame_files]
-encode(frames[0], "anim.nova", frames=frames, frame_duration=50)
+**In your browser:** [thibault-savenkoff.github.io/nova](https://thibault-savenkoff.github.io/nova/) opens and creates `.nova` files.
+It runs NOVA compiled to WebAssembly on your device; nothing is uploaded. It works on phones too (tested on an iPhone 17 Pro Max).
 
-# Decode
-images = decode("output.nova")          # list of PIL.Image
-images[0].save("roundtrip.png")
+**On the command line:**
 
-# Express: get thumbnail instantly, full image separately
-thumb = decode_preview("output.nova")   # PIL.Image or None
-```
+```sh
+nova encode photo.heic photo.nova            # adaptive: exact for graphics, wavelet q 90 for photos
+nova encode shot.png shot.nova -m lossless   # always exact
+nova encode frame*.png anim.nova -d 40       # several sources make an animation
+nova encode IMG_1401.CR3 IMG_1401.nova       # camera RAW, sensor frame kept exactly
 
-### `encode` parameters
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `quality` | `85` | JPEG quality (1–100). For express, 50–70 is recommended. |
-| `mode` | `'adaptive'` | `'adaptive'` / `'lossless'` / `'lossy'` / `'express'` |
-| `is_hdr` | `False` | HDR mode (float32 pixels) |
-| `icc_profile` | `None` | Raw ICC profile bytes |
-| `exif` | `None` | Raw EXIF bytes |
-| `frames` | `None` | List of `PIL.Image` for animation |
-| `frame_duration` | `100` | Milliseconds per frame |
-| `loop` | `0` | Loop count (0 = infinite) |
-
----
-
-## CLI
-
-```bash
-# Encode
-python nova.py encode input.png output.nova
-python nova.py encode input.jpg output.nova 75 lossy
-
-# Decode
-python nova.py decode output.nova roundtrip.png
-
-# File info
-python nova.py info output.nova
-
-# Benchmark all modes vs original
-python nova.py bench input.jpg
+nova decode photo.nova photo.jpg -q 90       # also .png .tif .webp .avif .heic
+nova decode IMG_1401.nova IMG_1401.dng       # RAW back to DNG, or developed to .png .tif .jpg
+nova preview photo.nova thumb.png            # the embedded 512 px thumbnail, instantly
+nova info photo.nova                         # the chunks of the file
 ```
 
----
+EXIF (GPS included), XMP and the colour profile of the source are kept. Run `nova` with no arguments for every option.
 
-## NOVA Viewer
+## What's inside
 
-A standalone desktop app to open, create and convert `.nova` files.
+| | |
+| --- | --- |
+| **Lossless codec** | Context mixing, as in paq and GraLIC: several models predict each bit and a logistic mixer blends them. Levels 0–4 trade time for size, from palette coding to blended predictors. |
+| **Lossy codec** | A wavelet codec (level 5), picked automatically for photos in adaptive mode. Quality 90 is about 45 dB: it looks identical to the source. |
+| **RAW** | Level 6 codes the camera's sensor frame exactly and keeps what LibRaw needs to develop it, so a `.nova` goes back to DNG or develops with the camera's look. |
+| **Animation** | Frames after the first store only the rectangle that changed. |
+| **Speed** | Images are coded in independent stripes and decoded on every core, in the program and in the browser. |
+| **Container** | PNG-like chunks: `IHDR` header, `PREV` thumbnail first so viewers show something at once, `FDAT`/`FDLT` frames, `MDAT` metadata, `LIVE` Live Photo video. Unknown chunks are skipped. |
 
-```bash
-python nova_viewer.py
-python nova_viewer.py image.nova   # open directly
+## Build
+
+You need the [Lisaac Ω](https://github.com/lisaac-omega/lisaac) compiler and GCC.
+
+```sh
+lisaac nova.li -boost      # writes ./nova (and nova.c)
 ```
 
-**Features:**
-- Open and display `.nova` files (static and animated)
-- Import any image (PNG/JPEG/GIF/WebP…) and save as `.nova`
-- Export `.nova` to PNG/JPEG/GIF/WebP
-- Animation playback controls
-- Express mode: shows embedded thumbnail instantly while full image loads in background
+HEIC/AVIF, WebP and RAW support load their libraries at run time, so `nova` builds without them and uses them when they are installed:
+[libheif](https://github.com/strukturag/libheif), [libwebp](https://chromium.googlesource.com/webm/libwebp) and [LibRaw](https://www.libraw.org) 0.22.
 
-### Build standalone app (no Python required)
+The web version is built with [Emscripten](https://emscripten.org): `docs/build.sh` compiles `nova.c` and LibRaw to `docs/nova_enc.wasm`.
 
-```bash
-python build.py
+## Tests
+
+Each test compares NOVA with a reference, byte for byte or pixel for pixel:
+
+```sh
+test/check.sh     # lossless round trip of every image, with the size table
+test/js.sh        # the JavaScript decoder against the program
+test/replicas.sh  # the multi-core WebAssembly build against the program
+test/raw.sh       # RAW: sensor frame, DNG and developed images against LibRaw
 ```
 
-| Platform | Output | File association |
-|----------|--------|-----------------|
-| macOS | `dist/NOVAViewer.app` | Drag to `/Applications` — `.nova` files auto-associate |
-| Windows | `dist/NOVAViewer.exe` | Registers `.nova` on first launch (no admin required) |
-| Linux | `dist/NOVAViewer` + `dist/install.sh` | `sudo dist/install.sh` |
+`test/corpus/` holds small synthetic images. The photo tests read your own photos (`test/photos/`, not published).
 
-### Auto-update
+## FAQ
 
-Edit `UPDATE_URL` in `updater.py` to point to a JSON endpoint:
+**Why Lisaac Ω?**
+It is a small prototype-based language that compiles to C. NOVA v2 is also a test of how far it goes on real work: a codec, a container, six output formats and a WebAssembly build.
 
-```json
-{
-  "version": "1.1.0",
-  "notes": "What changed",
-  "download": {
-    "darwin": "https://your-server/NOVAViewer-mac.zip",
-    "win32":  "https://your-server/NOVAViewer.exe",
-    "linux":  "https://your-server/NOVAViewer"
-  }
-}
-```
+**Can the browser version open HEIC files?**
+In Safari only, which decodes HEIC itself. Other browsers do not ship an HEVC decoder, and this site does not either.
 
----
+**What does the browser version leave out?**
+Animations and Live Photos are created with the program only, and export is limited to PNG, JPEG and WebP. The page lists the rest.
 
-## C accelerator (optional)
+## Credits
 
-`nova_accel.c` provides a faster `frame_diff_bbox` for animation encoding. `nova.py` loads it automatically if compiled in the same directory.
-
-```bash
-gcc -O2 -shared -fPIC -o nova_accel.so nova_accel.c
-```
-
-Falls back to pure Python if the `.so` is absent — no action required.
-
----
-
-## Run tests
-
-```bash
-python test_nova.py
-```
-
----
+- [LibRaw](https://www.libraw.org) (LGPL 2.1 or CDDL 1.0) reads and develops camera RAW files. Its headers are in `third_party/libraw/`, and the web version (`docs/nova_enc.wasm`) contains it.
+- [libwebp](https://chromium.googlesource.com/webm/libwebp) (BSD) writes WebP. Its headers are in `third_party/libwebp/`.
+- The site uses [Bricolage Grotesque](https://github.com/ateliertriay/bricolage) and [Atkinson Hyperlegible](https://www.brailleinstitute.org/freefont/) (SIL Open Font License, in `docs/fonts/`).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+[MIT](LICENSE). Third-party code keeps its own license, see [Credits](#credits).

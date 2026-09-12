@@ -1,0 +1,4 @@
+libwebp 1.6.0 public encoder headers (src/webp/encode.h, types.h), from
+https://github.com/webmproject/libwebp/tree/v1.6.0 (BSD license, COPYING). Only the struct layout and
+prototypes are used: the library itself (libwebp.so.7) is loaded at run time by nova_webp.li.
+Fedora package matching these headers: libwebp-1.6.0-3.fc44.

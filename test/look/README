@@ -1,0 +1,13 @@
+Fit of the tone curve of developed RAWs (nova_look.h) against the camera's own JPEGs.
+  D=/tmp/look; mkdir -p $D
+  cc -Ithird_party/libraw test/look/thumb.c -o $D/thumb -l:libraw_r.so.25    # camera JPEG (largest thumbnail)
+  cc -Ithird_party/libraw test/look/lin.c -o $D/lin -l:libraw_r.so.25        # linear half-size development
+  for f in ~/photos-nova/cr3/*.CR3; do b=$(basename $f .CR3); $D/lin $f $D/$b.ppm; $D/thumb $f $D/$b.jpg; done
+  uv run --with numpy --with pillow python test/look/fit.py $D      # alignment -> pairs.npy
+  uv run --with numpy python test/look/curve.py $D                  # curve, errors, curve.npy
+Then rewrite the table of nova_look.h from curve.npy (x0 = first x, dx = step).
+
+darktable look (row 1 of nova_look.h): same curve.py, on pairs of the linear development and the default
+darktable-cli render (same 6024x4020 frame, no alignment needed):
+  darktable-cli IMG.CR3 $D/dt/IMG.png --core --configdir $D/dtconf --library :memory:
+  pairs: box-average both to 300x200 (linear [:2000, :3000], darktable [:4000, :6000]), save pairs.npy.

@@ -1,0 +1,24 @@
+Header
+  + name := Img_probe
+  // Phase 0: can lib/draw/img decode our inputs? Dumps raw RGBA for the oracle.
+  // Run: lisaac img_probe.li && ./img_probe in.png out.rgba
+
+Public
+
+  - main <-
+  ( + px:C_array Uint8
+    + f:Pointer
+    (Command_args.count = 3).if {
+      (Image.init (Command_args.at 1)).if {
+        px := Image.load (Image.rgb_alpha)
+        (Image.img_x.to_string + "x" + Image.img_y.to_string + " n=" + Image.img_n.to_string + "\n").print
+        f := File_utils.open_write (Command_args.at 2)
+        File_utils.write f buffer px size (Image.img_x * Image.img_y * 4)
+        File_utils.close f
+      } else {
+        "decode failed\n".print
+      }
+    } else {
+      "Usage: img_probe in.png out.rgba\n".print
+    }
+  )

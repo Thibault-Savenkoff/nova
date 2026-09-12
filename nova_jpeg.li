@@ -1,0 +1,248 @@
+Header
+  + name := Nova_jpeg
+  // Baseline JPEG encoder (JFIF, no library): YCbCr (BT.601 full range), 4:2:0 below quality 90
+  // and 4:4:4 from 90 (colour edges of graphics), IJG quality scaling of the Annex K tables,
+  // float DCT, Huffman tables optimised for the image (two passes, Annex K.2).
+  // Metadata: EXIF (APP1), ICC (APP2, split into 65519-byte segments), XMP (APP1).
+  // ponytail: one thread (~1 s for 24 Mpx); restart intervals + fork per stripe if it matters.
+  // Alpha is flattened on white; EXIF or XMP over 64 KB (one segment) is dropped.
+  - include := `
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+`;
+  - external := `
+static unsigned char *nj_out;
+static long nj_n, nj_cap;
+
+static void nj_put(const void *p, long n) {
+  if (nj_n + n > nj_cap) {
+    nj_cap = (nj_n + n) * 2 + 65536;
+    nj_out = realloc(nj_out, nj_cap);
+  }
+  memcpy(nj_out + nj_n, p, n);
+  nj_n += n;
+}
+static void nj_b(int v) { unsigned char c = v; nj_put(&c, 1); }
+static void nj_w(int v) { nj_b(v >> 8); nj_b(v); }
+
+static const unsigned char nj_zz[64] = {
+  0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28,
+  35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63 };
+static const unsigned char nj_ql[64] = {
+  16, 11, 10, 16, 24, 40, 51, 61, 12, 12, 14, 19, 26, 58, 60, 55, 14, 13, 16, 24, 40, 57, 69, 56, 14, 17, 22, 29, 51, 87, 80, 62,
+  18, 22, 37, 56, 68, 109, 103, 77, 24, 35, 55, 64, 81, 104, 113, 92, 49, 64, 78, 87, 103, 121, 120, 101, 72, 92, 95, 98, 112, 100, 103, 99 };
+static const unsigned char nj_qc[64] = {
+  17, 18, 24, 47, 99, 99, 99, 99, 18, 21, 26, 66, 99, 99, 99, 99, 24, 26, 56, 99, 99, 99, 99, 99, 47, 66, 99, 99, 99, 99, 99, 99,
+  99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99 };
+
+/* Huffman table from symbol counts (Annex K.2 and K.3): bits[1..16], values, and the code of each symbol. */
+typedef struct { unsigned char bits[17], val[256]; int nval; unsigned short code[256]; unsigned char size[256]; } nj_huff;
+
+static void nj_build(const long *freq0, nj_huff *h) {
+  long f[257];
+  int cs[257], oth[257], bl[33], i, j, c1, c2, k, code;
+  memcpy(f, freq0, 256 * sizeof(long));
+  f[256] = 1;            /* reserved: no code of all ones */
+  for (i = 0; i < 257; i++) { cs[i] = 0; oth[i] = -1; }
+  for (;;) {
+    long m = 0;
+    c1 = c2 = -1;
+    for (i = 0; i < 257; i++) if (f[i] && (c1 < 0 || f[i] <= m)) { m = f[i]; c1 = i; }
+    for (i = 0; i < 257; i++) if (f[i] && i != c1 && (c2 < 0 || f[i] <= m)) { m = f[i]; c2 = i; }
+    if (c2 < 0) break;
+    f[c1] += f[c2];
+    f[c2] = 0;
+    cs[c1]++;
+    while (oth[c1] >= 0) { c1 = oth[c1]; cs[c1]++; }
+    oth[c1] = c2;
+    cs[c2]++;
+    while (oth[c2] >= 0) { c2 = oth[c2]; cs[c2]++; }
+  }
+  memset(bl, 0, sizeof bl);
+  for (i = 0; i < 257; i++) if (cs[i]) bl[cs[i] > 32 ? 32 : cs[i]]++;
+  for (i = 32; i > 16; i--)
+    while (bl[i] > 0) {
+      j = i - 2;
+      while (bl[j] == 0) j--;
+      bl[i] -= 2; bl[i - 1]++; bl[j + 1] += 2; bl[j]--;
+    }
+  for (i = 16; bl[i] == 0; i--) ;
+  bl[i]--;
+  memset(h, 0, sizeof *h);
+  for (i = 1; i <= 16; i++) h->bits[i] = bl[i];
+  for (k = 1; k <= 32; k++) for (i = 0; i < 256; i++) if (cs[i] == k) h->val[h->nval++] = i;
+  /* Canonical codes, lengths in val order. */
+  for (code = 0, k = 0, i = 1; i <= 16; i++, code <<= 1)
+    for (j = 0; j < h->bits[i]; j++, k++) { h->code[h->val[k]] = code++; h->size[h->val[k]] = i; }
+}
+
+static unsigned long nj_acc;
+static int nj_nb;
+static void nj_bits(unsigned v, int n) {
+  nj_acc = (nj_acc << n) | (v & ((1u << n) - 1));
+  nj_nb += n;
+  while (nj_nb >= 8) {
+    unsigned char c = nj_acc >> (nj_nb - 8);
+    nj_nb -= 8;
+    nj_b(c);
+    if (c == 0xFF) nj_b(0);
+  }
+}
+static int nj_cat(int v) { int n = 0; if (v < 0) v = -v; while (v) { n++; v >>= 1; } return n; }
+
+/* One block (zigzag order): counts (st) or codes (h). */
+static void nj_block(const short *z, int *pred, long *dcf, long *acf, const nj_huff *dc, const nj_huff *ac) {
+  int d = z[0] - *pred, s, k, run = 0;
+  *pred = z[0];
+  s = nj_cat(d);
+  if (dcf) dcf[s]++; else { nj_bits(dc->code[s], dc->size[s]); if (s) nj_bits(d < 0 ? d - 1 : d, s); }
+  for (k = 1; k < 64; k++) {
+    int v = z[k];
+    if (!v) { run++; continue; }
+    while (run > 15) { if (acf) acf[0xF0]++; else nj_bits(ac->code[0xF0], ac->size[0xF0]); run -= 16; }
+    s = nj_cat(v);
+    if (acf) acf[run << 4 | s]++; else { nj_bits(ac->code[run << 4 | s], ac->size[run << 4 | s]); nj_bits(v < 0 ? v - 1 : v, s); }
+    run = 0;
+  }
+  if (run) { if (acf) acf[0]++; else nj_bits(ac->code[0], ac->size[0]); }
+}
+
+static void nj_dht(int cls, const nj_huff *h) {
+  int i;
+  nj_w(0xFFC4); nj_w(3 + 16 + h->nval); nj_b(cls);
+  for (i = 1; i <= 16; i++) nj_b(h->bits[i]);
+  nj_put(h->val, h->nval);
+}
+
+static void nj_app(int marker, const char *id, int idn, const unsigned char *p, long n) {
+  nj_w(marker); nj_w(2 + idn + n); nj_put(id, idn); nj_put(p, n);
+}
+
+/* rgba (4 bytes per pixel) -> JPEG in nj_out / nj_n. 1 on success. */
+static int nj_encode(const unsigned char *rgba, int w, int h, int q, const unsigned char *exif, long en,
+                     const unsigned char *icc, long icn, const unsigned char *xmp, long xn) {
+  int sub = q < 90, mw = sub ? 16 : 8, bw, bh, cw, ch, pw, ph, x, y, i, u, v, c, k, pr[3];
+  unsigned char qt[2][64];
+  float cosv[8][8], *pl[3], blk[64], tmp[64];
+  short *co[3];
+  long nb[3], dcf[2][256], acf[2][256];
+  nj_huff hd[2], ha[2];
+  int s = q < 1 ? 5000 : q < 50 ? 5000 / q : 200 - 2 * q;
+  for (i = 0; i < 64; i++) {
+    int a = (nj_ql[i] * s + 50) / 100, b = (nj_qc[i] * s + 50) / 100;
+    qt[0][i] = a < 1 ? 1 : a > 255 ? 255 : a;
+    qt[1][i] = b < 1 ? 1 : b > 255 ? 255 : b;
+  }
+  for (u = 0; u < 8; u++) for (x = 0; x < 8; x++) cosv[u][x] = (u ? 0.5f : 0.5f / sqrtf(2)) * cosf((2 * x + 1) * u * M_PI / 16);
+  pw = (w + mw - 1) / mw * mw;
+  ph = (h + mw - 1) / mw * mw;
+  /* Colour planes at full size, padded by repeating the last row and column. */
+  for (c = 0; c < 3; c++) pl[c] = malloc(sizeof(float) * pw * ph);
+  if (!pl[0] || !pl[1] || !pl[2]) return 0;
+  for (y = 0; y < ph; y++)
+    for (x = 0; x < pw; x++) {
+      const unsigned char *p = rgba + ((long)(y < h ? y : h - 1) * w + (x < w ? x : w - 1)) * 4;
+      float a = p[3] / 255.0f, r = p[0] * a + 255 * (1 - a), g = p[1] * a + 255 * (1 - a), b = p[2] * a + 255 * (1 - a);
+      long o = (long)y * pw + x;
+      pl[0][o] = 0.299f * r + 0.587f * g + 0.114f * b - 128;
+      pl[1][o] = -0.168736f * r - 0.331264f * g + 0.5f * b;
+      pl[2][o] = 0.5f * r - 0.418688f * g - 0.081312f * b;
+    }
+  cw = sub ? pw / 2 : pw;
+  ch = sub ? ph / 2 : ph;
+  if (sub)
+    for (c = 1; c < 3; c++)
+      for (y = 0; y < ch; y++)
+        for (x = 0; x < cw; x++) {
+          const float *p = pl[c] + (long)2 * y * pw + 2 * x;
+          pl[c][(long)y * cw + x] = (p[0] + p[1] + p[pw] + p[pw + 1]) * 0.25f;
+        }
+  /* DCT and quantisation: coefficients in zigzag order, blocks in raster order per plane. */
+  for (c = 0; c < 3; c++) {
+    int W = c ? cw : pw, H = c ? ch : ph;
+    const unsigned char *qq = qt[c > 0];
+    bw = W / 8; bh = H / 8;
+    nb[c] = (long)bw * bh;
+    co[c] = malloc(sizeof(short) * 64 * nb[c]);
+    if (!co[c]) return 0;
+    for (y = 0; y < bh; y++)
+      for (x = 0; x < bw; x++) {
+        short *z = co[c] + ((long)y * bw + x) * 64;
+        for (v = 0; v < 8; v++) for (i = 0; i < 8; i++) blk[v * 8 + i] = pl[c][(long)(y * 8 + v) * W + x * 8 + i];
+        for (v = 0; v < 8; v++) for (u = 0; u < 8; u++) {
+          float t = 0;
+          for (i = 0; i < 8; i++) t += cosv[u][i] * blk[v * 8 + i];
+          tmp[v * 8 + u] = t;
+        }
+        for (v = 0; v < 8; v++) for (u = 0; u < 8; u++) {
+          float t = 0;
+          for (i = 0; i < 8; i++) t += cosv[v][i] * tmp[i * 8 + u];
+          blk[v * 8 + u] = t;
+        }
+        for (k = 0; k < 64; k++) z[k] = lrintf(blk[nj_zz[k]] / qq[nj_zz[k]]);
+      }
+  }
+  for (c = 0; c < 3; c++) free(pl[c]);
+  /* Two passes over the MCUs: symbol counts, then codes. */
+  memset(dcf, 0, sizeof dcf);
+  memset(acf, 0, sizeof acf);
+  nj_n = 0;
+  for (k = 0; k < 2; k++) {
+    int mx = pw / mw, my = ph / mw, cbw = cw / 8, ybw = pw / 8;
+    if (k == 1) {
+      for (c = 0; c < 2; c++) { nj_build(dcf[c], &hd[c]); nj_build(acf[c], &ha[c]); }
+      nj_w(0xFFD8);
+      nj_app(0xFFE0, "JFIF\0\1\1\0\0\1\0\1\0\0", 14, 0, 0);
+      if (en > 0 && en + 8 <= 65535) nj_app(0xFFE1, "Exif\0\0", 6, exif, en);
+      for (i = 0; i * 65519L < icn; i++) {
+        long m = icn - i * 65519L < 65519 ? icn - i * 65519L : 65519;
+        char id[14] = "ICC_PROFILE";
+        id[12] = i + 1;
+        id[13] = (icn + 65518) / 65519;
+        nj_app(0xFFE2, id, 14, icc + i * 65519L, m);
+      }
+      if (xn > 0 && xn + 31 <= 65535) nj_app(0xFFE1, "http://ns.adobe.com/xap/1.0/", 29, xmp, xn);
+      for (c = 0; c < 2; c++) {
+        nj_w(0xFFDB); nj_w(67); nj_b(c);
+        for (i = 0; i < 64; i++) nj_b(qt[c][nj_zz[i]]);
+      }
+      nj_w(0xFFC0); nj_w(17); nj_b(8); nj_w(h); nj_w(w); nj_b(3);
+      nj_b(1); nj_b(sub ? 0x22 : 0x11); nj_b(0);
+      nj_b(2); nj_b(0x11); nj_b(1);
+      nj_b(3); nj_b(0x11); nj_b(1);
+      for (c = 0; c < 2; c++) { nj_dht(c, &hd[c]); nj_dht(0x10 | c, &ha[c]); }
+      nj_w(0xFFDA); nj_w(12); nj_b(3);
+      nj_b(1); nj_b(0x00); nj_b(2); nj_b(0x11); nj_b(3); nj_b(0x11);
+      nj_b(0); nj_b(63); nj_b(0);
+      nj_acc = 0; nj_nb = 0;
+    }
+    pr[0] = pr[1] = pr[2] = 0;
+    for (y = 0; y < my; y++)
+      for (x = 0; x < mx; x++) {
+        int e = k == 0;
+        if (sub)
+          for (v = 0; v < 2; v++) for (u = 0; u < 2; u++)
+            nj_block(co[0] + ((long)(y * 2 + v) * ybw + x * 2 + u) * 64, &pr[0], e ? dcf[0] : 0, e ? acf[0] : 0, &hd[0], &ha[0]);
+        else
+          nj_block(co[0] + ((long)y * ybw + x) * 64, &pr[0], e ? dcf[0] : 0, e ? acf[0] : 0, &hd[0], &ha[0]);
+        for (c = 1; c < 3; c++)
+          nj_block(co[c] + ((long)y * cbw + x) * 64, &pr[c], e ? dcf[1] : 0, e ? acf[1] : 0, &hd[1], &ha[1]);
+      }
+  }
+  if (nj_nb) nj_bits(0x7F, 8 - nj_nb);
+  nj_w(0xFFD9);
+  for (c = 0; c < 3; c++) free(co[c]);
+  return 1;
+}
+`;
+
+Public
+
+  // rgba: 4 bytes per pixel. Metadata: buf[pos, pos + len) (len 0: none). Then data, size.
+  - encode rgba:C_array Uint8 size (w,h:Int) quality q:Int exif (e:C_array Uint8, ep,en:Int) icc (c:C_array Uint8, cp,cn:Int) xmp (x:C_array Uint8, xp,xn:Int) :Boolean <-
+    `nj_encode(@rgba, @w, @h, @q, @e + @ep, @en, @c + @cp, @cn, @x + @xp, @xn)`:Int != 0
+
+  - data:C_array Uint8 <- `nj_out`:C_array Uint8
+
+  - size:Int <- `nj_n`:Int

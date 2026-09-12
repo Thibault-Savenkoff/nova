@@ -1,0 +1,42 @@
+Header
+  + name := Wavelet_check
+  // Self-check: forward then inverse 9/7 gives back every sample, on odd, even and tiny sizes.
+  // Run from nova-lisaac/test: lisaac wavelet_check.li -add_path "$PWD/.." -boost && ./wavelet_check
+
+Public
+
+  - check (w,h:Int) :Boolean <-
+  ( + p:C_array Int32
+    + seed,n,bad:Int
+    p := C_array Int32.create (w * h)
+    seed := w * 7919 + h
+    0.to (w * h - 1) do { i:Int
+      seed := (seed * 1103515245 + 12345) & 7FFFFFFFh
+      // smooth ramp + noise, pixel values x 64
+      p.at i put (((((i % w) * 3 + (i / w) * 2 + ((seed >> 16) & 31)) & 255) * 64).to_raw_int32)
+    }
+    Nova_wavelet.setup p size (w, h)
+    n := Nova_wavelet.levels
+    Nova_wavelet.forward
+    Nova_wavelet.inverse
+    seed := w * 7919 + h
+    0.to (w * h - 1) do { i:Int
+      seed := (seed * 1103515245 + 12345) & 7FFFFFFFh
+      ((p.at i).to_int != ((((i % w) * 3 + (i / w) * 2 + ((seed >> 16) & 31)) & 255) * 64)).if { bad := bad + 1 }
+    }
+    (bad = 0).if { "OK   ".print } else { "FAIL ".print }
+    (w.to_string + "x" + h.to_string + " levels " + n.to_string + " bad " + bad.to_string + "\n").print
+    bad = 0
+  )
+
+  - main <-
+  ( + ok:Boolean
+    ok := True
+    ok := (check (41, 31)) && {ok}
+    ok := (check (40, 30)) && {ok}
+    ok := (check (1, 1)) && {ok}
+    ok := (check (2, 9)) && {ok}
+    ok := (check (257, 129)) && {ok}
+    ok := (check (1024, 1000)) && {ok}
+    (ok).if { } else { System.exit 1 }
+  )

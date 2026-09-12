@@ -1,0 +1,333 @@
+Header
+  + name := Nova_heic
+  // HEIC / HEIF (and AVIF when libheif has a decoder for it) import through libheif, loaded at run
+  // time (dlopen): nova builds without libheif headers, and runs without it (HEIC is then refused).
+  // Primary image only, decoded to 8-bit RGBA with its rotation/mirror applied, so the EXIF
+  // orientation tag is reset to 1. Metadata: EXIF, XMP, ICC as the JPEG segments NOVA already keeps.
+  // ponytail: depth maps, HDR gain maps and other auxiliary images are not kept; burst/sequence
+  // files give their primary image only.
+  // Export (nova decode x.nova y.avif|heic): libheif's default encoder (AVIF: aom, HEIC: x265), 8-bit
+  // RGB(A); lossless = identity matrix (nclx 0) and 4:4:4, so RGB comes back exactly. EXIF, XMP, ICC.
+  // ponytail: the EXIF orientation is not turned into irot/imir (NOVA pixels from HEIC or RAW are
+  // already upright; a rotated JPEG source exported to HEIF shows unrotated).
+  - include := `
+#include <dlfcn.h>
+#include <stdlib.h>
+#include <string.h>
+`;
+  - external := `
+struct nh_err { int code; int subcode; const char *message; };
+static void *nh_lib;
+static void *(*nh_context_alloc)(void);
+static void (*nh_context_free)(void *);
+static struct nh_err (*nh_read_file)(void *, const char *, const void *);
+static struct nh_err (*nh_primary)(void *, void **);
+static void (*nh_handle_release)(void *);
+static int (*nh_handle_width)(void *);
+static int (*nh_handle_height)(void *);
+static int (*nh_has_alpha)(void *);
+static struct nh_err (*nh_decode)(void *, void **, int, int, const void *);
+static const unsigned char *(*nh_plane)(void *, int, int *);
+static int (*nh_image_width)(void *, int);
+static int (*nh_image_height)(void *, int);
+static void (*nh_image_release)(void *);
+static int (*nh_meta_count)(void *, const char *);
+static int (*nh_meta_ids)(void *, const char *, unsigned int *, int);
+static const char *(*nh_meta_type)(void *, unsigned int);
+static const char *(*nh_meta_ctype)(void *, unsigned int);
+static size_t (*nh_meta_size)(void *, unsigned int);
+static struct nh_err (*nh_meta_get)(void *, unsigned int, void *);
+static size_t (*nh_icc_size)(void *);
+static struct nh_err (*nh_icc_get)(void *, void *);
+static int (*nh_major)(void);
+
+static int nh_open(void) {
+  if (nh_lib) return 1;
+  nh_lib = dlopen("libheif.so.1", RTLD_NOW | RTLD_LOCAL);
+  if (!nh_lib) nh_lib = dlopen("libheif.so", RTLD_NOW | RTLD_LOCAL);
+  if (!nh_lib) nh_lib = dlopen("libheif.1.dylib", RTLD_NOW | RTLD_LOCAL);
+  if (!nh_lib) return 0;
+#define NH(v, s) if (!(*(void **)&v = dlsym(nh_lib, s))) return 0;
+  NH(nh_context_alloc, "heif_context_alloc") NH(nh_context_free, "heif_context_free")
+  NH(nh_read_file, "heif_context_read_from_file") NH(nh_primary, "heif_context_get_primary_image_handle")
+  NH(nh_handle_release, "heif_image_handle_release") NH(nh_handle_width, "heif_image_handle_get_width")
+  NH(nh_handle_height, "heif_image_handle_get_height") NH(nh_has_alpha, "heif_image_handle_has_alpha_channel")
+  NH(nh_decode, "heif_decode_image") NH(nh_plane, "heif_image_get_plane_readonly")
+  NH(nh_image_width, "heif_image_get_width") NH(nh_image_height, "heif_image_get_height")
+  NH(nh_image_release, "heif_image_release")
+  NH(nh_meta_count, "heif_image_handle_get_number_of_metadata_blocks")
+  NH(nh_meta_ids, "heif_image_handle_get_list_of_metadata_block_IDs")
+  NH(nh_meta_type, "heif_image_handle_get_metadata_type")
+  NH(nh_meta_ctype, "heif_image_handle_get_metadata_content_type")
+  NH(nh_meta_size, "heif_image_handle_get_metadata_size") NH(nh_meta_get, "heif_image_handle_get_metadata")
+  NH(nh_icc_size, "heif_image_handle_get_raw_color_profile_size")
+  NH(nh_icc_get, "heif_image_handle_get_raw_color_profile")
+  NH(nh_major, "heif_get_version_number_major")
+#undef NH
+  /* The prototypes above are libheif 1.x. */
+  if (nh_major() != 1) { nh_lib = 0; return 0; }
+  return 1;
+}
+
+/* Results of the last nh_load. */
+static int nh_w, nh_h, nh_alpha;
+static unsigned char *nh_px;
+static unsigned char *nh_meta;
+static long nh_meta_n, nh_meta_cap;
+static const char *nh_msg;
+
+static void nh_put(const void *p, long n) {
+  if (nh_meta_n + n > nh_meta_cap) {
+    nh_meta_cap = (nh_meta_n + n) * 2 + 1024;
+    nh_meta = realloc(nh_meta, nh_meta_cap);
+  }
+  memcpy(nh_meta + nh_meta_n, p, n);
+  nh_meta_n += n;
+}
+
+static void nh_put32(unsigned long v) {
+  unsigned char b[4] = { v >> 24, v >> 16, v >> 8, v };
+  nh_put(b, 4);
+}
+
+/* One metadata block: [u32 kind][u32 length][prefix][payload]. */
+static void nh_block(unsigned long kind, const char *prefix, long pn, const unsigned char *p, long n) {
+  nh_put32(kind);
+  nh_put32(pn + n);
+  nh_put(prefix, pn);
+  nh_put(p, n);
+}
+
+/* Orientation tag (0x0112) of IFD0 of a TIFF block set to 1: the pixels are already turned. */
+static void nh_orient1(unsigned char *t, long n) {
+  int le, i, cnt;
+  unsigned long off;
+  if (n < 8) return;
+  le = t[0] == 'I';
+#define G16(p) (le ? (t[p] | t[(p) + 1] << 8) : (t[p] << 8 | t[(p) + 1]))
+#define G32(p) (le ? (t[p] | t[(p) + 1] << 8 | t[(p) + 2] << 16 | (unsigned long)t[(p) + 3] << 24) : ((unsigned long)t[p] << 24 | t[(p) + 1] << 16 | t[(p) + 2] << 8 | t[(p) + 3]))
+  off = G32(4);
+  if (off + 2 > (unsigned long)n) return;
+  cnt = G16(off);
+  for (i = 0; i < cnt && off + 2 + i * 12 + 12 <= (unsigned long)n; i++) {
+    long e = off + 2 + i * 12;
+    if (G16(e) == 0x0112 && G16(e + 2) == 3) {
+      t[e + 8] = le ? 1 : 0;
+      t[e + 9] = le ? 0 : 1;
+    }
+  }
+#undef G16
+#undef G32
+}
+
+static const char nh_exif[6] = { 'E', 'x', 'i', 'f', 0, 0 };
+static const char nh_icc[14] = { 'I', 'C', 'C', '_', 'P', 'R', 'O', 'F', 'I', 'L', 'E', 0, 1, 1 };
+
+static void nh_metadata(void *h) {
+  unsigned int ids[64];
+  int i, n = nh_meta_count(h, 0);
+  size_t sz;
+  if (n > 64) n = 64;
+  n = nh_meta_ids(h, 0, ids, n);
+  for (i = 0; i < n; i++) {
+    const char *type = nh_meta_type(h, ids[i]);
+    const char *ct = nh_meta_ctype(h, ids[i]);
+    unsigned char *b;
+    sz = nh_meta_size(h, ids[i]);
+    if (sz == 0 || sz > 100000000) continue;
+    b = malloc(sz);
+    if (b && nh_meta_get(h, ids[i], b).code == 0) {
+      if (type && !strcmp(type, "Exif") && sz > 4) {
+        /* HEIF Exif item: u32 offset of the TIFF header after these 4 bytes. */
+        unsigned long off = 4 + ((unsigned long)b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3]);
+        if (off < sz) {
+          nh_orient1(b + off, sz - off);
+          nh_block(0x41505031, nh_exif, 6, b + off, sz - off);
+        }
+      } else if (ct && !strcmp(ct, "application/rdf+xml")) {
+        nh_block(0x41505031, "http://ns.adobe.com/xap/1.0/", 29, b, sz);
+      }
+    }
+    free(b);
+  }
+  sz = nh_icc_size(h);
+  if (sz > 0 && sz < 100000000) {
+    unsigned char *b = malloc(sz);
+    if (b && nh_icc_get(h, b).code == 0) nh_block(0x41505032, nh_icc, 14, b, sz);
+    free(b);
+  }
+}
+
+/* pixels: 0 = metadata only. Returns 1 on success, else 0 with nh_msg set. */
+static int nh_load(const char *name, int pixels) {
+  void *ctx, *h = 0, *img = 0;
+  struct nh_err e;
+  int ok = 0;
+  nh_meta_n = 0;
+  free(nh_px);
+  nh_px = 0;
+  if (!nh_open()) { nh_msg = "libheif 1.x not found (install libheif)"; return 0; }
+  ctx = nh_context_alloc();
+  e = nh_read_file(ctx, name, 0);
+  if (e.code == 0) e = nh_primary(ctx, &h);
+  if (e.code == 0) {
+    nh_alpha = nh_has_alpha(h) != 0;
+    nh_w = nh_handle_width(h);
+    nh_h = nh_handle_height(h);
+    nh_metadata(h);
+    ok = 1;
+    if (pixels) {
+      /* colourspace RGB (1), chroma interleaved RGBA (11); channel interleaved (10) */
+      e = nh_decode(h, &img, 1, 11, 0);
+      ok = 0;
+      if (e.code == 0) {
+        int stride, y;
+        const unsigned char *p = nh_plane(img, 10, &stride);
+        nh_w = nh_image_width(img, 10);
+        nh_h = nh_image_height(img, 10);
+        nh_px = malloc((size_t)nh_w * nh_h * 4);
+        if (p && nh_px) {
+          for (y = 0; y < nh_h; y++) memcpy(nh_px + (size_t)y * nh_w * 4, p + (size_t)y * stride, (size_t)nh_w * 4);
+          ok = 1;
+        }
+        nh_image_release(img);
+      }
+    }
+    nh_handle_release(h);
+  }
+  if (!ok) nh_msg = e.code ? e.message : "cannot decode";
+  nh_context_free(ctx);
+  return ok;
+}
+
+/* Encoder part of libheif, loaded on first export. */
+static struct nh_err (*nh_get_encoder_e)(void *, int, void **);
+static struct nh_err (*nh_set_quality)(void *, int);
+static struct nh_err (*nh_set_lossless)(void *, int);
+static struct nh_err (*nh_set_param)(void *, const char *, const char *);
+static void (*nh_encoder_release)(void *);
+static struct nh_err (*nh_image_create)(int, int, int, int, void **);
+static struct nh_err (*nh_add_plane)(void *, int, int, int, int);
+static unsigned char *(*nh_plane_rw)(void *, int, int *);
+static struct nh_err (*nh_set_icc)(void *, const char *, const void *, size_t);
+static void *(*nh_nclx_alloc)(void);
+static void (*nh_nclx_free)(void *);
+static struct nh_err (*nh_nclx_matrix)(void *, unsigned short);
+static struct nh_err (*nh_set_nclx)(void *, const void *);
+static struct nh_err (*nh_encode)(void *, const void *, void *, const void *, void **);
+static struct nh_err (*nh_add_exif)(void *, const void *, const void *, int);
+static struct nh_err (*nh_add_xmp)(void *, const void *, const void *, int);
+static struct nh_err (*nh_write_file)(void *, const char *);
+
+static int nh_open_enc(void) {
+  static int done;
+  if (done) return done > 0;
+  done = -1;
+  if (!nh_open()) { nh_msg = "libheif not found (install libheif)"; return 0; }
+#define NE(v, s) if (!(*(void **)&v = dlsym(nh_lib, s))) { nh_msg = "libheif: missing " s; return 0; }
+  NE(nh_get_encoder_e, "heif_context_get_encoder_for_format") NE(nh_set_quality, "heif_encoder_set_lossy_quality")
+  NE(nh_set_lossless, "heif_encoder_set_lossless") NE(nh_set_param, "heif_encoder_set_parameter_string")
+  NE(nh_encoder_release, "heif_encoder_release") NE(nh_image_create, "heif_image_create")
+  NE(nh_add_plane, "heif_image_add_plane") NE(nh_plane_rw, "heif_image_get_plane")
+  NE(nh_set_icc, "heif_image_set_raw_color_profile") NE(nh_nclx_alloc, "heif_nclx_color_profile_alloc")
+  NE(nh_nclx_free, "heif_nclx_color_profile_free") NE(nh_nclx_matrix, "heif_nclx_color_profile_set_matrix_coefficients")
+  NE(nh_set_nclx, "heif_image_set_nclx_color_profile") NE(nh_encode, "heif_context_encode_image")
+  NE(nh_add_exif, "heif_context_add_exif_metadata") NE(nh_add_xmp, "heif_context_add_XMP_metadata")
+  NE(nh_write_file, "heif_context_write_to_file")
+#undef NE
+  done = 1;
+  return 1;
+}
+
+/* rgba (4 bytes per pixel; np 3: alpha dropped) -> name. av1: AVIF (else HEIC). 1 on success, else 0 with nh_msg. */
+static int nh_export(const char *name, const unsigned char *rgba, int w, int h, int np, int av1, int lossless, int q,
+                     const unsigned char *exif, long en, const unsigned char *icc, long icn, const unsigned char *xmp, long xn) {
+  void *ctx = 0, *enc = 0, *img = 0, *hdl = 0, *nclx = 0;
+  unsigned char *d;
+  int stride, y, ok = 0;
+  struct nh_err e;
+  if (!nh_open_enc()) return 0;
+  ctx = nh_context_alloc();
+  e = nh_get_encoder_e(ctx, av1 ? 4 : 1, &enc);
+  if (e.code) { nh_msg = av1 ? "libheif has no AVIF encoder" : "libheif has no HEIC encoder"; goto end; }
+  if (lossless) {
+    nh_set_lossless(enc, 1);
+    nh_set_param(enc, "chroma", "444");
+  } else {
+    nh_set_quality(enc, q);
+  }
+  e = nh_image_create(w, h, 1, np == 4 ? 11 : 10, &img);
+  if (!e.code) e = nh_add_plane(img, 10, w, h, 8);
+  if (e.code) { nh_msg = e.message; goto end; }
+  d = nh_plane_rw(img, 10, &stride);
+  for (y = 0; y < h; y++) {
+    const unsigned char *s = rgba + (long)y * w * 4;
+    unsigned char *o = d + (long)y * stride;
+    int x;
+    if (np == 4) memcpy(o, s, (size_t)w * 4);
+    else for (x = 0; x < w; x++) memcpy(o + x * 3, s + x * 4, 3);
+  }
+  if (lossless) {
+    nclx = nh_nclx_alloc();
+    nh_nclx_matrix(nclx, 0);
+    nh_set_nclx(img, nclx);
+  }
+  if (icn) nh_set_icc(img, "prof", icc, icn);
+  e = nh_encode(ctx, img, enc, 0, &hdl);
+  if (e.code) { nh_msg = e.message; goto end; }
+  if (en) nh_add_exif(ctx, hdl, exif, en);
+  if (xn) nh_add_xmp(ctx, hdl, xmp, xn);
+  e = nh_write_file(ctx, name);
+  if (e.code) { nh_msg = e.message; goto end; }
+  ok = 1;
+end:
+  if (nclx) nh_nclx_free(nclx);
+  if (hdl) nh_handle_release(hdl);
+  if (img) nh_image_release(img);
+  if (enc) nh_encoder_release(enc);
+  if (ctx) nh_context_free(ctx);
+  return ok;
+}
+`;
+
+Public
+
+  - load name:String pixels px:Boolean :Boolean <-
+  // Decodes name (px False: metadata only). Then width, height, has_alpha, rgba, meta*, message.
+  ( + pe:C_array Char
+    + p:Int
+    pe := name.to_external
+    p := px.to_int
+    `nh_load((char *)@pe, @p)`:Int != 0
+  )
+
+  - width:Int <- `nh_w`:Int
+
+  - height:Int <- `nh_h`:Int
+
+  - has_alpha:Boolean <- `nh_alpha`:Int != 0
+
+  // RGBA pixels of the last load (owned here: copy them before the next load).
+  - rgba:C_array Uint8 <- `nh_px`:C_array Uint8
+
+  // Metadata blocks of the last load: [u32 kind][u32 length][payload], kinds as JPEG segments.
+  - meta:C_array Uint8 <- `nh_meta`:C_array Uint8
+
+  - meta_size:Int <- `nh_meta_n`:Int
+
+  // Writes name as AVIF (av1) or HEIC. rgba: 4 bytes per pixel. Metadata: buf[pos, pos + len).
+  - export name:String pixels rgba:C_array Uint8 size (w,h:Int) planes np:Int avif av:Boolean lossless ll:Boolean quality q:Int meta (e:C_array Uint8, ep,en:Int, c:C_array Uint8, cn:Int, x:C_array Uint8, xp,xn:Int) :Boolean <-
+  ( + pe:C_array Char
+    + a,l:Int
+    pe := name.to_external
+    a := av.to_int
+    l := ll.to_int
+    `nh_export((char *)@pe, @rgba, @w, @h, @np, @a, @l, @q, @e + @ep, @en, @c, @cn, @x + @xp, @xn)`:Int != 0
+  )
+
+  - message:String <-
+  ( + result:String_buffer
+    result := String_buffer.create 64
+    result.from_external_copy (`nh_msg`:C_array Char)
+    result.to_string
+  )
