@@ -47,6 +47,10 @@
   #stage { position: relative; display: grid; place-items: center; min-height: 220px; padding: 18px; border-radius: 6px;
     background: repeating-conic-gradient(var(--stage-a) 0 25%, var(--stage-b) 0 50%) 0 0 / 20px 20px; }
   #cv, #hdr { display: block; max-width: 100%; max-height: 72vh; width: auto; height: auto; box-shadow: 0 1px 2px rgb(0 0 0 / .18), 0 8px 28px rgb(0 0 0 / .14); }
+  #stage:has(#drop:not([hidden])) { min-height: 300px; }
+  #drop { display: grid; place-items: center; align-content: center; gap: 8px; width: 100%; min-height: 264px; padding: 28px 20px; text-align: center; border: 2px dashed var(--line); border-radius: 6px; background: var(--surface); cursor: pointer; }
+  #drop strong { font: 700 22px/1.2 var(--display); }
+  #drop span { color: var(--mut); max-width: 46ch; }
   #stage.over { outline: 2px dashed var(--acc); outline-offset: -2px; }
   #bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; border-radius: 0 0 6px 6px; background: rgb(0 0 0 / .12); overflow: hidden; visibility: hidden; }
   #bar div { height: 100%; width: 0; background: var(--acc); transition: width .2s; }
@@ -80,25 +84,20 @@
   #specs dt { color: var(--mut); font-size: 14px; }
   #specs dd { margin: 0; font: 500 17px/1.3 var(--mono); font-variant-numeric: tabular-nums; }
 
-  /* Create: the drop target on the left, settings on the right; one column on phones. */
-  #create { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 20px 40px; margin-top: 64px; padding-top: 28px; border-top: 1px solid var(--line); }
-  #create > .intro { grid-column: 1 / -1; max-width: 68ch; }
+  /* Conversion settings: used when the dropped file is an image to convert. */
+  #create { display: grid; gap: 16px; margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--line); }
+  #create > .intro { max-width: 68ch; }
   #create > .intro p { margin: 0; color: var(--mut); }
-  #edrop { display: grid; place-items: center; align-content: center; gap: 6px; min-height: 200px; padding: 28px 20px; text-align: center; border: 2px dashed var(--line); border-radius: 6px; background: var(--surface); cursor: pointer; }
-  #edrop strong { font: 700 20px/1.2 var(--display); }
-  #edrop span { color: var(--mut); max-width: 40ch; }
-  #edrop.over { border-color: var(--acc); }
   .settings { display: grid; gap: 14px; align-content: start; }
   .settings .row { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
-  #einfo { grid-column: 1 / -1; margin: 0; color: var(--mut); min-height: 1.55em; }
-  #limits { grid-column: 1 / -1; max-width: 76ch; }
+  #limits { max-width: 76ch; }
   #limits summary { cursor: pointer; font: 700 17px/1.3 var(--display); }
   #limits ul { margin: 10px 0 0; padding-left: 20px; color: var(--mut); display: grid; gap: 6px; }
 
   footer { margin-block: 64px 32px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--mut); font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px 24px; justify-content: space-between; }
 
   @media (max-width: 760px) {
-    #create { grid-template-columns: 1fr; margin-top: 44px; }
+    #create { margin-top: 44px; }
     #stage { padding: 10px; min-height: 160px; }
     .tools { justify-content: flex-start; }
   }
@@ -114,9 +113,13 @@
 
   <section id="viewer" aria-label="Viewer">
     <div id="stage">
-      <canvas id="cv" width="0" height="0" aria-label="Opened image"></canvas>
+      <label id="drop" for="file">
+        <strong>Drop an image here, or choose one</strong>
+        <span>A .nova file opens right away. PNG, JPEG, HEIC, camera RAW and other images are converted to .nova, then shown.</span>
+      </label>
+      <canvas id="cv" width="0" height="0" aria-label="Opened image" hidden></canvas>
       <img id="hdr" alt="Opened image, in HDR" hidden>
-      <input type="file" id="file" accept=".nova" hidden>
+      <input type="file" id="file" accept=".nova,image/*,.cr2,.cr3,.nef,.nrw,.arw,.dng,.raf,.orf,.rw2,.pef,.srw,.x3f,.3fr,.iiq" hidden>
       <div id="bar"><div></div></div>
     </div>
     <div class="tools">
@@ -125,10 +128,11 @@
         <button data-k="photo" aria-pressed="false">Photo</button>
         <button data-k="screen" aria-pressed="false">Screenshot</button>
         <button data-k="wheel" aria-pressed="false">Animation</button>
-        <label class="button primary" for="file">Open a .nova</label>
+        <label class="button primary" for="file">Open a file</label>
       </div>
       <div class="group">
         <button id="play" hidden>Pause</button>
+        <button id="savenova" hidden>Save .nova</button>
         <select id="fmt" disabled aria-label="Export format">
           <option value="image/png">PNG</option>
           <option value="image/jpeg">JPEG</option>
@@ -148,24 +152,18 @@
 
   <section id="create" aria-labelledby="create-h">
     <div class="intro">
-      <h2 id="create-h">Make a .nova</h2>
-      <p>Your image is encoded in this browser and the .nova file is saved to your downloads. EXIF, XMP and the colour profile are kept for PNG, JPEG, HEIC and CR3 files.</p>
+      <h2 id="create-h">Conversion settings</h2>
+      <p>Used when you open an image that is not a .nova. It is converted in this browser, then shown above with a button to save the .nova. EXIF, XMP and the colour profile are kept for PNG, JPEG, HEIC and CR3 files.</p>
     </div>
-    <label id="edrop">
-      <strong>Choose or drop an image</strong>
-      <span>PNG, JPEG, HEIC, camera RAW, or any format this browser opens</span>
-      <input type="file" id="efile" accept="image/*,.cr2,.cr3,.nef,.nrw,.arw,.dng,.raf,.orf,.rw2,.pef,.srw,.x3f,.3fr,.iiq" hidden>
-    </label>
     <div class="settings">
       <div class="row">
         <label class="q">Mode <select id="emode"><option value="adaptive">Adaptive</option><option value="lossless">Lossless</option><option value="lossy">Lossy</option></select></label>
-        <label class="q">Quality <input type="range" id="eq" min="0" max="100" value="90"> <output id="eqv" title="90, or a JPEG source's own quality">auto</output></label>
+        <label class="q">Quality <input type="range" id="eq" min="0" max="100" value="90"> <output id="eqv">90</output></label>
       </div>
       <p style="margin:0;color:var(--mut)">Adaptive keeps graphics and screenshots exact and compresses photos at the chosen quality; 90 looks identical to the source.</p>
       <label class="q"><input type="checkbox" id="ekeep" checked> Keep metadata</label>
       <label class="q"><input type="checkbox" id="egps"> Remove location (GPS)</label>
     </div>
-    <p id="einfo" aria-live="polite"></p>
     <details id="limits">
       <summary>What only the nova program can do</summary>
       <ul>
@@ -183,15 +181,15 @@
   <span>NOVA v2. Images never leave your device.</span>
   <a href="https://github.com/Thibault-Savenkoff/nova">Source on GitHub</a>
 </footer>
-<script src="nova_decode.js?v=9"></script>
-<script src="heif_meta.js?v=9"></script>
-<script src="meta_strip.js?v=9"></script>
+<script src="nova_decode.js?v=10"></script>
+<script src="heif_meta.js?v=10"></script>
+<script src="meta_strip.js?v=10"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 // Cache buster of the scripts and workers: bump it with the ?v= of the script tags above at each
 // release, or a browser can mix a cached worker with a new decoder.
-const V = '?v=9';
+const V = '?v=10';
 let cv = $('cv'), ctx = cv.getContext('2d');
 const info = $('info'), bar = $('bar'), fill = bar.firstElementChild;
 let name = 'image', timer = null, token = 0;
@@ -306,6 +304,8 @@ async function iccOf(data, f) {
 const isP3 = p => !!p && /Display P3/.test(new TextDecoder('latin1').decode(p).replace(/\0/g, ''));
 function show(w, h, rgba) {
   cur = { w, h, rgba };
+  $('drop').hidden = true;
+  if ($('hdr').hidden) cv.hidden = false;
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
   ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, w * h * 4), w, h, { colorSpace: space }), 0, 0);
 }
@@ -359,6 +359,7 @@ async function open(file) {
   clearInterval(timer);
   $('play').hidden = true;
   ['fmt', 'q', 'save'].forEach(id => $(id).disabled = true);
+  $('savenova').hidden = !file.converted;
   if (!(file.sample)) document.querySelectorAll('[data-k]').forEach(b => b.setAttribute('aria-pressed', 'false'));
   name = file.name.replace(/\.nova$/i, '');
   gain = null;
@@ -471,16 +472,32 @@ function dropZone(zone, input, fn) {
   d.ondragleave = () => d.classList.remove('over');
   d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files[0] && fn(e.dataTransfer.files[0]); };
 }
-dropZone('stage', 'file', open);   // drop a .nova on the image
-// Phones: encoding is off. Measured on an iPhone 17 Pro: a 4 Mpx JPEG takes 68 s (~12x a PC), and
-// more cores do not fit in iOS's memory limit (4 Mpx: 217 MB on 1 replica, 670 MB on 2).
-if (/iPhone|iPad|Android/.test(navigator.userAgent)) {
-  $('create').querySelector('.intro p').textContent = 'Creating a .nova takes a computer: on a phone it takes minutes for one photo. Open this page on a computer, or use the nova program.';
-  $('create').querySelectorAll('#edrop, .settings, #einfo').forEach(e => e.hidden = true);
-} else dropZone('edrop', 'efile', encode);
-// Quality: auto (nova picks 90, or a JPEG source's own quality) until the slider is moved.
-let eqSet = false;
-$('eq').oninput = () => { eqSet = true; $('eqv').textContent = $('eq').value; };
+function fail(msg) {
+  const s = document.createElement('span');
+  s.className = 'err';
+  s.textContent = msg;
+  info.replaceChildren(s);
+}
+// One place to open anything: a .nova is decoded; an image is converted to .nova first, then shown.
+const PHONE = /iPhone|iPad|Android/.test(navigator.userAgent);
+async function pick(file) {
+  const d = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  if (d[0] === 0x89 && d[1] === 0x4E && d[2] === 0x4F && d[3] === 0x56) return open(file);
+  const image = (d[0] === 0x89 && d[1] === 0x50) || (d[0] === 0xFF && d[1] === 0xD8) || RAW.test(file.name) || HeifMeta.isHeif(d) || /^image\//.test(file.type);
+  if (!image) return fail(`${file.name} is not an image. Open a .nova file, or an image to convert (PNG, JPEG, HEIC, camera RAW…).`);
+  // Phones: measured on an iPhone 17 Pro, a 4 Mpx JPEG takes about 70 s (~12x a PC), on one core
+  // (more cores do not fit in iOS's memory limit). Same quality as on a computer, only slower.
+  if (PHONE) {
+    const b = document.createElement('button');
+    b.textContent = 'Convert anyway';
+    b.onclick = () => encode(file);
+    info.replaceChildren(`${file.name}: converting takes minutes on a phone (about 1 minute per 4 megapixels, same quality as on a computer), and this page must stay open. `, b);
+    return;
+  }
+  encode(file);
+}
+dropZone('stage', 'file', pick);
+$('eq').oninput = () => { $('eqv').textContent = $('eq').value; };
 $('ekeep').onchange = () => { $('egps').disabled = !$('ekeep').checked; };
 
 // Encoder: nova itself (wasm) in a worker. PNG/JPEG go in as they are (metadata kept);
@@ -513,8 +530,10 @@ async function nova(name, data, argv, out, n = CORES) {
     return nova(name, data, argv, out, 1);
   } finally { ws.forEach(w => w.terminate()); }
 }
+let novaOut = null;
+$('savenova').onclick = () => novaOut && download(novaOut, novaOut.name);
 async function encode(file) {
-  const ei = $('einfo'), base = file.name.replace(/\.[^.]*$/, '');
+  const ei = info, base = file.name.replace(/\.[^.]*$/, '');
   let data = new Uint8Array(await file.arrayBuffer()), src = file.name;
   const native = (data[0] === 0x89 && data[1] === 0x50) || (data[0] === 0xFF && data[1] === 0xD8) || RAW.test(file.name);
   const lock = awake();
@@ -547,18 +566,16 @@ async function encode(file) {
     }
     ei.textContent = `${file.name}: encoding (${mb(file.size)})…`;
     const t0 = performance.now();
-    const r = await nova(src, data, ['encode', 'IN', 'OUT', '-m', $('emode').value, ...(eqSet ? ['-q', $('eq').value] : [])], 'out.nova');
+    // Quality always given: without -q, nova lowers it for JPEG sources to stay smaller than the JPEG.
+    const r = await nova(src, data, ['encode', 'IN', 'OUT', '-m', $('emode').value, '-q', $('eq').value], 'out.nova');
     const out = new File([MetaStrip.apply(r, { keep: $('ekeep').checked, gps: $('egps').checked })], base + '.nova');
-    ei.textContent = `${file.name} → ${out.name}: ${mb(out.size)}, ${(out.size / file.size * 100).toFixed(0)} % of the source, encoded in ${((performance.now() - t0) / 1000).toFixed(1)} s on ${CORES} ${CORES > 1 ? 'cores' : 'core'}. Saved to your downloads; shown above.`;
-    download(out, out.name);
-    open(out);
-    $('viewer').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    out.converted = true;
+    novaOut = out;
+    const done = `${file.name} → ${out.name}: ${mb(out.size)}, ${(out.size / file.size * 100).toFixed(0)} % of the source, converted in ${((performance.now() - t0) / 1000).toFixed(1)} s on ${CORES} ${CORES > 1 ? 'cores' : 'core'}.`;
+    await open(out);
+    if (novaOut === out && !info.querySelector('.err')) info.textContent = done;
   } catch (e) {
-    ei.innerHTML = '';
-    const s = document.createElement('span');
-    s.className = 'err';
-    s.textContent = `${file.name}: ${e.message}`;
-    ei.append(s);
+    fail(`${file.name}: ${e.message}`);
   } finally { sleep(lock); }
 }
 // Export: the browser encodes the canvas (the frame on screen for animations).
@@ -618,7 +635,6 @@ $('save').onclick = async () => {
     download(b);
   }, fmt.value, q.value / 100);
 };
-sample('photo');
 </script>
 </body>
 </html>
