@@ -159,7 +159,7 @@
     <div class="settings">
       <div class="row">
         <label class="q">Mode <select id="emode"><option value="adaptive">Adaptive</option><option value="lossless">Lossless</option><option value="lossy">Lossy</option></select></label>
-        <label class="q">Quality <input type="range" id="eq" min="0" max="100" value="90"> <output id="eqv">90</output></label>
+        <label class="q">Quality <input type="range" id="eq" min="0" max="100" value="90"> <output id="eqv" title="90, or a JPEG source's own quality">auto</output></label>
       </div>
       <p style="margin:0;color:var(--mut)">Adaptive keeps graphics and screenshots exact and compresses photos at the chosen quality; 90 looks identical to the source.</p>
       <label class="q"><input type="checkbox" id="ekeep" checked> Keep metadata</label>
@@ -183,15 +183,15 @@
   <span>NOVA v2. Images never leave your device.</span>
   <a href="https://github.com/Thibault-Savenkoff/nova">Source on GitHub</a>
 </footer>
-<script src="nova_decode.js?v=7"></script>
-<script src="heif_meta.js?v=7"></script>
-<script src="meta_strip.js?v=7"></script>
+<script src="nova_decode.js?v=8"></script>
+<script src="heif_meta.js?v=8"></script>
+<script src="meta_strip.js?v=8"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 // Cache buster of the scripts and workers: bump it with the ?v= of the script tags above at each
 // release, or a browser can mix a cached worker with a new decoder.
-const V = '?v=7';
+const V = '?v=8';
 let cv = $('cv'), ctx = cv.getContext('2d');
 const info = $('info'), bar = $('bar'), fill = bar.firstElementChild;
 let name = 'image', timer = null, token = 0;
@@ -473,7 +473,9 @@ function dropZone(zone, input, fn) {
 }
 dropZone('stage', 'file', open);   // drop a .nova on the image
 dropZone('edrop', 'efile', encode);
-$('eq').oninput = () => { $('eqv').textContent = $('eq').value; };
+// Quality: auto (nova picks 90, or a JPEG source's own quality) until the slider is moved.
+let eqSet = false;
+$('eq').oninput = () => { eqSet = true; $('eqv').textContent = $('eq').value; };
 $('ekeep').onchange = () => { $('egps').disabled = !$('ekeep').checked; };
 
 // Encoder: nova itself (wasm) in a worker. PNG/JPEG go in as they are (metadata kept);
@@ -540,7 +542,7 @@ async function encode(file) {
     }
     ei.textContent = `${file.name}: encoding (${mb(file.size)})…`;
     const t0 = performance.now();
-    const r = await nova(src, data, ['encode', 'IN', 'OUT', '-m', $('emode').value, '-q', $('eq').value], 'out.nova');
+    const r = await nova(src, data, ['encode', 'IN', 'OUT', '-m', $('emode').value, ...(eqSet ? ['-q', $('eq').value] : [])], 'out.nova');
     const out = new File([MetaStrip.apply(r, { keep: $('ekeep').checked, gps: $('egps').checked })], base + '.nova');
     ei.textContent = `${file.name} → ${out.name}: ${mb(out.size)}, ${(out.size / file.size * 100).toFixed(0)} % of the source, encoded in ${((performance.now() - t0) / 1000).toFixed(1)} s on ${CORES} ${CORES > 1 ? 'cores' : 'core'}. Saved to your downloads; shown above.`;
     download(out, out.name);

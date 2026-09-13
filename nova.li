@@ -263,6 +263,37 @@ Public
     }
   )
 
+  - jpeg_quality name:String :Int <-
+  // Quality of the JPEG file name (IJG scale, 1-100) estimated from its luminance table (DQT id 0) against
+  // the standard one (sum 3688), as ImageMagick does; 0: not a JPEG or no 8-bit table 0.
+  ( + pos,m,len,sum,scale,result:Int
+    load_file name
+    ((data_size > 4) && {(u16 0) = 0FFD8h}).if {
+      pos := 2
+      {pos + 4 <= data_size}.while_do {
+        m := u8 (pos + 1)
+        len := u16 (pos + 2)
+        (((u8 pos) != 255) || {m = 0DAh} || {len < 2} || {pos + 2 + len > data_size}).if {
+          pos := data_size
+        } else {
+          // First table of the segment only (id 0 comes first in practice).
+          ((m = 0DBh) && {len >= 67} && {(u8 (pos + 4)) = 0}).if {
+            sum := 0
+            0.to 63 do { i:Int sum := sum + u8 (pos + 5 + i) }
+            scale := (sum * 100 + 1844) / 3688
+            (scale <= 100).if { result := (200 - scale) / 2 } else { result := 5000 / scale }
+            (result < 1).if { result := 1 }
+            (result > 100).if { result := 100 }
+            pos := data_size
+          } else {
+            pos := pos + 2 + len
+          }
+        }
+      }
+    }
+    result
+  )
+
   - put_meta kind:Int from lo:Int until hi:Int <-
   (
     begin_chunk t_mdat
@@ -903,7 +934,7 @@ Public
   // Frames -> Nova_codec.out. md: 0 adaptive, 1 lossless, 2 lossy. lv: 0 pick, -1 level 0, else the level.
   // Frames are coded from `work`, which holds the reconstructed image (lossy changes pixels):
   // a delta is coded on top of the previous reconstructed frame, as the decoder will see it.
-  ( + np,e,lvl:Int
+  ( + np,e,lvl,q:Int
     + animated,photo:Boolean
     + work,next:C_array Uint8
     np := 3
@@ -924,6 +955,13 @@ Public
     (lvl = 5).if {
       (md = 1).if { fail "level 5 is lossy only (-m lossy or adaptive)" }
       e := opt_q
+      // JPEG source without -q: a quality matching the JPEG's, so the .nova does not spend bits on its
+      // artefacts (50 + Q / 2, at most 90: JPEG q 50 -> 75, q 70 -> 85, measured to add <= 0.6 dB of
+      // loss while ending at 80-90 % of the JPEG; q 90 was 115-167 % of low-quality JPEGs).
+      ((! opt_q_set) && {! animated} && {meta_src != NULL}).if {
+        q := jpeg_quality meta_src
+        (q > 0).if { e := (50 + q / 2).min 90 }
+      }
       // Adaptive: smooth synthetic images pass the photo test but code smaller losslessly
       // (best lossless level, as pick_level would choose it). Lossy must save >= 10 % to be worth it.
       ((md = 0) && {lv = 0} && {(central np level (pick_level np eps 0) eps 0) * 9 <= (central np level 5 eps e) * 10}).if {
@@ -1505,6 +1543,7 @@ Public
         ((opt_e < 1) || {opt_e > 64}).if { fail "eps must be 1..64" }
       }.elseif {a == "-q"} then {
         opt_q := v.to_int
+        opt_q_set := True
         ((opt_q < 0) || {opt_q > 100}).if { fail "quality must be 0..100" }
       }.elseif {a == "-d"} then {
         opt_d := v.to_int
