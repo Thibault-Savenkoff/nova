@@ -205,15 +205,15 @@
   <span>NOVA v2. Images never leave your device.</span>
   <a href="https://github.com/Thibault-Savenkoff/nova">Source on GitHub</a>
 </footer>
-<script src="nova_decode.js?v=11"></script>
-<script src="heif_meta.js?v=11"></script>
-<script src="meta_strip.js?v=11"></script>
+<script src="nova_decode.js?v=12"></script>
+<script src="heif_meta.js?v=12"></script>
+<script src="meta_strip.js?v=12"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 // Cache buster of the scripts and workers: bump it with the ?v= of the script tags above at each
 // release, or a browser can mix a cached worker with a new decoder.
-const V = '?v=11';
+const V = '?v=12';
 let cv = $('cv'), ctx = cv.getContext('2d');
 const info = $('info'), bar = $('bar'), fill = bar.firstElementChild;
 let name = 'image', timer = null, token = 0;
@@ -325,8 +325,52 @@ async function iccOf(data, f) {
   } catch (e) { }
   return null;
 }
+// EXIF orientation (1-8) of a .nova: MDAT eXIf (from PNG: TIFF data) or APP1 "Exif\0\0" + TIFF (from
+// JPEG and HEIC). The pixels are kept as the camera wrote them; the viewer turns them upright.
+function orientationOf(data, f) {
+  for (const c of f.chunks) {
+    if (c.type !== 0x4D444154 || c.len < 12) continue;
+    const kind = String.fromCharCode(...data.subarray(c.pos, c.pos + 4));
+    let t = data.subarray(c.pos + 4, c.pos + c.len);
+    if (kind === 'APP1' && String.fromCharCode(...t.subarray(0, 6)) === 'Exif\0\0') t = t.subarray(6);
+    else if (kind !== 'eXIf') continue;
+    if (t.length < 8) return 1;
+    const le = t[0] === 0x49, u16 = i => le ? t[i] | t[i + 1] << 8 : t[i] << 8 | t[i + 1];
+    const ifd = le ? t[4] | t[5] << 8 | t[6] << 16 | t[7] << 24 : t[4] << 24 | t[5] << 16 | t[6] << 8 | t[7];
+    if (ifd + 2 > t.length) return 1;
+    for (let i = 0, n = u16(ifd); i < n && ifd + 14 + i * 12 <= t.length; i++) {
+      const e = ifd + 2 + i * 12;
+      if (u16(e) === 0x0112) { const o = u16(e + 8); return o >= 1 && o <= 8 ? o : 1; }
+    }
+    return 1;
+  }
+  return 1;
+}
+// RGBA turned upright for EXIF orientation o (2-8: mirror and/or turn; 5-8 swap width and height).
+function upright(w, h, rgba, o) {
+  if (o === 1) return { w, h, rgba };
+  const swap = o >= 5, W = swap ? h : w, H = swap ? w : h, out = new Uint8Array(w * h * 4);
+  const s32 = new Uint32Array(rgba.buffer, rgba.byteOffset, w * h), d32 = new Uint32Array(out.buffer);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    // (x, y) upright <- (sx, sy) stored
+    let sx, sy;
+    switch (o) {
+      case 2: sx = w - 1 - x; sy = y; break;
+      case 3: sx = w - 1 - x; sy = h - 1 - y; break;
+      case 4: sx = x; sy = h - 1 - y; break;
+      case 5: sx = y; sy = x; break;
+      case 6: sx = y; sy = h - 1 - x; break;
+      case 7: sx = w - 1 - y; sy = h - 1 - x; break;
+      default: sx = w - 1 - y; sy = x;   // 8
+    }
+    d32[y * W + x] = s32[sy * w + sx];
+  }
+  return { w: W, h: H, rgba: out };
+}
+let orient = 1;   // EXIF orientation of the open file, applied by show()
 const isP3 = p => !!p && /Display P3/.test(new TextDecoder('latin1').decode(p).replace(/\0/g, ''));
 function show(w, h, rgba) {
+  ({ w, h, rgba } = upright(w, h, rgba, orient));
   cur = { w, h, rgba };
   $('drop').hidden = true;
   if ($('hdr').hidden) cv.hidden = false;
@@ -394,6 +438,7 @@ async function open(file) {
   try {
     const f = NovaDecode.parse(data);
     icc = f.raw ? null : await iccOf(data, f);   // a developed RAW is sRGB
+    orient = f.raw ? 1 : orientationOf(data, f);   // LibRaw turns a developed RAW itself
     if (my !== token) return;
     useSpace(P3 && isP3(icc) ? 'display-p3' : 'srgb');
     anatomy(data, f);
@@ -405,7 +450,8 @@ async function open(file) {
     const prev = await NovaDecode.decodePreview(data);
     if (my !== token) return;
     // The preview is small: stretch it to where the full image will sit (same aspect ratio).
-    if (prev) { cv.style.width = `min(${f.width}px, 100%, calc(72vh * ${f.width / f.height}))`; show(prev.width, prev.height, prev.rgba); }
+    const [fw, fh] = orient >= 5 ? [f.height, f.width] : [f.width, f.height];
+    if (prev) { cv.style.width = `min(${fw}px, 100%, calc(72vh * ${fw / fh}))`; show(prev.width, prev.height, prev.rgba); }
     if (f.raw) {
       // Developed by nova + LibRaw (wasm): camera white balance and look, 8-bit sRGB, as PAM (RGBA as is).
       info.textContent = `${file.name}: preview shown, developing the RAW…`;
@@ -441,6 +487,7 @@ async function open(file) {
       ['Decoded in', `${((performance.now() - t0) / 1000).toFixed(1)} s on ${n} ${n > 1 ? 'cores' : 'core'}`]];
     specs(rows);
     gain = r.frames.length === 1 ? await NovaDecode.decodeGainMap(data, { run: runner(() => {}) }) : null;
+    if (gain && orient !== 1) { const u = upright(gain.width, gain.height, gain.rgba, orient); Object.assign(gain, { width: u.w, height: u.h, rgba: u.rgba }); }
     if (my !== token) return;
     const gp = gain && NovaDecode.gainMapParams(gain.meta);
     if (gp) {
@@ -588,9 +635,8 @@ stage.addEventListener('pointerdown', e => {
 // Compare: after a conversion, the source (as the browser shows it) covers the .nova left of the split.
 // ponytail: sources the browser cannot show (RAW, HEIC outside Safari) have no compare.
 let srcUrl = null;
-// raw: the .nova holds the source's pixels unturned (PNG/JPEG go in as they are, EXIF orientation
-// kept but not applied); a browser-decoded source (HEIC…) was turned upright before encoding.
-function setSource(file, raw) {
+// The browser shows the source upright, like the viewer shows the .nova.
+function setSource(file) {
   if (srcUrl) URL.revokeObjectURL(srcUrl);
   srcUrl = null;
   srcImg.removeAttribute('src');
@@ -598,7 +644,6 @@ function setSource(file, raw) {
   $('cmp').hidden = true;
   $('cmp').setAttribute('aria-pressed', 'false');
   if (!file || RAW.test(file.name)) return;
-  srcImg.style.imageOrientation = raw ? 'none' : 'from-image';
   srcUrl = URL.createObjectURL(file);
   srcImg.onload = () => { $('cmp').hidden = false; };
   srcImg.src = srcUrl;
@@ -717,7 +762,7 @@ async function encode(file) {
     novaOut = out;
     const done = `${file.name} → ${out.name}: ${mb(out.size)}, ${(out.size / file.size * 100).toFixed(0)} % of the source, converted in ${((performance.now() - t0) / 1000).toFixed(1)} s on ${CORES} ${CORES > 1 ? 'cores' : 'core'}.`;
     await open(out);
-    if (novaOut === out && !info.querySelector('.err')) { info.textContent = done; setSource(file, native); }
+    if (novaOut === out && !info.querySelector('.err')) { info.textContent = done; setSource(file); }
     return out;
   } catch (e) {
     bar.style.visibility = 'hidden';
