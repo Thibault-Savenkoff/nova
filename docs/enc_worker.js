@@ -4,7 +4,7 @@
 // each codes its share of the stripes and, at each barrier k, sends its changes to the others
 // through the peers ports (one per other replica) and waits for theirs. Replica 0 returns the output.
 // A fresh instance per command: the codec keeps global state.
-importScripts('nova_enc.js');
+importScripts('nova_enc.js' + self.location.search);
 self.onmessage = async e => {
   const { name, data, argv, out, replica = 0, n = 1, peers = [] } = e.data, log = [];
   const inbox = {}, want = {};
@@ -20,6 +20,7 @@ self.onmessage = async e => {
     let exit;
     const done = new Promise(r => exit = r);
     const M = await NovaWasm({
+      locateFile: f => f + self.location.search,
       print: s => log.push(s), printErr: s => log.push(s), onExit: exit, onAbort: s => { log.push(String(s)); exit(1); },
       sync: d => new Promise(r => {
         const k = round++;

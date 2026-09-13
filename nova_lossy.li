@@ -495,7 +495,7 @@ Public
   ( + u,n,per,result:Int
     u := 1 << levels
     n := (h + u - 1) / u
-    result := (w * h) / 1500000
+    result := (w * h) / 500000
     (result > 16).if { result := 16 }
     (result > n).if { result := n }
     (result < 1).if { result := 1 }

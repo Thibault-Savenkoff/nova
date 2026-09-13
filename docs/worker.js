@@ -1,5 +1,5 @@
 // One decoding job (a stripe) per message: see runJob in nova_decode.js.
-importScripts('nova_decode.js');
+importScripts('nova_decode.js' + self.location.search);
 self.onmessage = e => {
   const j = e.data;
   if (j.kind === 'l14') {
@@ -8,5 +8,6 @@ self.onmessage = e => {
   }
   const r = NovaDecode.runJob(j);
   if (r.img) self.postMessage({ done: true, ok: r.ok, img: r.img }, [r.img.buffer]);
+  else if (r.plane) self.postMessage({ done: true, ok: r.ok, plane: r.plane }, [r.plane.buffer]);
   else self.postMessage({ done: true, ok: r.ok, planes: r.planes }, r.planes.map(p => p.buffer));
 };

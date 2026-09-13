@@ -875,27 +875,28 @@ function lossyRows(w, h, s, ns) {
   return [Math.min(s * per * u, h), Math.min((s + 1) * per * u, h)];
 }
 
-// Dequantizes, inverts the wavelet and writes RGB into buf (region x0, y0, w, h of stride s).
-function lossyFinish(planes, w, h, q, buf, s, x0, y0) {
+// Dequantizes plane p and inverts its wavelet, in place (one job per plane: they run in parallel).
+function lossyPlane(a, w, h, q, p) {
   const levels = waveletLevels(w, h);
-  for (let p = 0; p < 3; p++) {
-    const a = planes[p];
-    const bands = [band(levels, 0)];
-    for (let k = levels - 1; k >= 0; k--) for (let o = 1; o <= 3; o++) bands.push(band(k, o));
-    for (const b of bands) {
-      const st = lossyStep(q, p, b), rc = (RECON * st) >> 8;
-      for (let y = b.by; y < h; y += b.bs) {
-        for (let x = b.bx; x < w; x += b.bs) {
-          const i = y * w + x, v = a[i];
-          if (v !== 0) {
-            const c = Math.floor((Math.abs(v) * st + rc + 128) / 256);
-            a[i] = v < 0 ? -c : c;
-          }
+  const bands = [band(levels, 0)];
+  for (let k = levels - 1; k >= 0; k--) for (let o = 1; o <= 3; o++) bands.push(band(k, o));
+  for (const b of bands) {
+    const st = lossyStep(q, p, b), rc = (RECON * st) >> 8;
+    for (let y = b.by; y < h; y += b.bs) {
+      for (let x = b.bx; x < w; x += b.bs) {
+        const i = y * w + x, v = a[i];
+        if (v !== 0) {
+          const c = Math.floor((Math.abs(v) * st + rc + 128) / 256);
+          a[i] = v < 0 ? -c : c;
         }
       }
     }
-    waveletInverse(a, w, h, levels);
   }
+  waveletInverse(a, w, h, levels);
+}
+
+// Writes the YCoCg planes (after lossyPlane) as RGB into buf (region x0, y0, w, h of stride s).
+function lossyFinish(planes, w, h, buf, s, x0, y0) {
   const px = v => { v = (v + 32) >> 6; return v < 0 ? 0 : v > 255 ? 255 : v; };
   const P0 = planes[0], P1 = planes[1], P2 = planes[2];
   for (let y = 0; y < h; y++) {
@@ -932,7 +933,8 @@ function lossyTable(d, pos, len, w, h) {
 // ---------------------------------------------------------------------------------------------
 
 // Jobs: {kind: 'l14', data, off, len, fw, rows, np, level, eps, img (RGBA of the stripe)} or
-// {kind: 'l5', data, off, len, w, h, s, ns} -> 3 Int32Array planes of the stripe rows.
+// {kind: 'l5', data, off, len, w, h, s, ns} -> 3 Int32Array planes of the stripe rows, or
+// {kind: 'l5p', plane, w, h, q, p} -> the plane dequantized and back from the wavelet.
 let worker = null;
 function jobState() {
   if (!worker) { const m = new Model(); worker = { m, codec: new Codec(m), lossy: new Lossy(m) }; }
@@ -950,6 +952,10 @@ function runJob(j) {
     st.m.start(j.data, j.off, j.len, j.fw * j.rows * j.np, j.level);
     c.codeRegion(j.np);
     return { ok: !st.m.overrun, img: j.img };
+  }
+  if (j.kind === 'l5p') {
+    lossyPlane(j.plane, j.w, j.h, j.q, j.p);
+    return { ok: true, plane: j.plane };
   }
   const L = st.lossy;
   L.setup(j.w, j.h);
@@ -985,7 +991,8 @@ async function decodeRegion(data, pos, len, buf, s, x0, y0, fw, fh, np, run, inf
       const a = lossyRows(fw, fh, i, tab.length)[0] * fw;
       for (let c = 0; c < 3; c++) planes[c].set(r.planes[c], a);
     });
-    lossyFinish(planes, fw, fh, q, buf, s, x0, y0);
+    const fin = await run(planes.map((a, p) => ({ kind: 'l5p', plane: a, w: fw, h: fh, q, p })));
+    lossyFinish(fin.map(r => r.plane), fw, fh, buf, s, x0, y0);
     if (np === 4 && ok) {
       const a = new Uint8Array(fw * fh * 4);
       for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) a[(y * fw + x) * 4 + 1] = buf[((y0 + y) * s + x0 + x) * 4 + 3];

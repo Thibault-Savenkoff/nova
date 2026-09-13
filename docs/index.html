@@ -48,7 +48,7 @@
     background: repeating-conic-gradient(var(--stage-a) 0 25%, var(--stage-b) 0 50%) 0 0 / 20px 20px; }
   #cv, #hdr { display: block; max-width: 100%; max-height: 72vh; width: auto; height: auto; box-shadow: 0 1px 2px rgb(0 0 0 / .18), 0 8px 28px rgb(0 0 0 / .14); }
   #stage.over { outline: 2px dashed var(--acc); outline-offset: -2px; }
-  #bar { position: absolute; left: 18px; right: 18px; bottom: 10px; height: 4px; border-radius: 2px; background: rgb(0 0 0 / .12); overflow: hidden; visibility: hidden; }
+  #bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; border-radius: 0 0 6px 6px; background: rgb(0 0 0 / .12); overflow: hidden; visibility: hidden; }
   #bar div { height: 100%; width: 0; background: var(--acc); transition: width .2s; }
 
   .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; justify-content: space-between; }
@@ -183,12 +183,15 @@
   <span>NOVA v2. Images never leave your device.</span>
   <a href="https://github.com/Thibault-Savenkoff/nova">Source on GitHub</a>
 </footer>
-<script src="nova_decode.js"></script>
-<script src="heif_meta.js"></script>
-<script src="meta_strip.js"></script>
+<script src="nova_decode.js?v=3"></script>
+<script src="heif_meta.js?v=3"></script>
+<script src="meta_strip.js?v=3"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
+// Cache buster of the scripts and workers: bump it with the ?v= of the script tags above at each
+// release, or a browser can mix a cached worker with a new decoder.
+const V = '?v=3';
 let cv = $('cv'), ctx = cv.getContext('2d');
 const info = $('info'), bar = $('bar'), fill = bar.firstElementChild;
 let name = 'image', timer = null, token = 0;
@@ -199,7 +202,7 @@ function workers() {
   if (pool === null) {
     try {
       pool = [];
-      for (let i = 0; i < Math.min(navigator.hardwareConcurrency || 4, 16); i++) pool.push(new Worker('worker.js'));
+      for (let i = 0; i < Math.min(navigator.hardwareConcurrency || 4, 16); i++) pool.push(new Worker('worker.js' + V));
     } catch (e) { pool = []; }
   }
   return pool;
@@ -227,8 +230,7 @@ async function onWorkers(ws, jobs, progress) {
     const go = () => {
       if (next >= jobs.length) return ok();
       const i = next++, j = Object.assign({}, jobs[i]);
-      j.data = jobs[i].data.slice(j.off, j.off + j.len);
-      j.off = 0;
+      if (j.data) { j.data = jobs[i].data.slice(j.off, j.off + j.len); j.off = 0; }
       if (j.img) j.img = j.img.slice();   // transferred: keep jobs[i] intact for the fallback
       let sent = 0;
       w.onmessage = e => {
@@ -338,8 +340,13 @@ function specs(rows) {
   $('specs').hidden = false;
 }
 
+// Keeps the screen on during a decode or an encode (phones sleep otherwise, and a sleeping page
+// stops). HTTPS only; elsewhere the screen may sleep.
+const awake = () => (navigator.wakeLock ? navigator.wakeLock.request('screen') : Promise.resolve(null)).catch(() => null);
+const sleep = lock => lock.then(l => l && l.release()).catch(() => {});
+
 async function open(file) {
-  const my = ++token;
+  const my = ++token, lock = awake();
   clearInterval(timer);
   $('play').hidden = true;
   ['fmt', 'q', 'save'].forEach(id => $(id).disabled = true);
@@ -390,7 +397,7 @@ async function open(file) {
     const rows = [...base, ['Content', `${kind}, ${r.lossy ? 'lossy' : 'lossless'}${r.frames.length > 1 ? `, ${r.frames.length} frames` : ''}`],
       ['Decoded in', `${((performance.now() - t0) / 1000).toFixed(1)} s on ${n} ${n > 1 ? 'cores' : 'core'}`]];
     specs(rows);
-    gain = r.frames.length === 1 ? await NovaDecode.decodeGainMap(data) : null;
+    gain = r.frames.length === 1 ? await NovaDecode.decodeGainMap(data, { run: runner(() => {}) }) : null;
     if (my !== token) return;
     const gp = gain && NovaDecode.gainMapParams(gain.meta);
     if (gp) {
@@ -418,7 +425,7 @@ async function open(file) {
     s.className = 'err';
     s.textContent = `${file.name}: ${e.message}`;
     info.append(s);
-  }
+  } finally { sleep(lock); }
 }
 
 // Examples: small .nova files next to this page (no metadata in them).
@@ -464,7 +471,7 @@ const RAW = /\.(3fr|arw|cr2|cr3|crw|dcr|dng|erf|iiq|k25|kdc|mef|mos|mrw|nef|nrw|
 // closes the tab beyond its memory limit); 8 elsewhere.
 const CORES = /iPhone|iPad|Android/.test(navigator.userAgent) ? 1 : Math.min(navigator.hardwareConcurrency || 1, 8);
 async function nova(name, data, argv, out, n = CORES) {
-  const ws = [...Array(n)].map(() => new Worker('enc_worker.js')), peers = ws.map(() => []);
+  const ws = [...Array(n)].map(() => new Worker('enc_worker.js' + V)), peers = ws.map(() => []);
   for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
     const c = new MessageChannel();
     peers[i].push(c.port1);
@@ -487,6 +494,7 @@ async function encode(file) {
   const ei = $('einfo'), base = file.name.replace(/\.[^.]*$/, '');
   let data = new Uint8Array(await file.arrayBuffer()), src = file.name;
   const native = (data[0] === 0x89 && data[1] === 0x50) || (data[0] === 0xFF && data[1] === 0xD8) || RAW.test(file.name);
+  const lock = awake();
   try {
     if (!native) {
       ei.textContent = `${file.name}: decoding with the browser…`;
@@ -528,7 +536,7 @@ async function encode(file) {
     s.className = 'err';
     s.textContent = `${file.name}: ${e.message}`;
     ei.append(s);
-  }
+  } finally { sleep(lock); }
 }
 // Export: the browser encodes the canvas (the frame on screen for animations).
 // ponytail: current frame only for animations; add an all-frames export if asked.
