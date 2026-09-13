@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- NOVA for Windows, MSI (wixl from msitools, built by win/dist.sh from dist/nova-windows/).
+     Same install as win/nova.nsi, but the WIC codec keys are written here (the ones DllRegisterServer
+     writes in plugins/wic/nova_wic.cpp: keep both in step), so Windows Installer removes them itself.
+     ponytail: no shell refresh action: Explorer shows the thumbnails after a sign-out if it was open. -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="NOVA image format" Version="2.0.0" Manufacturer="Thibault Savenkoff" Language="1033"
+           UpgradeCode="6C1D4E0B-8F7A-4C55-9B7E-2A1F3D5C7E90">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
+             Description="NOVA: nova.exe and the Windows Imaging Component codec"/>
+    <Media Id="1" Cabinet="nova.cab" EmbedCab="yes"/>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="NOVA">
+          <Component Id="Program" Guid="3A2B7C41-5D6E-4F80-9123-4B5C6D7E8F01" Win64="yes">
+            <File Id="nova.exe" Source="dist/nova-windows/nova.exe" KeyPath="yes"/>
+            <File Id="zlib1.dll" Source="dist/nova-windows/zlib1.dll"/>
+            <File Id="libwebp.dll" Source="dist/nova-windows/libwebp-7.dll"/>
+            <File Id="libsharpyuv.dll" Source="dist/nova-windows/libsharpyuv-0.dll"/>
+            <File Id="lic.nova" Source="dist/nova-windows/LICENSE-nova.txt"/>
+            <File Id="lic.zlib" Source="dist/nova-windows/LICENSE-zlib.txt"/>
+            <File Id="lic.webp" Source="dist/nova-windows/LICENSE-libwebp.txt"/>
+            <Environment Id="Path" Name="PATH" Value="[INSTALLDIR]" Action="set" Part="last" System="yes" Permanent="no"/>
+          </Component>
+          <Component Id="Codec" Guid="7E8F9A0B-1C2D-4E3F-8A4B-5C6D7E8F9A12" Win64="yes">
+            <File Id="nova_wic.dll" Source="dist/nova-windows/nova_wic.dll" KeyPath="yes"/>
+            <RegistryKey Root="HKCR" Key="CLSID\{40E4326E-629B-488E-8D94-3959498E1ACD}">
+              <RegistryValue Type="string" Value="NOVA Decoder"/>
+              <RegistryValue Name="FriendlyName" Type="string" Value="NOVA Decoder"/>
+              <RegistryValue Name="Author" Type="string" Value="NOVA"/>
+              <RegistryValue Name="Vendor" Type="string" Value="{B4AFAA41-52C1-41D0-9FD4-C77EFE7BFE19}"/>
+              <RegistryValue Name="Version" Type="string" Value="2.0.0"/>
+              <RegistryValue Name="ContainerFormat" Type="string" Value="{B4AFAA41-52C1-41D0-9FD4-C77EFE7BFE19}"/>
+              <RegistryValue Name="FileExtensions" Type="string" Value=".nova"/>
+              <RegistryValue Name="MimeTypes" Type="string" Value="image/x-nova"/>
+              <RegistryValue Name="SupportsAnimation" Type="integer" Value="1"/>
+              <RegistryValue Name="SupportsMultiframe" Type="integer" Value="1"/>
+              <RegistryValue Name="SupportsLossless" Type="integer" Value="1"/>
+              <RegistryValue Name="SupportsChromakey" Type="integer" Value="0"/>
+              <RegistryValue Name="ArbitrationPriority" Type="integer" Value="10"/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key="CLSID\{40E4326E-629B-488E-8D94-3959498E1ACD}\InprocServer32">
+              <RegistryValue Type="string" Value="[#nova_wic.dll]"/>
+              <RegistryValue Name="ThreadingModel" Type="string" Value="Both"/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key="CLSID\{40E4326E-629B-488E-8D94-3959498E1ACD}\Formats\{6FDDC324-4E03-4BFE-B185-3D77768DC90F}">
+              <RegistryValue Type="string" Value=""/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key="CLSID\{40E4326E-629B-488E-8D94-3959498E1ACD}\Patterns\0">
+              <RegistryValue Name="Position" Type="integer" Value="0"/>
+              <RegistryValue Name="Length" Type="integer" Value="9"/>
+              <RegistryValue Name="Pattern" Type="binary" Value="894E4F56410D0A1A0A"/>
+              <RegistryValue Name="Mask" Type="binary" Value="FFFFFFFFFFFFFFFFFF"/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key="CLSID\{7ED96837-96F0-4812-B211-F13C24117ED3}\Instance\{40E4326E-629B-488E-8D94-3959498E1ACD}">
+              <RegistryValue Name="CLSID" Type="string" Value="{40E4326E-629B-488E-8D94-3959498E1ACD}"/>
+              <RegistryValue Name="FriendlyName" Type="string" Value="NOVA Decoder"/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key=".nova">
+              <RegistryValue Name="Content Type" Type="string" Value="image/x-nova"/>
+              <RegistryValue Name="PerceivedType" Type="string" Value="image"/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key=".nova\ShellEx\{E357FCCD-A995-4576-B01F-234630154E96}">
+              <RegistryValue Type="string" Value="{C7657C4A-9F68-40FA-A4DF-96BC08EB3551}"/>
+            </RegistryKey>
+            <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\KindMap">
+              <RegistryValue Name=".nova" Type="string" Value="picture"/>
+            </RegistryKey>
+          </Component>
+          <Directory Id="SAMPLES" Name="samples">
+            <Component Id="Samples" Guid="9B0C1D2E-3F4A-4B5C-8D6E-7F8091A2B3C4" Win64="yes">
+              <File Id="photo.nova" Source="dist/nova-windows/photo.nova" KeyPath="yes"/>
+              <File Id="screenshot.nova" Source="dist/nova-windows/screenshot.nova"/>
+              <File Id="animation.nova" Source="dist/nova-windows/animation.nova"/>
+            </Component>
+          </Directory>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <Feature Id="All" Level="1">
+      <ComponentRef Id="Program"/>
+      <ComponentRef Id="Codec"/>
+      <ComponentRef Id="Samples"/>
+    </Feature>
+  </Product>
+</Wix>

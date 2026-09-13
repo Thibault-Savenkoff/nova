@@ -126,7 +126,7 @@ HEIC/AVIF, WebP and RAW support load their libraries at run time, so `nova` buil
 [libheif](https://github.com/strukturag/libheif), [libwebp](https://chromium.googlesource.com/webm/libwebp) and [LibRaw](https://www.libraw.org) 0.22.
 
 Windows: `win/build.sh` cross-compiles `nova.c` to `nova.exe` with MinGW-w64 (same output as on Linux; 4 cores by default, `NOVA_THREADS=n` for more).
-`win/dist.sh` packs it with the WIC codec and the zlib and libwebp DLLs into `dist/nova-setup.exe` (NSIS installer: `nova` on the PATH, codec registered, uninstaller in Settings > Apps) and `dist/nova-windows.zip`.
+`win/dist.sh` packs it with the WIC codec and the zlib and libwebp DLLs into `dist/nova-setup.exe` (NSIS installer: `nova` on the PATH, codec registered, uninstaller in Settings > Apps), the same as `dist/nova-setup.msi` (for deployment tools), and `dist/nova-windows.zip`.
 
 The web version is built with [Emscripten](https://emscripten.org): `docs/build.sh` compiles `nova.c` and LibRaw to `docs/nova_enc.wasm`.
 
