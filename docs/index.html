@@ -472,7 +472,12 @@ function dropZone(zone, input, fn) {
   d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files[0] && fn(e.dataTransfer.files[0]); };
 }
 dropZone('stage', 'file', open);   // drop a .nova on the image
-dropZone('edrop', 'efile', encode);
+// Phones: encoding is off. Measured on an iPhone 17 Pro: a 4 Mpx JPEG takes 68 s (~12x a PC), and
+// more cores do not fit in iOS's memory limit (4 Mpx: 217 MB on 1 replica, 670 MB on 2).
+if (/iPhone|iPad|Android/.test(navigator.userAgent)) {
+  $('create').querySelector('.intro p').textContent = 'Creating a .nova takes a computer: on a phone it takes minutes for one photo. Open this page on a computer, or use the nova program.';
+  $('create').querySelectorAll('#edrop, .settings, #einfo').forEach(e => e.hidden = true);
+} else dropZone('edrop', 'efile', encode);
 // Quality: auto (nova picks 90, or a JPEG source's own quality) until the slider is moved.
 let eqSet = false;
 $('eq').oninput = () => { eqSet = true; $('eqv').textContent = $('eq').value; };
@@ -485,25 +490,9 @@ const RAW = /\.(3fr|arw|cr2|cr3|crw|dcr|dng|erf|iiq|k25|kdc|mef|mos|mrw|nef|nrw|
 // One nova command on n cores: n workers run it as replicas (enc_worker.js); at each barrier every
 // replica sends its changes straight to the others (a MessageChannel per pair). Falls back to one
 // core if the replicas fail (out of memory with n copies).
-// Phones: iOS closes the tab beyond its memory limit, with no error to catch. Measured (wasm, total):
-// 4 Mpx photo 217 MB on 1 replica, 670 MB on 2, 1.1 GB on 4; 12 Mpx 361 MB / 1.6 GB. So 2 replicas up to
-// 6 Mpx, else 1 (RAW: LibRaw alone takes ~1 GB). 8 elsewhere.
-const PHONE = /iPhone|iPad|Android/.test(navigator.userAgent);
-const CORES = PHONE ? 1 : Math.min(navigator.hardwareConcurrency || 1, 8);
-const encCores = mpx => PHONE ? (mpx > 0 && mpx <= 6 ? 2 : 1) : CORES;
-// Width x height of a PNG or JPEG (SOF marker), 0 if unknown.
-function mpixels(d) {
-  const u16 = i => d[i] << 8 | d[i + 1];
-  if (d[0] === 0x89 && d[1] === 0x50) return (d[16] << 24 | d[17] << 16 | d[18] << 8 | d[19]) * (d[20] << 24 | d[21] << 16 | d[22] << 8 | d[23]) / 1e6;
-  for (let i = 2; d[0] === 0xFF && i + 9 < d.length; i += 2 + u16(i + 2)) {
-    const m = d[i + 1];
-    if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) return u16(i + 5) * u16(i + 7) / 1e6;
-  }
-  return 0;
-}
-// ponytail: phone-only estimate, fitted on one iPhone 17 Pro (4 Mpx JPEG, 1 core: 68 s; ~12x a PC);
-// a grainy JPEG is coded twice (lower quality) and takes up to twice as long.
-const encSeconds = (mpx, n) => Math.round(12 * (3 + 0.5 * mpx) / (n > 1 ? 1.7 : 1) / 5) * 5;
+// Phones: one replica (each holds a whole copy of the image, up to ~1 GB for a 24 Mpx RAW, and iOS
+// closes the tab beyond its memory limit); 8 elsewhere.
+const CORES = /iPhone|iPad|Android/.test(navigator.userAgent) ? 1 : Math.min(navigator.hardwareConcurrency || 1, 8);
 async function nova(name, data, argv, out, n = CORES) {
   const ws = [...Array(n)].map(() => new Worker('enc_worker.js' + V)), peers = ws.map(() => []);
   for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
@@ -556,14 +545,11 @@ async function encode(file) {
       data = new Uint8Array(await (await png(w, h, new Uint8Array(px.data.buffer), meta)).arrayBuffer());
       src = base + '.png';
     }
-    const mpx = RAW.test(file.name) ? 0 : mpixels(data), n = encCores(mpx), est = PHONE && mpx ? encSeconds(mpx, n) : 0;
-    ei.textContent = `${file.name}: encoding (${mb(file.size)}) on ${n} ${n > 1 ? 'cores' : 'core'}…` +
-      (est >= 20 ? ` This takes about ${est} s on a phone${est >= 60 ? ' (longer for grainy JPEGs)' : ''}: keep this page open.` : '') +
-      (PHONE && !mpx ? ' A RAW file takes a minute or more on a phone: keep this page open.' : '');
+    ei.textContent = `${file.name}: encoding (${mb(file.size)})…`;
     const t0 = performance.now();
-    const r = await nova(src, data, ['encode', 'IN', 'OUT', '-m', $('emode').value, ...(eqSet ? ['-q', $('eq').value] : [])], 'out.nova', n);
+    const r = await nova(src, data, ['encode', 'IN', 'OUT', '-m', $('emode').value, ...(eqSet ? ['-q', $('eq').value] : [])], 'out.nova');
     const out = new File([MetaStrip.apply(r, { keep: $('ekeep').checked, gps: $('egps').checked })], base + '.nova');
-    ei.textContent = `${file.name} → ${out.name}: ${mb(out.size)}, ${(out.size / file.size * 100).toFixed(0)} % of the source, encoded in ${((performance.now() - t0) / 1000).toFixed(1)} s on ${n} ${n > 1 ? 'cores' : 'core'}. Saved to your downloads; shown above.`;
+    ei.textContent = `${file.name} → ${out.name}: ${mb(out.size)}, ${(out.size / file.size * 100).toFixed(0)} % of the source, encoded in ${((performance.now() - t0) / 1000).toFixed(1)} s on ${CORES} ${CORES > 1 ? 'cores' : 'core'}. Saved to your downloads; shown above.`;
     download(out, out.name);
     open(out);
     $('viewer').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
