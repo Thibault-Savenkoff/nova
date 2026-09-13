@@ -7,7 +7,8 @@ Header
   // HDR: the ISO 21496-1 gain map of a `tmap` item (iPhone photos) is decoded too (8-bit RGB) with its
   // metadata; libheif applies its rotation like the primary's.
   // ponytail: depth maps and other auxiliary images are not kept; burst/sequence files give their
-  // primary image only; a 10-bit primary is read as 8 bits.
+  // primary image only; a 10-bit primary is read as 8 bits (iPhone HEIC screenshots: at most 2 of
+  // 1024 steps off, invisible; keeping 10 bits would need 16-bit planes in the codec and cost size).
   // Export (nova decode x.nova y.avif|heic): libheif's default encoder (AVIF: aom, HEIC: x265), 8-bit
   // RGB(A); lossless = identity matrix (nclx 0) and 4:4:4, so RGB comes back exactly. EXIF, XMP, ICC.
   // ponytail: the EXIF orientation is not turned into irot/imir (NOVA pixels from HEIC or RAW are

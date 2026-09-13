@@ -73,6 +73,8 @@ nova info photo.nova                         # the chunks of the file
 
 EXIF (GPS included), XMP and the colour profile of the source are kept. Run `nova` with no arguments for every option.
 
+NOVA stores 8 bits per channel. 10-bit HEIC images (iPhone screenshots) are rounded to 8 bits: at most 2 steps out of 1024 change, less than half an 8-bit level, which is invisible and keeps the files small.
+
 ## What's inside
 
 | | |
