@@ -27,3 +27,6 @@ libnova/novadec
 plugins/qt/build/
 plugins/gdk-pixbuf/*.so
 plugins/glycin/target/
+nova.exe
+win/sys/
+win/dlfcn.h
