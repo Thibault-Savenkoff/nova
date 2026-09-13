@@ -49,7 +49,8 @@ const QL = new Int32Array(4096), QH = new Int32Array(4096);
 
 const qlog = v => (v < 4096 ? QL[v] : 7);
 const qhalf = v => (v < 4096 ? QH[v] : 15);
-const hash = (h, v) => (Math.imul(h, 16777619) ^ v) >>> 0;
+// Signed int32 result: the same 32 bits as the unsigned hash of nova_model.li (group() takes it mod 2^32).
+const hash = (h, v) => Math.imul(h, 16777619) ^ v;
 const sq = v => (v < 0 ? -qlog(-v) : qlog(v));
 
 // ---------------------------------------------------------------------------------------------
@@ -61,7 +62,7 @@ const NM = 7, ND = 92160, LR = 6;
 class Model {
   constructor() {
     this.t = new Uint32Array(ND);
-    this.ctx = new Float64Array(8);     // direct bases or 32-bit hashes
+    this.ctx = new Int32Array(8);       // direct bases or 32-bit hashes
     this.idx = new Int32Array(8);
     this.st = new Int32Array(10);
     this.gb = new Int32Array(8);
@@ -201,9 +202,15 @@ class Model {
       if (n < 255) n++;
       this.mt[mi] = (q << 10) | n;
     }
-    this.update(idx[0], r, 1000);
-    this.update(idx[1], r, 1000);
-    for (let k = 2; k < nact; k++) this.update(idx[k], r, 60);
+    // Counter updates (update() inlined: this is the hottest loop of the decoder).
+    for (let k = 0; k < nact; k++) {
+      const i = idx[k], v = t[i], lim = k < 2 ? 1000 : 60;
+      let q = v >>> 10, n = v & 1023;
+      if (r === 1) q += ((65535 - q) * RATE[n]) >>> 16;
+      else q -= (q * RATE[n]) >>> 16;
+      if (n < lim) n++;
+      t[i] = (q << 10) | n;
+    }
     let err = ((r << 12) - p1) * LR;
     for (let k = 0; k < nact; k++) W1[ws + k] += (st[k] * err) >> 14;
     W1[ws + NM] += (sm * err) >> 14;
@@ -224,6 +231,8 @@ class Model {
   }
 }
 
+const clip = (v, mx) => (v > mx ? mx : v);
+const sclip = (v, mx) => (v > mx ? mx : v < -mx ? -mx : v);
 function clamp2047(d) { return d < -2047 ? -2047 : d > 2047 ? 2047 : d; }
 
 // ---------------------------------------------------------------------------------------------
@@ -689,8 +698,19 @@ class Lossy {
 
   setContexts(p, x, y) {
     const m = this.m, bs = this.bs, bk = this.bk, bo = this.bo, bx = this.bx, by = this.by;
-    const cw = this.aq(p, x - bs, y), cn = this.aq(p, x, y - bs), cnw = this.aq(p, x - bs, y - bs);
-    const cne = this.aq(p, x + bs, y - bs), cww = this.aq(p, x - 2 * bs, y), cnn = this.aq(p, x, y - 2 * bs);
+    const w = this.w, pl = this.pl[p], i = y * w + x - this.off;
+    let cw, cn, cnw, cne, cww, cnn, vw, vn;
+    if (x >= 2 * bs && x + bs < w && y - 2 * bs >= this.ytop) {
+      // Inside the stripe: no bound checks (the same values as aq / sv).
+      const r = bs * w;
+      vw = pl[i - bs]; vn = pl[i - r];
+      cw = Math.abs(vw); cn = Math.abs(vn); cnw = Math.abs(pl[i - bs - r]);
+      cne = Math.abs(pl[i + bs - r]); cww = Math.abs(pl[i - 2 * bs]); cnn = Math.abs(pl[i - 2 * r]);
+    } else {
+      cw = this.aq(p, x - bs, y); cn = this.aq(p, x, y - bs); cnw = this.aq(p, x - bs, y - bs);
+      cne = this.aq(p, x + bs, y - bs); cww = this.aq(p, x - 2 * bs, y); cnn = this.aq(p, x, y - 2 * bs);
+      vw = this.sv(p, x - bs, y); vn = this.sv(p, x, y - bs);
+    }
     let par = 0;
     if (bo > 0 && bk + 1 < this.levels) {
       par = this.aq(p, bx * 2 + Math.trunc(Math.trunc((x - bx) / bs) / 2) * bs * 2, by * 2 + Math.trunc(Math.trunc((y - by) / bs) / 2) * bs * 2);
@@ -699,10 +719,8 @@ class Lossy {
     if (bo === 2) cous = this.aq(p, x + (1 << bk), y - (1 << bk));
     if (bo === 3) cous = this.aq(p, x, y - (1 << bk)) + this.aq(p, x - (1 << bk), y);
     let lum = 0;
-    if (p > 0) lum = this.aq(0, x, y);
-    if (p === 2) lum += this.aq(1, x, y);
-    const clip = (v, mx) => (v > mx ? mx : v);
-    const sclip = (v, mx) => (v > mx ? mx : v < -mx ? -mx : v);
+    if (p > 0) lum = Math.abs(this.pl[0][i]);
+    if (p === 2) lum += Math.abs(this.pl[1][i]);
     const a = qhalf(clip(2 * (cw + cn) + cnw + cne + par, 4095));
     const bc = bo > 0 ? 1 + clip(bk, 4) * 3 + bo - 1 : 0;
     const q1 = qlog(clip(cw + cn, 4095));
@@ -711,8 +729,8 @@ class Lossy {
     m.ctx[1] = 46080 + ((p * 16 + bc) * 8 + q2) * 80;
     m.setWeights(p * 4 + (a >> 2), p * 8 + (bc >> 1), p * 8 + q2, (p * 16 + a) * 10);
     let hh = hash(p + 1, bc);
-    hh = hash(hh, sclip(this.sv(p, x - bs, y), 15));
-    hh = hash(hh, sclip(this.sv(p, x, y - bs), 15));
+    hh = hash(hh, sclip(vw, 15));
+    hh = hash(hh, sclip(vn, 15));
     hh = hash(hh, clip(cnw, 7));
     hh = hash(hh, clip(cne, 7));
     m.ctx[2] = hh;
@@ -723,8 +741,8 @@ class Lossy {
     m.ctx[3] = hh;
     hh = hash(p + 21, bc);
     hh = hash(hh, a >> 1);
-    if (p > 0) hh = hash(hh, sclip(this.sv(0, x, y), 15));
-    if (p === 2) hh = hash(hh, sclip(this.sv(1, x, y), 15));
+    if (p > 0) hh = hash(hh, sclip(this.pl[0][i], 15));
+    if (p === 2) hh = hash(hh, sclip(this.pl[1][i], 15));
     m.ctx[4] = hh;
     hh = hash(p + 31, bc);
     hh = hash(hh, qlog(clip(cw, 4095)));
@@ -770,7 +788,6 @@ class Lossy {
 
   codeFlags(y) {
     const m = this.m, bs = this.bs, bo = this.bo, bx = this.bx, by = this.by, w = this.w;
-    const clip = (v, mx) => (v > mx ? mx : v);
     let lf = 1, i = 0;
     for (let x = bx; x < w; x += 2 * bs) {
       let n = 0, par = 0, cous = 0;
