@@ -5,4 +5,4 @@
 cd "$(dirname "$0")/.." || exit 1
 mkdir -p win/sys
 for h in win/sys/ioctl.h win/sys/mman.h win/sys/wait.h win/dlfcn.h; do [ -f $h ] || : > $h; done
-x86_64-w64-mingw32-gcc -Iwin -include nova_win.h nova.c -O2 -flarge-source-files -w -static -lm -o nova.exe
+x86_64-w64-mingw32-gcc -Iwin -include nova_win.h nova.c -O2 -flarge-source-files -w -static -s -lm -o nova.exe

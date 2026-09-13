@@ -30,3 +30,5 @@ plugins/glycin/target/
 nova.exe
 win/sys/
 win/dlfcn.h
+dist/
+plugins/wic/nova_wic.dll
