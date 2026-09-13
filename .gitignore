@@ -24,3 +24,5 @@ docs/.build/
 
 # libnovadec test tool (test/libnova.sh)
 libnova/novadec
+plugins/qt/build/
+plugins/gdk-pixbuf/*.so
