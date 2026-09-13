@@ -1,4 +1,5 @@
 #!/bin/bash
+# DEC=command replaces the node decoder (test/libnova.sh: libnovadec, the C decoder).
 # JavaScript decoder (docs/nova_decode.js): each file of $@ (default: the corpus images, an animation,
 # a 2800x2000 photo crop: several stripes, PREV) goes to .nova at every level, then is decoded by nova
 # and by node: the pixels must be the same byte for byte (frames and PREV thumbnail).
@@ -24,7 +25,7 @@ fail=0
 cmp_js() {  # $1 nova file, $2 label, $3 "preview" or ""
   if [ "$3" = preview ]; then ./nova preview "$1" $T/ref.png >/dev/null 2>&1 || { echo "SKIP $2 (no preview)"; return; }
   else rm -f $T/ref*.png; ./nova decode "$1" $T/ref.png >/dev/null 2>&1 || { echo "FAIL $2: nova"; fail=1; return; }; fi
-  r=$(node test/js_dump.js "$1" $T/js.raw $3 2>&1) || { echo "FAIL $2: $r"; fail=1; return; }
+  r=$(${DEC:-node test/js_dump.js} "$1" $T/js.raw $3 2>&1) || { echo "FAIL $2: $r"; fail=1; return; }
   ok=$(uv run -q --with pillow --with numpy python -c "
 import glob, numpy as np
 from PIL import Image

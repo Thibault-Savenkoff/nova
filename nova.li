@@ -1090,14 +1090,15 @@ Public
   )
 
   - put_preview np:Int <-
-  // PREV chunk: [u16 w][u16 h][planes][coded region], only when the long side is > 1024.
-  // Box-filtered to 512 px, wavelet q 75 or less (alpha exact).
+  // PREV chunk: [u16 w][u16 h][planes][coded region], only when the long side is > 1024 and the
+  // image is over 2 Mpx (below, the image itself decodes in about a second: a 1428x910 screenshot's
+  // 6.5 KB preview was 16 % of its file). Box-filtered to 512 px, wavelet q 75 or less (alpha exact).
   ( + tw,th,m,sx0,sx1,sy0,sy1,n,start,q:Int
     + done:Boolean
     + t,u:C_array Uint8
     + sum:C_array Int
     m := width.max height
-    (m > 1024).if {
+    ((m > 1024) && {width * height > 2000000}).if {
       tw := ((width * 512) / m).max 1
       th := ((height * 512) / m).max 1
       t := C_array Uint8.create (tw * th * 4)

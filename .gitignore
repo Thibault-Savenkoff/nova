@@ -21,3 +21,6 @@ docs/.build/
 *.nova
 !docs/samples/*.nova
 .DS_Store
+
+# libnovadec test tool (test/libnova.sh)
+libnova/novadec
