@@ -376,6 +376,9 @@ static int nh_export(const char *name, const unsigned char *rgba, int w, int h, 
   if (e.code) { nh_msg = e.message; goto end; }
   if (en) nh_add_exif(ctx, hdl, exif, en);
   if (xn) nh_add_xmp(ctx, hdl, xmp, xn);
+#ifdef _WIN32
+  if (nova_replica()) name = "NUL";   /* libheif writes the file itself: see nova_fopen in win/nova_win.h */
+#endif
   e = nh_write_file(ctx, name);
   if (e.code) { nh_msg = e.message; goto end; }
   ok = 1;

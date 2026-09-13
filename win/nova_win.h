@@ -30,9 +30,9 @@ static void *dlsym(void *h, const char *sym) { return h ? (void *)GetProcAddress
 static char *dlerror(void) { return "library not found"; }
 
 /* Replicas (nova_par.li) run the same command: only replica 0 (no NOVA_REPLICA, or "0/N") writes files. */
+static int nova_replica(void) { const char *r = getenv("NOVA_REPLICA"); return r && atoi(r) > 0; }
 static FILE *nova_fopen(const char *name, const char *mode) {
-  const char *r = getenv("NOVA_REPLICA");
-  return fopen(r && atoi(r) > 0 && strpbrk(mode, "wa+") ? "NUL" : name, mode);
+  return fopen(nova_replica() && strpbrk(mode, "wa+") ? "NUL" : name, mode);
 }
 #define fopen nova_fopen
 

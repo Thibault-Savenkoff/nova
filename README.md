@@ -90,7 +90,7 @@ cp plugins/mime/nova.xml ~/.local/share/mime/packages/ && update-mime-database ~
 | KDE: Gwenview, Okular, Dolphin thumbnails, any Qt 6 app | `plugins/qt` | `cmake -S plugins/qt -B build-qt && cmake --build build-qt && sudo cmake --install build-qt` |
 | GNOME: Loupe, Nautilus thumbnails (glycin) | `plugins/glycin` | `cargo build --release --manifest-path plugins/glycin/Cargo.toml`, then the two lines below |
 | GTK apps using gdk-pixbuf: Eye of GNOME, GIMP, older apps | `plugins/gdk-pixbuf` | `make -C plugins/gdk-pixbuf && sudo make -C plugins/gdk-pixbuf install` |
-| Windows: Explorer thumbnails, Photos, Paint, XnView MP (WIC) | `plugins/wic` | `plugins/wic/build.sh` (MinGW), then on Windows as administrator: `regsvr32 nova_wic.dll` |
+| Windows: Explorer thumbnails, Photos, Paint, XnView MP (WIC) | `plugins/wic` | `dist/nova-setup.exe` from `win/dist.sh` (MinGW, NSIS), or `regsvr32 nova_wic.dll` as administrator |
 
 glycin loader, for your user:
 
@@ -126,7 +126,7 @@ HEIC/AVIF, WebP and RAW support load their libraries at run time, so `nova` buil
 [libheif](https://github.com/strukturag/libheif), [libwebp](https://chromium.googlesource.com/webm/libwebp) and [LibRaw](https://www.libraw.org) 0.22.
 
 Windows: `win/build.sh` cross-compiles `nova.c` to `nova.exe` with MinGW-w64 (same output as on Linux; 4 cores by default, `NOVA_THREADS=n` for more).
-`win/dist.sh` packs it with the WIC codec and the zlib and libwebp DLLs into `dist/nova-windows.zip`.
+`win/dist.sh` packs it with the WIC codec and the zlib and libwebp DLLs into `dist/nova-setup.exe` (NSIS installer: `nova` on the PATH, codec registered, uninstaller in Settings > Apps) and `dist/nova-windows.zip`.
 
 The web version is built with [Emscripten](https://emscripten.org): `docs/build.sh` compiles `nova.c` and LibRaw to `docs/nova_enc.wasm`.
 

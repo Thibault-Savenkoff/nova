@@ -132,7 +132,11 @@ static int np_count(void) {
     e = getenv("NOVA_REPLICA");
     if (!e || sscanf(e, "%d/%d", &np_rid, &np_rn) != 2 || np_rn < 2 || np_rid < 0 || np_rid >= np_rn) np_rn = 1;
 #ifdef _WIN32
-    if (np_rn == 1) { np_rid = 0; np_spawn(); }
+    /* only the commands with parallel jobs: info and preview stay one quick process */
+    if (np_rn == 1) {
+      np_rid = 0;
+      if (__argc > 1 && (!strcmp(__argv[1], "encode") || !strcmp(__argv[1], "decode") || !strcmp(__argv[1], "bench"))) np_spawn();
+    }
     else {
       unsigned long long r, w;
       e = getenv("NOVA_PIPES");

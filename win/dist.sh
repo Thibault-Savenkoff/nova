@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds dist/nova-windows.zip: nova.exe, the WIC codec, zlib and libwebp DLLs (PNG and WebP output), samples.
-# Fedora: sudo dnf install mingw64-gcc-c++ mingw64-zlib mingw64-libwebp
+# Fedora: sudo dnf install mingw64-gcc-c++ mingw64-zlib mingw64-libwebp mingw32-nsis
 cd "$(dirname "$0")/.." || exit 1
 M=/usr/x86_64-w64-mingw32/sys-root/mingw
 D=dist/nova-windows
@@ -25,3 +25,5 @@ printf '@echo off\r\ncd /d "%%~dp0"\r\nregsvr32 nova_wic.dll\r\n' > $D/install.b
 printf '@echo off\r\ncd /d "%%~dp0"\r\nregsvr32 /u nova_wic.dll\r\n' > $D/uninstall.bat
 sed -i 's/$/\r/' $D/README.txt $D/LICENSE-*.txt
 (cd dist && zip -qr nova-windows.zip nova-windows) && ls -l dist/nova-windows.zip
+# Installer (sudo dnf install mingw32-nsis): dist/nova-setup.exe
+if command -v makensis >/dev/null; then makensis -V2 win/nova.nsi && ls -l dist/nova-setup.exe; else echo "makensis missing: no nova-setup.exe"; fi
