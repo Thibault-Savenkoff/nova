@@ -2,7 +2,8 @@ Header
   + name := Nova_hdr
   // HDR from a gain map (ISO 21496-1 metadata, as in a HEIC `tmap` item):
   // - Ultra HDR JPEG: SDR JPEG + gain map JPEG, hdrgm XMP (Adobe/Google) and an MPF index;
-  // - linear HDR (the full alternate rendition) coded PQ, 16 bits, for PNG (cICP) and 10-bit HEIF.
+  // - linear HDR (the full alternate rendition) coded PQ, 16 bits, for PNG (cICP) and 10-bit HEIF,
+  //   or as half floats (linear, BT.709) for TIFF.
   // HDR = (SDR + offset_sdr) * 2^(min + (max - min) * g^(1/gamma)) - offset_hdr, SDR white = 203 nits.
   // ponytail: first channel's metadata only (iPhone gain maps have one); gain map upsampled bilinearly.
   - include := `
@@ -123,9 +124,29 @@ static double nx_pq(double nits) {
   return pow((0.8359375 + 18.8515625 * y) / (1 + 18.6875 * y), 78.84375);
 }
 
-/* rgba (w x h) + gain map rgba (gw x gh) -> nx_out: 16-bit big-endian RGB, PQ. png: one filter
-   byte (0) before each row. */
-static void nx_apply(const unsigned char *rgba, int w, int h, const unsigned char *gm, int gw, int gh, int png) {
+/* IEEE half of v (round to nearest; no NaN in); overflow gives infinity. */
+static unsigned short nx_half(double v) {
+  unsigned s = v < 0 ? 0x8000 : 0;
+  int e;
+  double m;
+  if (v < 0) v = -v;
+  if (v < 5.960464477539063e-8 / 2) return s;
+  m = frexp(v, &e);                                  /* v = m * 2^e, 0.5 <= m < 1 */
+  if (e > 16) return s | 0x7C00;
+  if (e < -13) return s | (unsigned)(v / 5.960464477539063e-8 + 0.5);   /* subnormal */
+  {
+    unsigned f = (unsigned)((m * 2 - 1) * 1024 + 0.5);
+    if (f == 1024) { f = 0; e++; }
+    if (e > 16) return s | 0x7C00;
+    return s | ((unsigned)(e + 14) << 10) | f;
+  }
+}
+
+/* rgba (w x h) + gain map rgba (gw x gh) -> nx_out. mode 0: 16-bit big-endian RGB, PQ; 1: the same
+   with one PNG filter byte (0) before each row; 2: native half floats, linear, 1.0 = SDR white
+   (203 nits), BT.709 primaries (p3: converted from Display P3; out-of-gamut values go negative). */
+static void nx_apply(const unsigned char *rgba, int w, int h, const unsigned char *gm, int gw, int gh, int mode, int p3) {
+  static const double M[9] = { 1.2249401, -0.2249404, 0, -0.0420569, 1.0420571, 0, -0.0196376, -0.0786361, 1.0982735 };
   double lin[256], lut[256];
   long o;
   int x, y, c, i;
@@ -140,8 +161,9 @@ static void nx_apply(const unsigned char *rgba, int w, int h, const unsigned cha
     double fy = (y + 0.5) * gh / h - 0.5;
     int y0 = fy < 0 ? 0 : (int)fy, y1 = y0 + 1 < gh ? y0 + 1 : gh - 1;
     double ty = fy < 0 ? 0 : fy - y0;
-    if (png) nx_out[o++] = 0;
+    if (mode == 1) nx_out[o++] = 0;
     for (x = 0; x < w; x++) {
+      double v3[3];
       double fx = (x + 0.5) * gw / w - 0.5;
       int x0 = fx < 0 ? 0 : (int)fx, x1 = x0 + 1 < gw ? x0 + 1 : gw - 1;
       double tx = fx < 0 ? 0 : fx - x0;
@@ -149,10 +171,17 @@ static void nx_apply(const unsigned char *rgba, int w, int h, const unsigned cha
         double g = (1 - ty) * ((1 - tx) * lut[gm[((long)y0 * gw + x0) * 4 + c]] + tx * lut[gm[((long)y0 * gw + x1) * 4 + c]])
                  + ty * ((1 - tx) * lut[gm[((long)y1 * gw + x0) * 4 + c]] + tx * lut[gm[((long)y1 * gw + x1) * 4 + c]]);
         double v = (lin[rgba[((long)y * w + x) * 4 + c]] + nx_osdr) * g - nx_ohdr;
+        if (mode == 2) { v3[c] = v; continue; }
         int q = (int)(nx_pq(v < 0 ? 0 : v * 203) * 65535 + 0.5);
         nx_out[o++] = q >> 8;
         nx_out[o++] = q;
       }
+      if (mode == 2)
+        for (c = 0; c < 3; c++) {
+          double v = p3 ? M[c * 3] * v3[0] + M[c * 3 + 1] * v3[1] + M[c * 3 + 2] * v3[2] : v3[c];
+          *(unsigned short *)(nx_out + o) = nx_half(v);
+          o += 2;
+        }
     }
   }
   nx_n = o;
@@ -178,7 +207,15 @@ Public
   - apply rgba:C_array Uint8 size (w,h:Int) gain_map gm:C_array Uint8 gain_size (gw,gh:Int) png pg:Boolean <-
   ( + p:Int
     p := pg.to_int
-    `nx_apply(@rgba, @w, @h, @gm, @gw, @gh, @p)`;
+    `nx_apply(@rgba, @w, @h, @gm, @gw, @gh, @p, 0)`;
+  )
+
+  // HDR rendition as native half floats (RGB), linear, 1.0 = SDR white, BT.709 primaries (p3: the
+  // pixels are Display P3).
+  - apply_linear rgba:C_array Uint8 size (w,h:Int) gain_map gm:C_array Uint8 gain_size (gw,gh:Int) p3 d:Boolean <-
+  ( + p:Int
+    p := d.to_int
+    `nx_apply(@rgba, @w, @h, @gm, @gw, @gh, 2, @p)`;
   )
 
   // Result of the last call (XMP text, Ultra HDR file or HDR pixels).

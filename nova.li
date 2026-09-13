@@ -34,7 +34,8 @@ Public
     "    -m lossy|lossless  WebP/AVIF/HEIC (default: lossless if the\n".print
     "                       .nova is)\n".print
     "    -fast     WebP: about 4x faster, files ~5 % larger\n".print
-    "    -hdr      PNG, AVIF, HEIC: HDR rendition (PQ; PNG 16 bits, HEIF 10)\n".print
+    "    -hdr      HDR rendition: PNG 16 bits, AVIF/HEIC 10 bits (PQ),\n".print
+    "              TIFF 16-bit float (linear)\n".print
     "    HDR gain map (iPhone HEIC): .jpg is written Ultra HDR\n".print
     "    animation: dst_000.png, dst_001.png...\n".print
     "\n".print
@@ -436,7 +437,9 @@ Public
   // .pam (RGBA, for the web viewer), else PNG.
   ( + ok,ll,av:Boolean
     + q:Int
-    ((name.has_suffix ".tif") || {name.has_suffix ".tiff"}).if {
+    (((name.has_suffix ".tif") || {name.has_suffix ".tiff"}) && {opt_hdr} && {hdr_ok np}).if {
+      write_tiff_hdr buf to name
+    }.elseif {(name.has_suffix ".tif") || {name.has_suffix ".tiff"}} then {
       collect_meta
       Nova_tiff.write_image name pixels buf bits 8 planes np size (width, height) data data exif (exif_pos, exif_len) icc (iccp, iccp_n) xmp (xmp_pos, xmp_len)
     }.elseif {((name.has_suffix ".jpg") || {name.has_suffix ".jpeg"}) && {hdr_ok np}} then {
@@ -535,6 +538,19 @@ Public
       (((iccp.at i).to_int = 80) && {((iccp.at (i + 1)).to_int = 51) || {((iccp.at (i + 1)).to_int = 0) && {(iccp.at (i + 2)).to_int = 51}}}).if { result := 12 }
     }
     result
+  )
+
+  - write_tiff_hdr buf:C_array Uint8 to name:String <-
+  // HDR TIFF: the HDR rendition as 16-bit floats, linear, 1.0 = SDR white (203 nits), BT.709
+  // primaries (what HDR editors read as scene-linear, as EXR). EXIF and XMP kept; no ICC profile
+  // (the source's one describes the SDR pixels).
+  (
+    collect_meta
+    Nova_par.status ("Applying the gain map (" + width.to_string + "x" + height.to_string + ")...")
+    Nova_hdr.apply_linear buf size (width, height) gain_map gm gain_size (gm_w, gm_h) p3 (icc_primaries = 12)
+    Nova_tiff.set_float True
+    Nova_tiff.write_image name pixels (Nova_hdr.data) bits 16 planes 3 size (width, height) data data exif (exif_pos, exif_len) icc (iccp, 0) xmp (xmp_pos, xmp_len)
+    Nova_tiff.set_float False
   )
 
   - write_png_hdr buf:C_array Uint8 to name:String <-

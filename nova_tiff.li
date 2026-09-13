@@ -418,6 +418,11 @@ Public
   // TIFF image
   //
 
+  // True: the 16-bit samples of the next write_image are IEEE half floats (SampleFormat 3).
+  - float_samples:Boolean
+
+  - set_float f:Boolean <- ( float_samples := f; )
+
   - write_image name:String pixels buf:C_array Uint8 bits b:Int planes np:Int size (w,h:Int) data d:C_array Uint8 exif (ep,en:Int) icc (ic:C_array Uint8, icn:Int) xmp (xp,xn:Int) <-
   // buf: RGBA bytes (bits 8, np = 3 or 4 of them kept) or np unsigned shorts per pixel (bits 16).
   // exif: TIFF stream at d[ep, ep + en) (en = 0: none), xmp: d[xp, xp + xn), icc: ic[0, icn).
@@ -426,7 +431,9 @@ Public
     px := `(void *)@buf`:Pointer
     src := d
     big := (en > 8) && {(u8 ep) = 4Dh}
+    Nova_zlib.set_predictor (! float_samples)
     ns := Nova_zlib.tiff px bits b size (w, h) planes np big big
+    Nova_zlib.set_predictor True
     (ns = 0).if { Nova.fail "TIFF compression failed" }
     start (65536 + en + xn + icn)
     add 254 type 4 count 1 value 0 kind 0
@@ -451,9 +458,14 @@ Public
     0.to (ns - 1) do { i:Int e32 (Nova_zlib.strip_length i) }
     add_data 279 type 4 count ns from pos
     add 284 type 3 count 1 value 1 kind 0
-    ((Nova_zlib.compression) = 8).if { add 317 type 3 count 1 value 2 kind 0 }
+    (((Nova_zlib.compression) = 8) && {! float_samples}).if { add 317 type 3 count 1 value 2 kind 0 }
     // Alpha: unassociated (PNG-like, not premultiplied).
     (np = 4).if { add 338 type 3 count 1 value 2 kind 0 }
+    (float_samples).if {
+      pos := ext_n
+      np.times { e16 3 }
+      add_data 339 type 3 count np from pos
+    }
     (xn > 0).if { add_bytes 700 type 1 from xp size xn }
     (icn > 0).if {
       pos := ext_n

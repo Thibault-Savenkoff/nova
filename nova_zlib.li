@@ -159,7 +159,7 @@ static int nz_png(const unsigned char *rgba, int w, int h, int bpp) {
    big-endian order when big. Strips as the PNG chunks (count from the size), one process each.
    Without zlib: uncompressed strips, nz_comp = 1. Output: nz_out, strip i at nz_soff[i], nz_slen[i]. */
 static long nz_soff[16], nz_slen[16];
-static int nz_comp, nz_rps;
+static int nz_comp, nz_rps, nz_pred = 1;   /* nz_pred 0: no Predictor (float samples) */
 static void nz_strip(const void *src, int bits, int w, int spp, int big, int y0, int y1, int pred, unsigned char *o) {
   int y, x, s, B = bits / 8;
   for (y = y0; y < y1; y++)
@@ -211,7 +211,7 @@ static int nz_tiff(const void *src, int bits, int w, int h, int spp, int big) {
       int y0 = i * per, y1 = y0 + per > h ? h : y0 + per;
       unsigned char *raw = malloc(rowb * (y1 - y0));
       unsigned long n = cap;
-      nz_strip(src, bits, w, spp, big, y0, y1, 1, raw);
+      nz_strip(src, bits, w, spp, big, y0, y1, nz_pred, raw);
       len[i] = nz_compress2(sh + cap * i, &n, raw, rowb * (y1 - y0), 6) == 0 ? (long)n : -1;
       free(raw);
       if (pid == 0) _exit(0);
@@ -260,6 +260,9 @@ Public
     g := bg.to_int
     `nz_tiff(@src, @b, @w, @h, @np, @g)`:Int
   )
+
+  // False: strips without horizontal differencing (the Predictor 2 of TIFF is for integers).
+  - set_predictor p:Boolean <- ( + i:Int i := p.to_int; `nz_pred = @i`; )
 
   - compression:Int <- `nz_comp`:Int
 

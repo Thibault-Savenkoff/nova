@@ -65,6 +65,7 @@ nova encode IMG_1401.CR3 IMG_1401.nova       # camera RAW, sensor frame kept exa
 
 nova decode photo.nova photo.jpg -q 90       # also .png .tif .webp .avif .heic (-fast: quicker WebP)
 nova decode photo.nova photo.avif -hdr       # HDR (PQ, 10 bits) from the iPhone's gain map
+nova decode photo.nova photo.tif -hdr        # HDR as 16-bit float TIFF (linear), for editors
 nova decode IMG_1401.nova IMG_1401.dng       # RAW back to DNG, or developed to .png .tif .jpg
 nova preview photo.nova thumb.png            # the embedded 512 px thumbnail, instantly
 nova info photo.nova                         # the chunks of the file
