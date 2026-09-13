@@ -205,7 +205,9 @@ function workers() {
       // iOS reports 4 cores whatever the chip; iPhones and iPads since 2017 have 6 (measured on an
       // A19 Pro: 29.6 s with 4 workers, 24.8 s with 6, 24.5 s with 8).
       const hc = navigator.hardwareConcurrency || 4;
-      const nw = /iPhone|iPad/.test(navigator.userAgent) ? Math.max(hc, 6) : Math.min(hc, 16);
+      // ?w=N in the address forces N workers (1-32), to measure.
+      const force = Math.min(+new URLSearchParams(location.search).get('w') || 0, 32);
+      const nw = force || (/iPhone|iPad/.test(navigator.userAgent) ? Math.max(hc, 6) : Math.min(hc, 16));
       for (let i = 0; i < nw; i++) pool.push(new Worker('worker.js' + V));
     } catch (e) { pool = []; }
   }
