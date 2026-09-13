@@ -19,7 +19,7 @@ self.postMessage=(m,t)=>parentPort.postMessage(m,t);parentPort.on('message',d=>s
 };
 const html = fs.readFileSync(web + '/index.html', 'utf8');
 const src = html.slice(html.indexOf('let pool = null;'), html.indexOf('function show('));
-const V = '';
+const V = '', location = { search: '' };
 eval(src + '; global.runner = runner; global.pool = () => pool;');
 (async () => {
   const d = new Uint8Array(fs.readFileSync(process.argv[2])), t0 = Date.now();

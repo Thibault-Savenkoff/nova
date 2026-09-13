@@ -183,15 +183,15 @@
   <span>NOVA v2. Images never leave your device.</span>
   <a href="https://github.com/Thibault-Savenkoff/nova">Source on GitHub</a>
 </footer>
-<script src="nova_decode.js?v=6"></script>
-<script src="heif_meta.js?v=6"></script>
-<script src="meta_strip.js?v=6"></script>
+<script src="nova_decode.js?v=7"></script>
+<script src="heif_meta.js?v=7"></script>
+<script src="meta_strip.js?v=7"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 // Cache buster of the scripts and workers: bump it with the ?v= of the script tags above at each
 // release, or a browser can mix a cached worker with a new decoder.
-const V = '?v=6';
+const V = '?v=7';
 let cv = $('cv'), ctx = cv.getContext('2d');
 const info = $('info'), bar = $('bar'), fill = bar.firstElementChild;
 let name = 'image', timer = null, token = 0;
@@ -213,9 +213,11 @@ function workers() {
   }
   return pool;
 }
-function runner(progress) {
+// stat.used: the most workers busy at once (a file with 13 stripes keeps at most 13 of them busy).
+function runner(progress, stat = {}) {
   return async jobs => {
     const ws = workers();
+    stat.used = Math.max(stat.used || 1, Math.min(ws.length, jobs.length));
     if (!ws.length) return jobs.map(NovaDecode.runJob);
     // The wavelet planes (l5p) come after the stripes: the bar stays full meanwhile.
     try { return await onWorkers(ws, jobs, jobs[0] && jobs[0].kind === 'l5p' ? () => {} : progress); }
@@ -394,20 +396,20 @@ async function open(file) {
     bar.style.visibility = 'visible';
     fill.style.width = '0';
     info.textContent = `${file.name}: decoding…`;
-    const t1 = performance.now(), cores = workers().length || 1;
+    const t1 = performance.now(), stat = { used: 1 };
     const r = await NovaDecode.decode(data, { run: runner(x => {
       if (my !== token) return;
       fill.style.width = (x * 100).toFixed(1) + '%';
       // Time left from the pace so far (after a tenth of the work, before it is a guess).
       const left = x >= 0.1 && x < 1 ? Math.ceil((performance.now() - t1) / 1000 * (1 - x) / x) : 0;
-      info.textContent = `${file.name}: decoding on ${cores} ${cores > 1 ? 'cores' : 'core'}…${left ? ` about ${left} s left` : ''}`;
-    }) });
+      info.textContent = `${file.name}: decoding on ${stat.used} ${stat.used > 1 ? 'cores' : 'core'}…${left ? ` about ${left} s left` : ''}`;
+    }, stat) });
     if (my !== token) return;
     bar.style.visibility = 'hidden';
     cv.style.width = '';
     show(r.width, r.height, r.frames[0]);
     info.textContent = file.name;
-    const n = workers().length || 1;
+    const n = stat.used;
     const rows = [...base, ['Content', `${kind}, ${r.lossy ? 'lossy' : 'lossless'}${r.frames.length > 1 ? `, ${r.frames.length} frames` : ''}`],
       ['Decoded in', `${((performance.now() - t0) / 1000).toFixed(1)} s on ${n} ${n > 1 ? 'cores' : 'core'}`]];
     specs(rows);
