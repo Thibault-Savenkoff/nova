@@ -70,7 +70,8 @@
   label.q { display: inline-flex; gap: 8px; align-items: center; color: var(--mut); }
   output, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-  #info { margin: 0; color: var(--mut); min-height: 1.55em; }
+  #info { margin: 0; color: var(--mut); }
+  #info:empty { display: none; }
   .err { color: var(--err); }
 
   /* Chunk map: one segment per chunk type, width proportional to its bytes (thin chunks keep a sliver). */
@@ -85,7 +86,7 @@
   #specs dd { margin: 0; font: 500 17px/1.3 var(--mono); font-variant-numeric: tabular-nums; }
 
   /* Conversion settings: used when the dropped file is an image to convert. */
-  #create { display: grid; gap: 16px; margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--line); }
+  #create { display: grid; gap: 16px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
   #create > .intro { max-width: 68ch; }
   #create > .intro p { margin: 0; color: var(--mut); }
   .settings { display: grid; gap: 14px; align-content: start; }
@@ -94,10 +95,10 @@
   #limits summary { cursor: pointer; font: 700 17px/1.3 var(--display); }
   #limits ul { margin: 10px 0 0; padding-left: 20px; color: var(--mut); display: grid; gap: 6px; }
 
-  footer { margin-block: 64px 32px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--mut); font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px 24px; justify-content: space-between; }
+  footer { margin-block: 28px 20px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--mut); font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px 24px; justify-content: space-between; }
 
   @media (max-width: 760px) {
-    #create { margin-top: 44px; }
+    #create { margin-top: 20px; }
     #stage { padding: 10px; min-height: 160px; }
     .tools { justify-content: flex-start; }
   }
