@@ -1,7 +1,7 @@
 /* Windows build of nova (MinGW-w64): the POSIX calls of nova.c mapped to Win32. Force-included by
    win/build.sh; win/sys/*.h and win/dlfcn.h are empty so the POSIX #includes still resolve.
-   ponytail: one process, no parallel jobs (nova_par.li forks; fork() failing makes the parent run
-   each job itself, same output). Parallel Windows jobs would need CreateProcess replicas like the web build. */
+   No fork: nova_par.li runs parallel jobs in replicas (copies of the process started with
+   CreateProcess, like the web build's workers); fork() fails so nothing else forks. */
 #ifndef NOVA_WIN_H
 #define NOVA_WIN_H
 #include <windows.h>
@@ -29,15 +29,30 @@ static void *dlopen(const char *name, int flags) {
 static void *dlsym(void *h, const char *sym) { return h ? (void *)GetProcAddress((HMODULE)h, sym) : NULL; }
 static char *dlerror(void) { return "library not found"; }
 
-/* no fork: jobs run in this process */
+/* Replicas (nova_par.li) run the same command: only replica 0 (no NOVA_REPLICA, or "0/N") writes files. */
+static FILE *nova_fopen(const char *name, const char *mode) {
+  const char *r = getenv("NOVA_REPLICA");
+  return fopen(r && atoi(r) > 0 && strpbrk(mode, "wa+") ? "NUL" : name, mode);
+}
+#define fopen nova_fopen
+
+/* Progress line: UTF-8 bar and "\033[K" (erase line) need these console modes. */
+__attribute__((constructor)) static void nova_console(void) {
+  HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
+  DWORD m;
+  SetConsoleOutputCP(CP_UTF8);
+  if (GetConsoleMode(h, &m)) SetConsoleMode(h, m | 0x0004);   /* ENABLE_VIRTUAL_TERMINAL_PROCESSING */
+}
+
+/* no fork (see above) */
 static int fork(void) { return -1; }
 static int wait(int *s) { (void)s; return -1; }
 static int waitpid(int p, int *s, int o) { (void)p; (void)s; (void)o; return -1; }
 #define WNOHANG 1
 #define _SC_NPROCESSORS_ONLN 84
-static long sysconf(int n) { (void)n; return 1; }
+static long sysconf(int n) { SYSTEM_INFO i; (void)n; GetSystemInfo(&i); return i.dwNumberOfProcessors; }
 
-/* shared memory for the (absent) child processes: plain zeroed memory */
+/* mmap: unused (nova_par.li allocates with VirtualAlloc on Windows), kept for the POSIX code paths */
 #define PROT_READ 1
 #define PROT_WRITE 2
 #define MAP_SHARED 1
