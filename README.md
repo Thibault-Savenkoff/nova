@@ -75,6 +75,32 @@ EXIF (GPS included), XMP and the colour profile of the source are kept. Run `nov
 
 NOVA stores 8 bits per channel. 10-bit HEIC images (iPhone screenshots) are rounded to 8 bits: at most 2 steps out of 1024 change, less than half an 8-bit level, which is invisible and keeps the files small.
 
+## Image viewers
+
+`plugins/` makes `.nova` files open in desktop viewers and show thumbnails. The plugins decode with
+[`libnova/`](libnova/novadec.h), a small C decoder without dependencies (same pixels as `nova`, on every core).
+First install the file type (all desktops):
+
+```sh
+cp plugins/mime/nova.xml ~/.local/share/mime/packages/ && update-mime-database ~/.local/share/mime
+```
+
+| Viewers | Plugin | Install |
+| --- | --- | --- |
+| KDE: Gwenview, Okular, Dolphin thumbnails, any Qt 6 app | `plugins/qt` | `cmake -S plugins/qt -B build-qt && cmake --build build-qt && sudo cmake --install build-qt` |
+| GNOME: Loupe, Nautilus thumbnails (glycin) | `plugins/glycin` | `cargo build --release --manifest-path plugins/glycin/Cargo.toml`, then the two lines below |
+| GTK apps using gdk-pixbuf: Eye of GNOME, GIMP, older apps | `plugins/gdk-pixbuf` | `make -C plugins/gdk-pixbuf && sudo make -C plugins/gdk-pixbuf install` |
+
+glycin loader, for your user:
+
+```sh
+mkdir -p ~/.local/share/glycin-loaders/2+/conf.d
+printf '[loader:image/x-nova]\nExec=%s\n' "$PWD/plugins/glycin/target/release/glycin-nova" > ~/.local/share/glycin-loaders/2+/conf.d/glycin-nova.conf
+```
+
+Animations play in Qt and glycin (gdk-pixbuf shows the first frame). RAW files show their embedded thumbnail.
+Build needs: `qt6-qtbase-devel`, `gdk-pixbuf2-devel`, Rust 1.92 (Fedora package names).
+
 ## What's inside
 
 | | |
@@ -105,7 +131,9 @@ The web version is built with [Emscripten](https://emscripten.org): `docs/build.
 Each test compares NOVA with a reference, byte for byte or pixel for pixel:
 
 ```sh
+test/all.sh       # every test below and more, one OK/FAIL line each (~40 min)
 test/check.sh     # lossless round trip of every image, with the size table
+test/libnova.sh   # the C decoder of the plugins against the program
 test/js.sh        # the JavaScript decoder against the program
 test/replicas.sh  # the multi-core WebAssembly build against the program
 test/raw.sh       # RAW: sensor frame, DNG and developed images against LibRaw

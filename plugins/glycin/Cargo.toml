@@ -1,0 +1,16 @@
+[package]
+name = "glycin-nova"
+version = "2.0.0"
+edition = "2024"
+description = "glycin loader for NOVA images (GNOME Loupe, Nautilus thumbnails)"
+license = "MIT"
+
+[dependencies]
+glycin-utils = { version = "4.1", default-features = false, features = ["async-io", "loader-utils"] }
+gufo-common = "1.1"
+
+[build-dependencies]
+cc = "1"
+
+[profile.release]
+lto = true
