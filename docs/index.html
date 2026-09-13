@@ -46,6 +46,17 @@
   #viewer { display: grid; gap: 14px; }
   #stage { position: relative; display: grid; place-items: center; min-height: 220px; padding: 18px; border-radius: 6px;
     background: repeating-conic-gradient(var(--stage-a) 0 25%, var(--stage-b) 0 50%) 0 0 / 20px 20px; }
+  /* #view holds the image and, to compare, the source over its left part up to --x. */
+  #view { position: relative; line-height: 0; --x: 50%; }
+  #src { position: absolute; inset: 0; width: 100%; height: 100%; clip-path: inset(0 calc(100% - var(--x)) 0 0); }
+  #split { position: absolute; top: 0; bottom: 0; left: var(--x); width: 44px; margin-left: -22px; cursor: ew-resize; touch-action: none; }
+  #split::before { content: ''; position: absolute; top: 0; bottom: 0; left: 21px; width: 2px; background: #fff; box-shadow: 0 0 3px rgb(0 0 0 / .6); }
+  #split::after { content: '\2194'; position: absolute; top: 50%; left: 6px; width: 32px; height: 32px; margin-top: -16px; border-radius: 50%; background: #fff; color: #16191d; font: 700 18px/32px var(--body); text-align: center; box-shadow: 0 1px 4px rgb(0 0 0 / .5); }
+  .tag { position: absolute; top: 8px; padding: 4px 8px; border-radius: 3px; background: rgb(0 0 0 / .6); color: #fff; font: 600 13px/1 var(--body); pointer-events: none; }
+  /* Zoom: one image pixel per CSS pixel, the stage scrolls (drag with the mouse, swipe on touch). */
+  #stage.zoom { display: block; overflow: auto; max-height: 80vh; cursor: grab; }
+  #stage.zoom #view { width: max-content; margin-inline: auto; }
+  #stage.zoom #cv, #stage.zoom #hdr { max-width: none; max-height: none; width: auto !important; }
   #cv, #hdr { display: block; max-width: 100%; max-height: 72vh; width: auto; height: auto; box-shadow: 0 1px 2px rgb(0 0 0 / .18), 0 8px 28px rgb(0 0 0 / .14); }
   #stage:has(#drop:not([hidden])) { min-height: 300px; }
   #drop { display: grid; place-items: center; align-content: center; gap: 8px; width: 100%; min-height: 264px; padding: 28px 20px; text-align: center; border: 2px dashed var(--line); border-radius: 6px; background: var(--surface); cursor: pointer; }
@@ -72,6 +83,9 @@
 
   #info { margin: 0; color: var(--mut); }
   #info:empty { display: none; }
+  #batch { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+  #batch li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; color: var(--mut); }
+  #batch button { padding: 6px 10px; font-size: 14px; }
   .err { color: var(--err); }
 
   /* Chunk map: one segment per chunk type, width proportional to its bytes (thin chunks keep a sliver). */
@@ -115,18 +129,24 @@
   <section id="viewer" aria-label="Viewer">
     <div id="stage">
       <label id="drop" for="file">
-        <strong>Drop an image here, or choose one</strong>
+        <strong>Drop images here, choose them, or paste one</strong>
         <span>A .nova file opens right away. PNG, JPEG, HEIC, camera RAW and other images are converted to .nova, then shown.</span>
       </label>
-      <canvas id="cv" width="0" height="0" aria-label="Opened image" hidden></canvas>
-      <img id="hdr" alt="Opened image, in HDR" hidden>
-      <input type="file" id="file" accept=".nova,image/*,.cr2,.cr3,.nef,.nrw,.arw,.dng,.raf,.orf,.rw2,.pef,.srw,.x3f,.3fr,.iiq" hidden>
+      <div id="view">
+        <canvas id="cv" width="0" height="0" aria-label="Opened image" hidden></canvas>
+        <img id="hdr" alt="Opened image, in HDR" hidden>
+        <img id="src" alt="Source image" hidden>
+        <div id="split" role="slider" aria-label="Source and .nova split" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0" hidden>
+          <span class="tag" style="right:30px">Source</span><span class="tag" style="left:30px">.nova</span>
+        </div>
+      </div>
+      <input type="file" id="file" multiple accept=".nova,image/*,.cr2,.cr3,.nef,.nrw,.arw,.dng,.raf,.orf,.rw2,.pef,.srw,.x3f,.3fr,.iiq" hidden>
       <div id="bar"><div></div></div>
     </div>
     <div class="tools">
       <div class="samples" role="group" aria-label="Examples">
         <span>Examples</span>
-        <button data-k="photo" aria-pressed="false">Photo</button>
+        <button data-k="photo" aria-pressed="false" title="With its HDR gain map: brighter highlights on HDR screens">Photo (HDR)</button>
         <button data-k="screen" aria-pressed="false">Screenshot</button>
         <button data-k="wheel" aria-pressed="false">Animation</button>
         <label class="button primary" for="file">Open a file</label>
@@ -134,6 +154,8 @@
       <div class="group">
         <button id="play" hidden>Pause</button>
         <button id="savenova" hidden>Save .nova</button>
+        <button id="cmp" aria-pressed="false" hidden>Compare with source</button>
+        <button id="zoom" aria-pressed="false" disabled title="Or double-click the image">Zoom 100 %</button>
         <select id="fmt" disabled aria-label="Export format">
           <option value="image/png">PNG</option>
           <option value="image/jpeg">JPEG</option>
@@ -144,6 +166,7 @@
       </div>
     </div>
     <p id="info" aria-live="polite"></p>
+    <ul id="batch" hidden></ul>
     <div id="anatomy" hidden>
       <div id="map" role="img" aria-label="Chunks of the file, by size"></div>
       <ul id="legend"></ul>
@@ -182,15 +205,15 @@
   <span>NOVA v2. Images never leave your device.</span>
   <a href="https://github.com/Thibault-Savenkoff/nova">Source on GitHub</a>
 </footer>
-<script src="nova_decode.js?v=10"></script>
-<script src="heif_meta.js?v=10"></script>
-<script src="meta_strip.js?v=10"></script>
+<script src="nova_decode.js?v=11"></script>
+<script src="heif_meta.js?v=11"></script>
+<script src="meta_strip.js?v=11"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 // Cache buster of the scripts and workers: bump it with the ?v= of the script tags above at each
 // release, or a browser can mix a cached worker with a new decoder.
-const V = '?v=10';
+const V = '?v=11';
 let cv = $('cv'), ctx = cv.getContext('2d');
 const info = $('info'), bar = $('bar'), fill = bar.firstElementChild;
 let name = 'image', timer = null, token = 0;
@@ -359,7 +382,9 @@ async function open(file) {
   const my = ++token, lock = awake();
   clearInterval(timer);
   $('play').hidden = true;
-  ['fmt', 'q', 'save'].forEach(id => $(id).disabled = true);
+  ['fmt', 'q', 'save', 'zoom'].forEach(id => $(id).disabled = true);
+  setZoom(false);
+  setSource(null);
   $('savenova').hidden = !file.converted;
   if (!(file.sample)) document.querySelectorAll('[data-k]').forEach(b => b.setAttribute('aria-pressed', 'false'));
   name = file.name.replace(/\.nova$/i, '');
@@ -392,7 +417,7 @@ async function open(file) {
       show(dw, dh, dev.subarray(end, end + dw * dh * 4));
       info.textContent = `${file.name}: RAW developed.`;
       specs([['Size', `${dw} × ${dh}`], base[1], base[2], ['Content', 'RAW, developed'], ['Developed in', `${((performance.now() - t0) / 1000).toFixed(1)} s on ${CORES} ${CORES > 1 ? 'cores' : 'core'}`]]);
-      ['fmt', 'q', 'save'].forEach(id => $(id).disabled = false);
+      ['fmt', 'q', 'save', 'zoom'].forEach(id => $(id).disabled = false);
       return;
     }
     bar.style.visibility = 'visible';
@@ -423,7 +448,7 @@ async function open(file) {
       specs([...rows, ['HDR', `gain map, up to ${gp.headroomAlt.toFixed(1)} stops brighter${hdr ? '' : ' (this screen shows SDR)'}`]]);
       if (hdr) { const b = await ultraHdrBlob(cv); if (my === token) showHdr(b); }
     }
-    ['fmt', 'q', 'save'].forEach(id => $(id).disabled = false);
+    ['fmt', 'q', 'save', 'zoom'].forEach(id => $(id).disabled = false);
     if (r.frames.length > 1) {
       let i = 0;
       const play = () => { timer = setInterval(() => { i = (i + 1) % r.frames.length; show(r.width, r.height, r.frames[i]); }, Math.max(r.delay, 10)); };
@@ -467,11 +492,11 @@ async function sample(k) {
 document.querySelectorAll('[data-k]').forEach(b => b.onclick = () => sample(b.dataset.k));
 
 function dropZone(zone, input, fn) {
-  $(input).onchange = e => e.target.files[0] && fn(e.target.files[0]);
+  $(input).onchange = e => e.target.files.length && fn(e.target.files);
   const d = $(zone);
   d.ondragover = e => { e.preventDefault(); d.classList.add('over'); };
   d.ondragleave = () => d.classList.remove('over');
-  d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files[0] && fn(e.dataTransfer.files[0]); };
+  d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files.length && fn(e.dataTransfer.files); };
 }
 function fail(msg) {
   const s = document.createElement('span');
@@ -481,23 +506,119 @@ function fail(msg) {
 }
 // One place to open anything: a .nova is decoded; an image is converted to .nova first, then shown.
 const PHONE = /iPhone|iPad|Android/.test(navigator.userAgent);
-async function pick(file) {
+async function pick(file, batch = false) {
   const d = new Uint8Array(await file.slice(0, 16).arrayBuffer());
   if (d[0] === 0x89 && d[1] === 0x4E && d[2] === 0x4F && d[3] === 0x56) return open(file);
   const image = (d[0] === 0x89 && d[1] === 0x50) || (d[0] === 0xFF && d[1] === 0xD8) || RAW.test(file.name) || HeifMeta.isHeif(d) || /^image\//.test(file.type);
   if (!image) return fail(`${file.name} is not an image. Open a .nova file, or an image to convert (PNG, JPEG, HEIC, camera RAW…).`);
   // Phones: measured on an iPhone 17 Pro, a 4 Mpx JPEG takes about 70 s (~12x a PC), on one core
   // (more cores do not fit in iOS's memory limit). Same quality as on a computer, only slower.
-  if (PHONE) {
+  if (PHONE && !batch) {
     const b = document.createElement('button');
     b.textContent = 'Convert anyway';
     b.onclick = () => encode(file);
     info.replaceChildren(`${file.name}: converting takes minutes on a phone (about 1 minute per 4 megapixels, same quality as on a computer), and this page must stay open. `, b);
     return;
   }
-  encode(file);
+  return encode(file);
 }
-dropZone('stage', 'file', pick);
+// Several files (drop, choose or paste): converted one after the other, each listed with its own
+// save button; the last one stays on screen.
+async function pickAll(files) {
+  files = [...files];
+  if (files.length === 1) { $('batch').hidden = true; return pick(files[0]); }
+  const list = $('batch'), run = async () => {
+    list.replaceChildren();
+    list.hidden = false;
+    for (const f of files) {
+      const li = document.createElement('li');
+      li.textContent = `${f.name}: waiting`;
+      list.append(li);
+    }
+    for (const [i, f] of files.entries()) {
+      const li = list.children[i];
+      li.textContent = `${f.name}: working…`;
+      const out = await pick(f, true);
+      if (out instanceof File) {
+        const b = document.createElement('button');
+        b.textContent = 'Save .nova';
+        b.onclick = () => download(out, out.name);
+        li.replaceChildren(`${f.name} → ${out.name}: ${mb(out.size)}, ${(out.size / f.size * 100).toFixed(0)} % `, b);
+      } else li.textContent = info.querySelector('.err') ? info.textContent : `${f.name}: opened`;
+    }
+  };
+  if (!PHONE) return run();
+  const b = document.createElement('button');
+  b.textContent = 'Convert anyway';
+  b.onclick = run;
+  info.replaceChildren(`${files.length} files: converting takes minutes per photo on a phone (about 1 minute per 4 megapixels), and this page must stay open. `, b);
+}
+dropZone('stage', 'file', pickAll);
+// Paste an image (a screenshot from the clipboard…): same as dropping it.
+addEventListener('paste', e => {
+  const fs = [...(e.clipboardData && e.clipboardData.files || [])];
+  if (!fs.length) return;
+  e.preventDefault();
+  pickAll(fs.map((f, i) => f.name && f.name !== 'image.png' ? f : new File([f], `pasted-${i + 1}.${(f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`, { type: f.type })));
+});
+
+// Zoom 100 %: toggled by the button or a double-click (centred on the clicked point).
+const stage = $('stage'), view = $('view'), split = $('split'), srcImg = $('src');
+function setZoom(on, e) {
+  const r = view.getBoundingClientRect(), fx = e ? (e.clientX - r.left) / r.width : 0.5, fy = e ? (e.clientY - r.top) / r.height : 0.5;
+  stage.classList.toggle('zoom', on);
+  $('zoom').setAttribute('aria-pressed', String(on));
+  if (on) {
+    stage.scrollLeft = fx * view.offsetWidth - stage.clientWidth / 2;
+    stage.scrollTop = fy * view.offsetHeight - stage.clientHeight / 2;
+  }
+}
+$('zoom').onclick = () => setZoom(!stage.classList.contains('zoom'));
+view.ondblclick = e => { if (cur && e.target !== split) setZoom(!stage.classList.contains('zoom'), e); };
+stage.addEventListener('pointerdown', e => {
+  if (!stage.classList.contains('zoom') || e.pointerType !== 'mouse' || split.contains(e.target)) return;
+  const x = e.clientX + stage.scrollLeft, y = e.clientY + stage.scrollTop;
+  const move = m => { stage.scrollLeft = x - m.clientX; stage.scrollTop = y - m.clientY; };
+  const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); };
+  addEventListener('pointermove', move);
+  addEventListener('pointerup', up);
+  e.preventDefault();
+});
+
+// Compare: after a conversion, the source (as the browser shows it) covers the .nova left of the split.
+// ponytail: sources the browser cannot show (RAW, HEIC outside Safari) have no compare.
+let srcUrl = null;
+// raw: the .nova holds the source's pixels unturned (PNG/JPEG go in as they are, EXIF orientation
+// kept but not applied); a browser-decoded source (HEIC…) was turned upright before encoding.
+function setSource(file, raw) {
+  if (srcUrl) URL.revokeObjectURL(srcUrl);
+  srcUrl = null;
+  srcImg.removeAttribute('src');
+  srcImg.hidden = split.hidden = true;
+  $('cmp').hidden = true;
+  $('cmp').setAttribute('aria-pressed', 'false');
+  if (!file || RAW.test(file.name)) return;
+  srcImg.style.imageOrientation = raw ? 'none' : 'from-image';
+  srcUrl = URL.createObjectURL(file);
+  srcImg.onload = () => { $('cmp').hidden = false; };
+  srcImg.src = srcUrl;
+}
+$('cmp').onclick = () => {
+  const on = srcImg.hidden;
+  srcImg.hidden = split.hidden = !on;
+  $('cmp').setAttribute('aria-pressed', String(on));
+};
+const splitAt = x => { view.style.setProperty('--x', x + '%'); split.setAttribute('aria-valuenow', String(Math.round(x))); };
+split.onpointerdown = e => {
+  split.setPointerCapture(e.pointerId);
+  split.onpointermove = m => { const r = view.getBoundingClientRect(); splitAt(Math.min(100, Math.max(0, (m.clientX - r.left) / r.width * 100))); };
+  split.onpointerup = () => { split.onpointermove = null; };
+  e.stopPropagation();
+};
+split.onkeydown = e => {
+  const x = parseFloat(view.style.getPropertyValue('--x')) || 50, d = { ArrowLeft: -5, ArrowRight: 5 }[e.key];
+  if (d) { splitAt(Math.min(100, Math.max(0, x + d))); e.preventDefault(); }
+};
 $('eq').oninput = () => { $('eqv').textContent = $('eq').value; };
 $('ekeep').onchange = () => { $('egps').disabled = !$('ekeep').checked; };
 
@@ -511,7 +632,9 @@ const RAW = /\.(3fr|arw|cr2|cr3|crw|dcr|dng|erf|iiq|k25|kdc|mef|mos|mrw|nef|nrw|
 // Phones: one replica (each holds a whole copy of the image, up to ~1 GB for a 24 Mpx RAW, and iOS
 // closes the tab beyond its memory limit); 8 elsewhere.
 const CORES = /iPhone|iPad|Android/.test(navigator.userAgent) ? 1 : Math.min(navigator.hardwareConcurrency || 1, 8);
-async function nova(name, data, argv, out, n = CORES) {
+// onStep({pc, label} or {step}): pc adds up the replicas' shares of the work.
+async function nova(name, data, argv, out, n = CORES, onStep = () => {}) {
+  const pcs = new Array(n).fill(0);
   const ws = [...Array(n)].map(() => new Worker('enc_worker.js' + V)), peers = ws.map(() => []);
   for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
     const c = new MessageChannel();
@@ -520,7 +643,12 @@ async function nova(name, data, argv, out, n = CORES) {
   }
   try {
     const rs = await Promise.all(ws.map((w, i) => new Promise((ok, ko) => {
-      w.onmessage = e => ok(e.data);
+      w.onmessage = e => {
+        if ('ok' in e.data) return ok(e.data);
+        if (e.data.pc === undefined) return onStep(e.data);
+        pcs[e.data.replica] = e.data.pc;
+        onStep({ pc: Math.min(100, pcs.reduce((a, b) => a + b)), label: e.data.label });
+      };
       w.onerror = e => { if (e.preventDefault) e.preventDefault(); ko(new Error(e.message || 'nova failed to load')); };
       w.postMessage({ name, data, argv, out, replica: i, n, peers: peers[i] }, peers[i]);
     }).then(r => { if (!r.ok) throw new Error(r.error); return r; })));
@@ -528,7 +656,7 @@ async function nova(name, data, argv, out, n = CORES) {
   } catch (x) {
     if (n === 1) throw x;
     console.warn('nova on ' + n + ' cores failed, retrying on one:', x.message);
-    return nova(name, data, argv, out, 1);
+    return nova(name, data, argv, out, 1, onStep);
   } finally { ws.forEach(w => w.terminate()); }
 }
 let novaOut = null;
@@ -568,14 +696,31 @@ async function encode(file) {
     ei.textContent = `${file.name}: encoding (${mb(file.size)})…`;
     const t0 = performance.now();
     // Quality always given: without -q, nova lowers it for JPEG sources to stay smaller than the JPEG.
-    const r = await nova(src, data, ['encode', 'IN', 'OUT', '-m', $('emode').value, '-q', $('eq').value], 'out.nova');
+    // Progress: the step nova is on, and the bar with the time left while the stripes are coded.
+    let step = 'encoding', t2 = 0;
+    const onStep = m => {
+      if (m.step) { step = m.step.replace(/\.\.\.$/, '').replace(/^./, c => c.toLowerCase()); t2 = 0; bar.style.visibility = 'hidden'; }
+      else {
+        if (!t2) t2 = performance.now();
+        bar.style.visibility = 'visible';
+        fill.style.width = m.pc + '%';
+        step = `${m.label.toLowerCase()} ${m.pc} %`;
+        const left = m.pc >= 5 && m.pc < 100 ? Math.ceil((performance.now() - t2) / 1000 * (100 - m.pc) / m.pc) : 0;
+        if (left) step += `, about ${left} s left`;
+      }
+      ei.textContent = `${file.name}: ${step}…`;
+    };
+    const r = await nova(src, data, ['encode', 'IN', 'OUT', '-m', $('emode').value, '-q', $('eq').value], 'out.nova', CORES, onStep);
+    bar.style.visibility = 'hidden';
     const out = new File([MetaStrip.apply(r, { keep: $('ekeep').checked, gps: $('egps').checked })], base + '.nova');
     out.converted = true;
     novaOut = out;
     const done = `${file.name} → ${out.name}: ${mb(out.size)}, ${(out.size / file.size * 100).toFixed(0)} % of the source, converted in ${((performance.now() - t0) / 1000).toFixed(1)} s on ${CORES} ${CORES > 1 ? 'cores' : 'core'}.`;
     await open(out);
-    if (novaOut === out && !info.querySelector('.err')) info.textContent = done;
+    if (novaOut === out && !info.querySelector('.err')) { info.textContent = done; setSource(file, native); }
+    return out;
   } catch (e) {
+    bar.style.visibility = 'hidden';
     fail(`${file.name}: ${e.message}`);
   } finally { sleep(lock); }
 }

@@ -21,7 +21,14 @@ self.onmessage = async e => {
     const done = new Promise(r => exit = r);
     const M = await NovaWasm({
       locateFile: f => f + self.location.search,
-      print: s => log.push(s), printErr: s => log.push(s), onExit: exit, onAbort: s => { log.push(String(s)); exit(1); },
+      print: s => log.push(s),
+      // "\1<percent> <label>" and "\2<step>" lines are progress (nova_par.li): each replica reports the
+      // share of the work it did (the page adds them up), replica 0 the steps.
+      printErr: s => {
+        if (s[0] === '\x01') self.postMessage({ pc: parseInt(s.slice(1)), label: s.slice(s.indexOf(' ') + 1), replica });
+        else if (s[0] === '\x02') { if (!replica) self.postMessage({ step: s.slice(1) }); }
+        else log.push(s);
+      }, onExit: exit, onAbort: s => { log.push(String(s)); exit(1); },
       sync: d => new Promise(r => {
         const k = round++;
         want[k] = r;

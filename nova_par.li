@@ -142,6 +142,12 @@ static int np_count(void) { return 1; }
 static int np_own(void) { return 1; }
 static void np_merge(void) {}
 #endif
+/* WebAssembly: a replica runs its jobs in turn, so every tick can report progress. */
+#ifdef __EMSCRIPTEN__
+static int np_wasm(void) { return 1; }
+#else
+static int np_wasm(void) { return 0; }
+#endif
 static long nova_cpus(void) { long n = sysconf(_SC_NPROCESSORS_ONLN); return n < 1 ? 1 : n; }
 static long np_ms(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1000 + t.tv_nsec / 1000000; }
 static const char *np_label, *np_info;
@@ -164,10 +170,20 @@ static void np_show(void) {
   int i, pc, n;
   char b[512];
   double el;
+#ifdef __EMSCRIPTEN__
+  if (!np_label) return;
+#else
   if (!np_label || !isatty(2)) return;
+#endif
   for (i = 0; i < 64; i++) s += np_prog[i];
   pc = np_total > 0 ? s * 100 / np_total : 0;
   if (pc > 100) pc = 100;
+#ifdef __EMSCRIPTEN__
+  /* The page (enc_worker.js) reads "\1<percent> <label>" lines from stderr as progress. */
+  if (pc != np_last) fprintf(stderr, "\1%d %s\n", pc, np_label);
+  np_last = pc;
+  return;
+#endif
   if (pc == np_last && now - np_tlast < 500) return;
   np_last = pc;
   np_tlast = now;
@@ -181,6 +197,10 @@ static void np_show(void) {
 }
 /* One-line status (terminal only), replaced by the next status, progress or output line. */
 static void np_status(const char *m) {
+#ifdef __EMSCRIPTEN__
+  if (*m) fprintf(stderr, "\2%s\n", m);   /* the page shows it as the current step */
+  return;
+#endif
   if (isatty(2)) np_line(m);
 }
 /* wait() for one child, showing the progress meanwhile. */
@@ -269,7 +289,7 @@ Public
   (
     (active && {slot < 64}).if {
       prog.at slot put (d.to_raw_int32)
-      (threads = 1).if { `np_show()`; }
+      ((threads = 1) || {`np_wasm()`:Int = 1}).if { `np_show()`; }
     }
   )
 
