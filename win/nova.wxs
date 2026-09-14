@@ -2,7 +2,8 @@
 <!-- NOVA for Windows, MSI (wixl from msitools, built by win/dist.sh from dist/nova-windows/).
      Same install as win/nova.nsi, but the WIC codec keys are written here (the ones DllRegisterServer
      writes in plugins/wic/nova_wic.cpp: keep both in step), so Windows Installer removes them itself.
-     ponytail: no shell refresh action: Explorer shows the thumbnails after a sign-out if it was open. -->
+     Refresh (a nova_wic.dll export) tells Explorer the file types changed, after install and before the
+     codec is removed on uninstall. -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
   <Product Id="*" Name="NOVA image format" Version="2.0.0" Manufacturer="Thibault Savenkoff" Language="1033"
            UpgradeCode="6C1D4E0B-8F7A-4C55-9B7E-2A1F3D5C7E90">
@@ -78,6 +79,15 @@
         </Directory>
       </Directory>
     </Directory>
+
+    <!-- a copy of the codec DLL inside the MSI: Windows Installer calls Refresh from it -->
+    <Binary Id="NovaWic" SourceFile="dist/nova-windows/nova_wic.dll"/>
+    <CustomAction Id="RefreshInstall" BinaryKey="NovaWic" DllEntry="Refresh" Return="ignore"/>
+    <CustomAction Id="RefreshRemove" BinaryKey="NovaWic" DllEntry="Refresh" Execute="deferred" Impersonate="yes" Return="ignore"/>
+    <InstallExecuteSequence>
+      <Custom Action="RefreshInstall" After="InstallFinalize">NOT REMOVE</Custom>
+      <Custom Action="RefreshRemove" After="RemoveRegistryValues">REMOVE="ALL"</Custom>
+    </InstallExecuteSequence>
 
     <Feature Id="All" Level="1">
       <ComponentRef Id="Program"/>

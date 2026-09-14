@@ -328,6 +328,12 @@ STDAPI DllRegisterServer() {
   return ok ? S_OK : SELFREG_E_CLASS;
 }
 
+// MSI custom action (win/nova.wxs): tells Explorer the file types changed, as DllRegisterServer does.
+extern "C" UINT __stdcall Refresh(unsigned long) {
+  SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+  return 0;
+}
+
 STDAPI DllUnregisterServer() {
   wchar_t k[256];
   wsprintfW(k, L"CLSID\\%s", DECODER);
