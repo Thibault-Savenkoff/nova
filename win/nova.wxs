@@ -61,12 +61,22 @@
               <RegistryValue Name="FriendlyName" Type="string" Value="NOVA Decoder"/>
             </RegistryKey>
             <RegistryKey Root="HKCR" Key=".nova">
+              <RegistryValue Type="string" Value="NOVA.Image"/>
               <RegistryValue Name="Content Type" Type="string" Value="image/x-nova"/>
               <RegistryValue Name="PerceivedType" Type="string" Value="image"/>
             </RegistryKey>
-            <!-- Photos in "Open with": its image ProgId (the one .jpg lists) -->
             <RegistryKey Root="HKCR" Key=".nova\OpenWithProgids">
-              <RegistryValue Name="AppX43hnxtbyyps62jhe9sqpdzxn1790zetc" Type="string" Value=""/>
+              <RegistryValue Name="NOVA.Image" Type="string" Value=""/>
+            </RegistryKey>
+            <!-- double-click: Windows Photo Viewer, which decodes through this codec (Photos opens .nova blank) -->
+            <RegistryKey Root="HKCR" Key="NOVA.Image">
+              <RegistryValue Type="string" Value="NOVA image"/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key="NOVA.Image\DefaultIcon">
+              <RegistryValue Type="string" Value="[#nova_wic.dll],0"/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key="NOVA.Image\shell\open\command">
+              <RegistryValue Type="expandable" Value='%SystemRoot%\System32\rundll32.exe "%ProgramFiles%\Windows Photo Viewer\PhotoViewer.dll", ImageView_Fullscreen %1'/>
             </RegistryKey>
             <RegistryKey Root="HKCR" Key=".nova\ShellEx\{E357FCCD-A995-4576-B01F-234630154E96}">
               <RegistryValue Type="string" Value="{C7657C4A-9F68-40FA-A4DF-96BC08EB3551}"/>

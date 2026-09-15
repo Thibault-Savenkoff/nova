@@ -1,4 +1,4 @@
-// WIC codec for .nova: Windows Explorer thumbnails, Photos, Paint, XnView MP and every app that
+// WIC codec for .nova: Windows Explorer thumbnails, Photo Viewer, Paint, XnView MP and every app that
 // opens images through the Windows Imaging Component. Decodes with libnovadec.
 // Install (administrator): regsvr32 nova_wic.dll    Remove: regsvr32 /u nova_wic.dll
 // Pixels are given upright (EXIF orientation applied here) in 32-bit BGRA.
@@ -22,7 +22,9 @@ static const wchar_t *BGRA = L"{6FDDC324-4E03-4BFE-B185-3D77768DC90F}";  // GUID
 static const wchar_t *DECODERS = L"{7ED96837-96F0-4812-B211-F13C24117ED3}"; // CATID_WICBitmapDecoders
 static const wchar_t *THUMBS = L"{E357FCCD-A995-4576-B01F-234630154E96}";   // IThumbnailProvider
 static const wchar_t *PHOTO_THUMBS = L"{C7657C4A-9F68-40FA-A4DF-96BC08EB3551}"; // Windows photo thumbnail provider
-static const wchar_t *PHOTOS = L"AppX43hnxtbyyps62jhe9sqpdzxn1790zetc";  // Microsoft Photos, image files
+// Double-click: Windows Photo Viewer (still in Windows 11, decodes through WIC, so through this codec).
+// Photos (the Store app) opens .nova blank: it does not use third-party codecs.
+static const wchar_t *VIEW = L"%SystemRoot%\\System32\\rundll32.exe \"%ProgramFiles%\\Windows Photo Viewer\\PhotoViewer.dll\", ImageView_Fullscreen %1";
 static const uint8_t SIG[9] = {0x89, 'N', 'O', 'V', 'A', 0x0D, 0x0A, 0x1A, 0x0A};
 
 static HMODULE g_module;
@@ -321,8 +323,12 @@ STDAPI DllRegisterServer() {
   ok = ok && str(cat, L"CLSID", DECODER) && str(cat, L"FriendlyName", L"NOVA Decoder");
   wsprintfW(sub, L".nova\\ShellEx\\%s", THUMBS);
   ok = ok && str(L".nova", L"Content Type", L"image/x-nova") && str(L".nova", L"PerceivedType", L"image") && str(sub, nullptr, PHOTO_THUMBS);
-  // Photos in "Open with": its image ProgId (the one .jpg lists)
-  ok = ok && str(L".nova\\OpenWithProgids", PHOTOS, L"");
+  // NOVA.Image: name, icon (this DLL's) and Photo Viewer as the program; the default for .nova
+  wchar_t icon[MAX_PATH + 4];
+  wsprintfW(icon, L"%s,0", dll);
+  ok = ok && str(L"NOVA.Image", nullptr, L"NOVA image") && str(L"NOVA.Image\\DefaultIcon", nullptr, icon) &&
+       set(HKEY_CLASSES_ROOT, L"NOVA.Image\\shell\\open\\command", nullptr, REG_EXPAND_SZ, VIEW, DWORD((wcslen(VIEW) + 1) * sizeof(wchar_t))) &&
+       str(L".nova", nullptr, L"NOVA.Image") && str(L".nova\\OpenWithProgids", L"NOVA.Image", L"");
   // Explorer lists .nova as a picture (search, "Kind" column, photo views)
   const wchar_t *kind = L"picture";
   set(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\KindMap", L".nova", REG_SZ, kind,
@@ -343,9 +349,8 @@ STDAPI DllUnregisterServer() {
   RegDeleteTreeW(HKEY_CLASSES_ROOT, k);
   wsprintfW(k, L"CLSID\\%s\\Instance\\%s", DECODERS, DECODER);
   RegDeleteTreeW(HKEY_CLASSES_ROOT, k);
-  wsprintfW(k, L".nova\\ShellEx\\%s", THUMBS);
-  RegDeleteTreeW(HKEY_CLASSES_ROOT, k);
-  RegDeleteTreeW(HKEY_CLASSES_ROOT, L".nova\\OpenWithProgids");
+  RegDeleteTreeW(HKEY_CLASSES_ROOT, L".nova");
+  RegDeleteTreeW(HKEY_CLASSES_ROOT, L"NOVA.Image");
   HKEY m;
   if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\KindMap", 0, KEY_WRITE, &m) == ERROR_SUCCESS) {
     RegDeleteValueW(m, L".nova");
