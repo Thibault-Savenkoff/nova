@@ -17,7 +17,8 @@ Public
 
   - pl2:C_array Int32 := C_array Int32.create 4
 
-  - pcap:Int := 4
+  // 0: the first setup allocates them in shared memory, even for a region of 4 samples or less.
+  - pcap:Int
 
   - pa p:Int :C_array Int32 <-
   ( + result:C_array Int32

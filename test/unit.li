@@ -1,0 +1,399 @@
+Header
+  + name := Unit
+  // Unit tests of the nova modules: CRC-32, range coder (Nova_model), 9/7 wavelet, frame coding
+  // (Nova_codec levels 0-4 and Nova_lossy level 5, round trips on odd and tiny regions inside a
+  // bigger buffer), zlib (deflate/inflate, PNG rows), corrupt streams (must not crash or hang).
+  // One line per failure, then a summary; exit 1 on failure. Run from the repo: test/unit.sh
+
+Public
+
+  - seed:Int
+
+  - rnd:Int <-
+  // 0..32767
+  (
+    seed := (seed * 1103515245 + 12345) & 7FFFFFFFh
+    (seed >> 16) & 7FFFh
+  )
+
+  - fails:Int
+
+  - tests:Int
+
+  - check ok:Boolean msg m:String <-
+  (
+    tests := tests + 1
+    (ok).if { } else {
+      fails := fails + 1
+      ("FAIL " + m + "\n").print
+    }
+  )
+
+  - copy b:C_array Uint8 size n:Int :C_array Uint8 <-
+  ( + r:C_array Uint8
+    r := C_array Uint8.create (n.max 1)
+    0.to (n - 1) do { i:Int
+      r.at i put (b.at i)
+    }
+    r
+  )
+
+  //
+  // CRC-32 (Nova): the check value of "123456789", and a CRC run over two calls.
+  //
+
+  - test_crc <-
+  ( + b:C_array Uint8
+    + c:Int
+    b := C_array Uint8.create 9
+    0.to 8 do { i:Int
+      b.at i put ((49 + i).to_uint8)
+    }
+    Nova.make_crc_table
+    check (((Nova.crc 0FFFFFFFFh of b from 0 until 9) ^ 0FFFFFFFFh) = 0CBF43926h) msg "crc32 of 123456789"
+    c := Nova.crc 0FFFFFFFFh of b from 0 until 4
+    check (((Nova.crc c of b from 4 until 9) ^ 0FFFFFFFFh) = 0CBF43926h) msg "crc32 in two parts"
+    check (((Nova.crc 0FFFFFFFFh of b from 0 until 0) ^ 0FFFFFFFFh) = 0) msg "crc32 of nothing"
+  )
+
+  //
+  // Range coder: encode n bits with given probabilities, decode them back.
+  // Modes: 0 random bits and probabilities, 1 always the unlikely bit at p = 1 or 4095 (the
+  // costliest case), 2 bits drawn with their probability (real use), 3 long runs of the likely bit.
+  //
+
+  - test_coder n:Int mode md:Int <-
+  ( + y,p,bad,r:Int
+    + ys,ps:C_array Int
+    ys := C_array Int.create (n.max 1)
+    ps := C_array Int.create (n.max 1)
+    0.to (n - 1) do { i:Int
+      (md = 0).if {
+        p := 1 + (rnd % 4095)
+        y := rnd & 1
+      }.elseif {md = 1} then {
+        y := rnd & 1
+        (y = 1).if { p := 1 } else { p := 4095 }
+      }.elseif {md = 2} then {
+        p := 1 + (rnd % 4095)
+        y := 0
+        ((rnd % 4096) < p).if { y := 1 }
+      } else {
+        p := 4095
+        y := 1
+        ((rnd % 1000) = 0).if { y := 0 }
+      }
+      ys.at i put y
+      ps.at i put p
+    }
+    Nova_codec.reset_out
+    Nova_model.start_encoder 64 level 1
+    0.to (n - 1) do { i:Int
+      r := Nova_model.code_bit (ys.at i) prob (ps.at i)
+    }
+    Nova_model.flush_encoder
+    Nova_model.start_decoder (copy (Nova_codec.out) size (Nova_codec.out_count)) from 0 size (Nova_codec.out_count) samples 64 level 1
+    0.to (n - 1) do { i:Int
+      ((Nova_model.code_bit 0 prob (ps.at i)) != (ys.at i)).if { bad := bad + 1 }
+    }
+    check ((bad = 0) && {! Nova_model.overrun}) msg ("range coder mode " + md.to_string + ", " + n.to_string + " bits: " + bad.to_string + " wrong")
+  )
+
+  //
+  // Wavelet: forward then inverse gives back every sample. Levels forced up to 3 so the borders
+  // are also run on 1-3 sample lines (setup alone skips small planes).
+  //
+
+  - test_wavelet (w,h:Int) levels lv:Int <-
+  ( + p,o:C_array Int32
+    + bad,n:Int
+    p := C_array Int32.create (w * h)
+    o := C_array Int32.create (w * h)
+    0.to (w * h - 1) do { i:Int
+      p.at i put ((rnd * 2 - 32767).to_raw_int32)
+      o.at i put (p.at i)
+    }
+    Nova_wavelet.setup p size (w, h)
+    n := Nova_wavelet.levels.max lv
+    0.to (n - 1) do { k:Int
+      Nova_wavelet.level k inverse False
+    }
+    (n - 1).downto 0 do { k:Int
+      Nova_wavelet.level k inverse True
+    }
+    0.to (w * h - 1) do { i:Int
+      ((p.at i) != (o.at i)).if { bad := bad + 1 }
+    }
+    check (bad = 0) msg ("wavelet " + w.to_string + "x" + h.to_string + " levels " + n.to_string + ": " + bad.to_string + " samples differ")
+  )
+
+  //
+  // Frame coding. Images (RGBA, 4 bytes per pixel): 0 noise, 1 gradient + noise, 2 twelve colours,
+  // 3 one colour, 4 gradient with varying alpha.
+  //
+
+  - image kind:Int size (w,h:Int) :C_array Uint8 <-
+  ( + b:C_array Uint8
+    + i,c:Int
+    b := C_array Uint8.create (w * h * 4)
+    0.to (h - 1) do { y:Int
+      0.to (w - 1) do { x:Int
+        i := (y * w + x) * 4
+        (kind = 0).if {
+          0.to 3 do { k:Int b.at (i + k) put ((rnd & 255).to_uint8) }
+        }.elseif {kind = 2} then {
+          c := rnd % 12
+          b.at i put ((c * 20).to_uint8)
+          b.at (i + 1) put ((255 - c * 17).to_uint8)
+          b.at (i + 2) put (((c * 91) & 255).to_uint8)
+          b.at (i + 3) put (255.to_uint8)
+        }.elseif {kind = 3} then {
+          b.at i put (200.to_uint8)
+          b.at (i + 1) put (30.to_uint8)
+          b.at (i + 2) put (99.to_uint8)
+          b.at (i + 3) put (255.to_uint8)
+        } else {
+          b.at i put (((x * 3 + y + (rnd & 7)) & 255).to_uint8)
+          b.at (i + 1) put (((x + y * 2 + (rnd & 3)) & 255).to_uint8)
+          b.at (i + 2) put (((x * 2 + y * 5) & 255).to_uint8)
+          (kind = 4).if { b.at (i + 3) put (((x * 7 + y) & 255).to_uint8) } else { b.at (i + 3) put (255.to_uint8) }
+        }
+      }
+    }
+    b
+  )
+
+  - first_plane np:Int :Int <-
+  // Bytes compared: np 1 is the G byte alone (alpha coded as its own region).
+  ( + r:Int
+    (np = 1).if { r := 1 }
+    r
+  )
+
+  - last_plane np:Int :Int <-
+  ( + r:Int
+    r := np - 1
+    (np = 1).if { r := 1 }
+    r
+  )
+
+  - encoded:C_array Uint8
+
+  - encoded_size:Int
+
+  - test_frame k:Int size (w,h:Int) planes np:Int level lv:Int eps ep:Int <-
+  // The region (2, 1, w, h) of a (w + 3) x (h + 3) buffer. Checks: decode succeeds, gives the
+  // source (lossless) or the encoder's reconstruction (eps > 0, level 5) bit for bit, stays
+  // within eps (near-lossless), and leaves the pixels outside the region untouched.
+  ( + src,org,dst:C_array Uint8
+    + s,n,i,bad,far,out,d,lim:Int
+    + ok:Boolean
+    + name:String
+    s := w + 3
+    src := image k size (s, h + 3)
+    org := copy src size (s * (h + 3) * 4)
+    dst := C_array Uint8.create (s * (h + 3) * 4)
+    0.to (s * (h + 3) * 4 - 1) do { j:Int dst.at j put (77.to_uint8) }
+    Nova_codec.reset_out
+    Nova_codec.encode src stride s region (2, 1, w, h) planes np level lv eps ep
+    n := Nova_codec.out_count
+    encoded := copy (Nova_codec.out) size n
+    encoded_size := n
+    ok := Nova_codec.decode encoded from 0 size n into dst stride s region (2, 1, w, h) planes np
+    // near-lossless: G (and alpha) within eps, R and B are G + (R - G): within 2 eps
+    lim := 2 * ep
+    0.to (h + 2) do { y:Int
+      0.to (s - 1) do { x:Int
+        i := (y * s + x) * 4
+        ((x >= 2) && {x < w + 2} && {y >= 1} && {y < h + 1}).if {
+          (first_plane np).to (last_plane np) do { p:Int
+            ((dst.at (i + p)) != (src.at (i + p))).if { bad := bad + 1 }
+            d := (dst.at (i + p)).to_int - (org.at (i + p)).to_int
+            (d < 0).if { d := - d }
+            ((lv < 5) && {d > lim}).if { far := far + 1 }
+          }
+        } else {
+          0.to 3 do { p:Int
+            ((dst.at (i + p)).to_int != 77).if { out := out + 1 }
+          }
+        }
+      }
+    }
+    name := "level " + lv.to_string + " eps " + ep.to_string + " kind " + k.to_string + " " + w.to_string + "x" + h.to_string + "x" + np.to_string
+    check ok msg (name + ": decode failed")
+    check (bad = 0) msg (name + ": " + bad.to_string + " samples differ from the encoder's")
+    check (far = 0) msg (name + ": " + far.to_string + " samples beyond eps")
+    check (out = 0) msg (name + ": " + out.to_string + " bytes written outside the region")
+  )
+
+  - fuzz tries:Int planes np:Int size (w,h:Int) <-
+  // Corrupts the last encoded stream (flipped bytes, cut short, random tail): decode must return.
+  ( + d,dst:C_array Uint8
+    + n,k:Int
+    + ok:Boolean
+    dst := C_array Uint8.create ((w + 3) * (h + 3) * 4)
+    1.to tries do { t:Int
+      d := copy encoded size encoded_size
+      n := encoded_size
+      k := t % 3
+      (k = 0).if {
+        1.to (1 + rnd % 3) do { j:Int
+          d.at (rnd % n) put ((rnd & 255).to_uint8)
+        }
+      }.elseif {k = 1} then {
+        n := rnd % n
+      } else {
+        ((rnd % n) + 2).to (n - 1) do { j:Int d.at j put ((rnd & 255).to_uint8) }
+      }
+      ok := Nova_codec.decode d from 0 size n into dst stride (w + 3) region (2, 1, w, h) planes np
+    }
+    tests := tests + 1
+  )
+
+  - test_size (w,h:Int) <-
+  // Every level, plane count and image kind on one region size.
+  (
+    2.to 3 do { k:Int
+      test_frame k size (w, h) planes 3 level 0 eps 0
+      test_frame k size (w, h) planes 4 level 0 eps 0
+    }
+    0.to 4 do { k:Int
+      1.to 4 do { lv:Int
+        test_frame k size (w, h) planes 3 level lv eps 0
+        test_frame k size (w, h) planes 4 level lv eps 0
+      }
+      test_frame k size (w, h) planes 1 level 2 eps 0
+      test_frame k size (w, h) planes 3 level 2 eps 1
+      test_frame k size (w, h) planes 4 level 3 eps 4
+      test_frame k size (w, h) planes 3 level 1 eps 64
+      test_frame k size (w, h) planes 3 level 5 eps 90
+      test_frame k size (w, h) planes 4 level 5 eps 50
+      test_frame k size (w, h) planes 3 level 5 eps 0
+      test_frame k size (w, h) planes 3 level 5 eps 100
+    }
+  )
+
+  - test_fuzz <-
+  (
+    test_frame 2 size (40, 30) planes 4 level 0 eps 0
+    fuzz 300 planes 4 size (40, 30)
+    1.to 4 do { lv:Int
+      test_frame 1 size (40, 30) planes 3 level lv eps 0
+      fuzz 300 planes 3 size (40, 30)
+    }
+    test_frame 4 size (40, 30) planes 4 level 3 eps 2
+    fuzz 300 planes 4 size (40, 30)
+    test_frame 1 size (70, 50) planes 3 level 5 eps 70
+    fuzz 300 planes 3 size (70, 50)
+    test_frame 4 size (70, 50) planes 4 level 5 eps 70
+    fuzz 300 planes 4 size (70, 50)
+  )
+
+  //
+  // zlib: deflate then inflate; PNG rows (several deflate chunks joined) inflated and unfiltered.
+  //
+
+  - test_zlib n:Int <-
+  ( + b,z:C_array Uint8
+    + m,bad:Int
+    + ok:Boolean
+    b := C_array Uint8.create (n.max 1)
+    0.to (n - 1) do { i:Int
+      b.at i put (((i / 100) + (rnd & 3)).to_uint8)
+    }
+    ok := Nova_zlib.deflate b size n
+    m := Nova_zlib.size
+    z := copy (Nova_zlib.data) size m
+    ok := ok && {Nova_zlib.inflate z from 0 size m max n} && {Nova_zlib.size = n}
+    (ok).if {
+      0.to (n - 1) do { i:Int
+        ((Nova_zlib.data.at i) != (b.at i)).if { bad := bad + 1 }
+      }
+    }
+    check (ok && {bad = 0}) msg ("zlib round trip of " + n.to_string + " bytes")
+  )
+
+  - paeth (a,b,c:Int) :Int <-
+  ( + p,pa,pb,pc,r:Int
+    p := a + b - c
+    pa := (p - a).abs
+    pb := (p - b).abs
+    pc := (p - c).abs
+    r := c
+    ((pa <= pb) && {pa <= pc}).if { r := a }.elseif {pb <= pc} then { r := b }
+    r
+  )
+
+  - test_png (w,h:Int) planes np:Int <-
+  ( + b,d:C_array Uint8
+    + row,f,a,u,c,v,bad:Int
+    + ok:Boolean
+    b := image 1 size (w, h)
+    (np = 4).if { b := image 4 size (w, h) }
+    ok := (Nova_zlib.png b size (w, h) planes np) && {Nova_zlib.inflate (copy (Nova_zlib.data) size (Nova_zlib.size)) from 0 size (Nova_zlib.size) max (h * (1 + w * np))}
+    ok := ok && {Nova_zlib.size = h * (1 + w * np)}
+    (ok).if {
+      d := Nova_zlib.data
+      row := 1 + w * np
+      // unfilter in place: filtered byte -> pixel byte
+      0.to (h - 1) do { y:Int
+        f := (d.at (y * row)).to_int
+        ok := ok && {f <= 4}
+        0.to (w * np - 1) do { x:Int
+          a := 0
+          u := 0
+          c := 0
+          (x >= np).if { a := (d.at (y * row + 1 + x - np)).to_int }
+          (y > 0).if { u := (d.at ((y - 1) * row + 1 + x)).to_int }
+          ((x >= np) && {y > 0}).if { c := (d.at ((y - 1) * row + 1 + x - np)).to_int }
+          v := (d.at (y * row + 1 + x)).to_int
+          (f = 1).if { v := v + a }.elseif {f = 2} then { v := v + u }.elseif {f = 3} then { v := v + ((a + u) >> 1) }.elseif {f = 4} then { v := v + (paeth (a, u, c)) }
+          d.at (y * row + 1 + x) put ((v & 255).to_uint8)
+          ((v & 255) != (b.at ((y * w + x / np) * 4 + x % np)).to_int).if { bad := bad + 1 }
+        }
+      }
+    }
+    check (ok && {bad = 0}) msg ("png rows " + w.to_string + "x" + h.to_string + "x" + np.to_string + ": " + bad.to_string + " bytes differ")
+  )
+
+  - main <-
+  (
+    seed := 1
+    test_crc
+    test_coder 0 mode 0
+    test_coder 1 mode 1
+    0.to 3 do { md:Int
+      test_coder 1000 mode md
+      test_coder 1000000 mode md
+    }
+    test_wavelet (1, 1) levels 3
+    test_wavelet (2, 3) levels 3
+    test_wavelet (3, 2) levels 3
+    test_wavelet (5, 9) levels 3
+    test_wavelet (41, 31) levels 0
+    test_wavelet (40, 30) levels 0
+    test_wavelet (257, 129) levels 0
+    test_wavelet (1024, 1000) levels 0
+    test_size (1, 1)
+    test_size (1, 7)
+    test_size (7, 1)
+    test_size (2, 2)
+    test_size (13, 11)
+    test_size (64, 48)
+    test_size (33, 70)
+    test_size (150, 9)
+    test_fuzz
+    test_zlib 0
+    test_zlib 1
+    test_zlib 5000
+    test_zlib 300000
+    test_png (1, 1) planes 3
+    test_png (37, 20) planes 4
+    test_png (2000, 1300) planes 4
+    // Big regions: several stripes (levels 1-4 and 5), coded by child processes.
+    test_frame 1 size (2100, 2000) planes 3 level 1 eps 0
+    test_frame 4 size (2100, 2000) planes 4 level 2 eps 3
+    test_frame 1 size (3000, 2000) planes 3 level 5 eps 80
+    (tests.to_string + " tests, " + fails.to_string + " failed\n").print
+    (fails = 0).if { "all OK\n".print } else { System.exit 1 }
+  )

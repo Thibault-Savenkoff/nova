@@ -342,6 +342,8 @@ static void np_status(const char *m) {
 }
 /* wait() for one child, showing the progress meanwhile. */
 static void np_wait(void) {
+  /* No progress line to refresh: block (polling costs up to 100 ms per job, a lot on small regions). */
+  if (!np_label || !isatty(2)) { waitpid(-1, 0, 0); return; }
   while (waitpid(-1, 0, WNOHANG) == 0) {
     np_show();
     usleep(100000);

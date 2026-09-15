@@ -12,6 +12,12 @@ Header
 #include <unistd.h>
 `;
   - external := `
+/* From Nova_par (shared memory, replicas): declared here, its C may come after this one. */
+static void *nova_shared(long n);
+static void nova_unshare(void *p, long n);
+static int np_count(void);
+static int np_own(void);
+static void np_merge(void);
 /* z_stream of zlib 1.x (stable ABI), declared here: nova builds without zlib headers. */
 typedef struct {
   const unsigned char *next_in; unsigned avail_in; unsigned long total_in;

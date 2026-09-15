@@ -14,7 +14,8 @@ Public
   // Frame samples (shared memory: the stripe processes decode into it).
   - fr:C_array Int32 := C_array Int32.create 4
 
-  - fcap:Int := 4
+  // 0: the first setup allocates it in shared memory, even for a frame of 4 samples or less.
+  - fcap:Int
 
   - w:Int
 

@@ -3,8 +3,8 @@
 /nova.c
 test/img_probe
 test/img_probe.c
-test/wavelet_check
-test/wavelet_check.c
+test/unit
+test/unit.c
 test/develop
 test/rawdump
 test/look/lin
