@@ -34,9 +34,9 @@ uint8_t *nova_decode(const uint8_t *d, size_t n, nova_info *info);
 /* Decodes the PREV thumbnail (512 px long side): w x h x 4 RGBA, malloc'ed. NULL if absent or bad. */
 uint8_t *nova_decode_preview(const uint8_t *d, size_t n, int *w, int *h);
 
-/* ICC profile of a JPEG or HEIC source (MDAT APP2 ICC_PROFILE, first segment), or NULL. Points into d.
-   ponytail: PNG sources keep theirs zlib-compressed (MDAT iCCP): not returned. */
-const uint8_t *nova_icc(const uint8_t *d, size_t n, size_t *len);
+/* ICC profile of the source (JPEG/HEIC: MDAT APP2 ICC_PROFILE segments joined; PNG: MDAT iCCP,
+   inflated), *len bytes, malloc'ed: free() it. NULL if there is none or it is corrupt. */
+uint8_t *nova_icc(const uint8_t *d, size_t n, size_t *len);
 
 #ifdef __cplusplus
 }

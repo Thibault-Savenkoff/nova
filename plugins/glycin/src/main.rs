@@ -25,7 +25,7 @@ unsafe extern "C" {
     fn nova_read_info(d: *const u8, n: usize, info: *mut NovaInfo) -> c_int;
     fn nova_decode(d: *const u8, n: usize, info: *mut NovaInfo) -> *mut u8;
     fn nova_decode_preview(d: *const u8, n: usize, w: *mut c_int, h: *mut c_int) -> *mut u8;
-    fn nova_icc(d: *const u8, n: usize, len: *mut usize) -> *const u8;
+    fn nova_icc(d: *const u8, n: usize, len: *mut usize) -> *mut u8;
     fn free(p: *mut u8);
 }
 
@@ -76,7 +76,11 @@ impl LoaderImplementation for Nova {
         unsafe { free(px) };
         let mut len = 0;
         let icc = unsafe { nova_icc(d.as_ptr(), d.len(), &mut len) };
-        let icc = (!icc.is_null()).then(|| unsafe { std::slice::from_raw_parts(icc, len) }.to_vec());
+        let icc = (!icc.is_null()).then(|| {
+            let v = unsafe { std::slice::from_raw_parts(icc, len) }.to_vec();
+            unsafe { free(icc) };
+            v
+        });
 
         let mut details = ImageDetails::new(w as u32, h as u32);
         details.info_format_name = Some("NOVA".into());

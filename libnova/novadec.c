@@ -1284,7 +1284,153 @@ static int tiff_orientation(const uint8_t *t, size_t n) {
   return 1;
 }
 
-typedef struct { const uint8_t *d; nova_info *f; int seen; const uint8_t *icc; size_t icc_len; } MetaScan;
+/* Inflate (RFC 1950 zlib stream, RFC 1951 blocks), for the ICC profile of PNG sources (MDAT iCCP).
+   puff-style, one bit at a time: slow but small, and profiles are a few KB. */
+typedef struct {
+  const uint8_t *in;
+  size_t n, pos;
+  uint32_t bit, cnt;
+  uint8_t *out;
+  size_t on, cap;
+  int err;
+} Inf;
+typedef struct { short count[16], sym[288]; } Huff;
+
+static int inf_bits(Inf *s, int need) {
+  uint32_t v = s->bit;
+  while (s->cnt < (uint32_t)need) {
+    if (s->pos >= s->n) { s->err = 1; return 0; }
+    v |= (uint32_t)s->in[s->pos++] << s->cnt;
+    s->cnt += 8;
+  }
+  s->bit = v >> need;
+  s->cnt -= need;
+  return (int)(v & ((1u << need) - 1));
+}
+static int inf_put(Inf *s, uint8_t c) {
+  if (s->on == s->cap) {
+    uint8_t *o;
+    if (s->cap >= (64u << 20)) return 1;   /* no profile is that big: a zip bomb */
+    s->cap = s->cap ? s->cap * 2 : 4096;
+    if (!(o = realloc(s->out, s->cap))) return 1;
+    s->out = o;
+  }
+  s->out[s->on++] = c;
+  return 0;
+}
+/* Canonical Huffman code from code lengths; -1 if over-subscribed (incomplete codes are fine). */
+static int huff_build(Huff *h, const short *len, int n) {
+  short offs[16];
+  int left = 1, i;
+  memset(h->count, 0, sizeof h->count);
+  for (i = 0; i < n; i++) h->count[len[i]]++;
+  if (h->count[0] == n) return 0;
+  for (i = 1; i < 16; i++) { left = (left << 1) - h->count[i]; if (left < 0) return -1; }
+  offs[1] = 0;
+  for (i = 1; i < 15; i++) offs[i + 1] = (short)(offs[i] + h->count[i]);
+  for (i = 0; i < n; i++) if (len[i]) h->sym[offs[len[i]]++] = (short)i;
+  return 0;
+}
+static int huff_decode(Inf *s, const Huff *h) {
+  int code = 0, first = 0, index = 0, len;
+  for (len = 1; len < 16; len++) {
+    code |= inf_bits(s, 1);
+    if (s->err) return -1;
+    if (code - h->count[len] < first) return h->sym[index + (code - first)];
+    index += h->count[len];
+    first = (first + h->count[len]) << 1;
+    code <<= 1;
+  }
+  return -1;
+}
+static int inf_codes(Inf *s, const Huff *lc, const Huff *dc) {
+  static const short lbase[29] = {3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258};
+  static const short lext[29] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0};
+  static const short dbase[30] = {1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577};
+  static const short dext[30] = {0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
+  int sym, len;
+  size_t dist;
+  for (;;) {
+    if ((sym = huff_decode(s, lc)) < 0) return 1;
+    if (sym < 256) { if (inf_put(s, (uint8_t)sym)) return 1; continue; }
+    if (sym == 256) return 0;
+    if ((sym -= 257) >= 29) return 1;
+    len = lbase[sym] + inf_bits(s, lext[sym]);
+    if ((sym = huff_decode(s, dc)) < 0 || sym >= 30) return 1;
+    dist = (size_t)dbase[sym] + (size_t)inf_bits(s, dext[sym]);
+    if (s->err || dist > s->on) return 1;
+    while (len--) if (inf_put(s, s->out[s->on - dist])) return 1;
+  }
+}
+static int inf_dynamic(Inf *s, Huff *lc, Huff *dc) {
+  static const uint8_t order[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
+  short lens[320];
+  int nlen = inf_bits(s, 5) + 257, ndist = inf_bits(s, 5) + 1, ncode = inf_bits(s, 4) + 4, i, sym, rep;
+  if (s->err || nlen > 286 || ndist > 30) return 1;
+  memset(lens, 0, sizeof lens);
+  for (i = 0; i < ncode; i++) lens[order[i]] = (short)inf_bits(s, 3);
+  if (s->err || huff_build(lc, lens, 19)) return 1;
+  for (i = 0; i < nlen + ndist;) {
+    if ((sym = huff_decode(s, lc)) < 0) return 1;
+    if (sym < 16) { lens[i++] = (short)sym; continue; }
+    if (sym == 16) { if (!i) return 1; rep = 3 + inf_bits(s, 2); sym = lens[i - 1]; }
+    else { rep = sym == 17 ? 3 + inf_bits(s, 3) : 11 + inf_bits(s, 7); sym = 0; }
+    if (s->err || i + rep > nlen + ndist) return 1;
+    while (rep--) lens[i++] = (short)sym;
+  }
+  if (!lens[256]) return 1;   /* no end-of-block code */
+  return huff_build(lc, lens, nlen) || huff_build(dc, lens + nlen, ndist) || inf_codes(s, lc, dc);
+}
+/* zlib stream -> malloc'ed bytes (*len), checked against its Adler-32; NULL if corrupt. */
+static uint8_t *inflate_zlib(const uint8_t *in, size_t n, size_t *len) {
+  Inf s;
+  Huff lc, dc;
+  short lens[320];
+  int last = 0, type, i;
+  uint32_t a = 1, b = 0;
+  size_t k;
+  memset(&s, 0, sizeof s);
+  s.in = in; s.n = n;
+  if (n < 6 || (in[0] & 15) != 8 || (in[0] >> 4) > 7 || (in[1] & 32) || (in[0] * 256 + in[1]) % 31) return NULL;
+  s.pos = 2;
+  do {
+    last = inf_bits(&s, 1);
+    type = inf_bits(&s, 2);
+    if (s.err) break;
+    if (type == 0) {   /* stored */
+      unsigned sl;
+      s.bit = s.cnt = 0;
+      if (s.pos + 4 > n) { s.err = 1; break; }
+      sl = in[s.pos] | (unsigned)in[s.pos + 1] << 8;
+      if ((sl ^ 0xffff) != (in[s.pos + 2] | (unsigned)in[s.pos + 3] << 8)) { s.err = 1; break; }
+      s.pos += 4;
+      if (s.pos + sl > n) { s.err = 1; break; }
+      while (sl--) if (inf_put(&s, in[s.pos++])) { s.err = 1; break; }
+    } else if (type == 1) {   /* fixed codes */
+      for (i = 0; i < 288; i++) lens[i] = (short)(i < 144 ? 8 : i < 256 ? 9 : i < 280 ? 7 : 8);
+      for (i = 0; i < 30; i++) lens[288 + i] = 5;
+      if (huff_build(&lc, lens, 288) || huff_build(&dc, lens + 288, 30) || inf_codes(&s, &lc, &dc)) s.err = 1;
+    } else if (type != 2 || inf_dynamic(&s, &lc, &dc)) {
+      s.err = 1;
+    }
+  } while (!last && !s.err);
+  /* the Adler-32 follows the last block, byte aligned */
+  if (s.err || s.pos + 4 > n) { free(s.out); return NULL; }
+  for (k = 0; k < s.on; k++) { a = (a + s.out[k]) % 65521; b = (b + a) % 65521; }
+  if (((b << 16) | a) != u32(in, s.pos)) { free(s.out); return NULL; }
+  if (!s.out && !(s.out = malloc(1))) return NULL;
+  *len = s.on;
+  return s.out;
+}
+
+typedef struct {
+  const uint8_t *d;
+  nova_info *f;
+  int seen;
+  size_t app2[64], app2_len[64];   /* APP2 ICC_PROFILE payloads, in file order */
+  int napp2;
+  size_t iccp, iccp_len;           /* MDAT iCCP payload */
+} MetaScan;
 static int scan_meta(uint32_t t, size_t pos, size_t len, void *arg) {
   MetaScan *s = arg;
   const uint8_t *p;
@@ -1292,7 +1438,8 @@ static int scan_meta(uint32_t t, size_t pos, size_t len, void *arg) {
   p = s->d + pos;
   if (!s->seen && !memcmp(p, "eXIf", 4)) { s->f->orientation = tiff_orientation(p + 4, len - 4); s->seen = 1; }
   else if (!s->seen && !memcmp(p, "APP1", 4) && len >= 10 && !memcmp(p + 4, "Exif\0\0", 6)) { s->f->orientation = tiff_orientation(p + 10, len - 10); s->seen = 1; }
-  else if (!s->icc && !memcmp(p, "APP2", 4) && len >= 18 && !memcmp(p + 4, "ICC_PROFILE", 12)) { s->icc = p + 18; s->icc_len = len - 18; }
+  else if (s->napp2 < 64 && !memcmp(p, "APP2", 4) && len >= 18 && !memcmp(p + 4, "ICC_PROFILE", 12)) { s->app2[s->napp2] = pos + 18; s->app2_len[s->napp2++] = len - 18; }
+  else if (!s->iccp_len && !memcmp(p, "iCCP", 4)) { s->iccp = pos + 4; s->iccp_len = len - 4; }
   return 0;
 }
 
@@ -1303,14 +1450,28 @@ int nova_read_info(const uint8_t *d, size_t n, nova_info *info) {
   return walk(d, n, info, scan_meta, &s);
 }
 
-const uint8_t *nova_icc(const uint8_t *d, size_t n, size_t *len) {
+uint8_t *nova_icc(const uint8_t *d, size_t n, size_t *len) {
   nova_info f;
   MetaScan s;
+  size_t total = 0, k, o = 0, dummy;
+  uint8_t *out;
+  int i;
   memset(&s, 0, sizeof s);
   s.d = d; s.f = &f;
+  if (!len) len = &dummy;
   if (walk(d, n, &f, scan_meta, &s)) return NULL;
-  if (len) *len = s.icc_len;
-  return s.icc;
+  if (s.napp2) {   /* JPEG splits profiles over 64 KB into several segments, in order */
+    for (i = 0; i < s.napp2; i++) total += s.app2_len[i];
+    if (!(out = malloc(total ? total : 1))) return NULL;
+    for (i = 0; i < s.napp2; o += s.app2_len[i], i++) memcpy(out + o, d + s.app2[i], s.app2_len[i]);
+    *len = total;
+    return out;
+  }
+  /* iCCP: profile name (1-79 bytes), 0, compression method 0, zlib stream */
+  if (!s.iccp_len) return NULL;
+  for (k = 0; k < s.iccp_len && k < 80 && d[s.iccp + k]; k++) {}
+  if (k == 0 || k >= 80 || k + 2 > s.iccp_len || d[s.iccp + k + 1]) return NULL;
+  return inflate_zlib(d + s.iccp + k + 2, s.iccp_len - k - 2, len);
 }
 
 typedef struct {

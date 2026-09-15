@@ -1,11 +1,12 @@
 // Qt 6 image format plugin for NOVA (.nova), on libnovadec. Stills and animations (QMovie,
-// Gwenview), EXIF orientation (QImageReader autoTransform), ICC profile of JPEG/HEIC sources.
+// Gwenview), EXIF orientation (QImageReader autoTransform), ICC profile (JPEG, HEIC and PNG sources).
 // Read only. RAW files show their embedded 512 px preview.
 #include <QColorSpace>
 #include <QImage>
 #include <QImageIOHandler>
 #include <QImageIOPlugin>
 #include <QVariant>
+#include <cstdlib>
 #include <vector>
 #include "novadec.h"
 
@@ -86,8 +87,10 @@ private:
     const size_t fs = size_t(info.width) * info.height * 4;
     QColorSpace cs;
     size_t n = 0;
-    if (const uint8_t *icc = nova_icc(d, size_t(data.size()), &n))
+    if (uint8_t *icc = nova_icc(d, size_t(data.size()), &n)) {
       cs = QColorSpace::fromIccProfile(QByteArray(reinterpret_cast<const char *>(icc), qsizetype(n)));
+      free(icc);
+    }
     const auto fmt = info.planes == 4 ? QImage::Format_RGBA8888 : QImage::Format_RGBX8888;
     for (int i = 0; i < info.frames; i++) {
       QImage im(px + fs * i, info.width, info.height, info.width * 4, fmt);
