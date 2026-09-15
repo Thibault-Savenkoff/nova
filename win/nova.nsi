@@ -11,6 +11,8 @@ OutFile "..\dist\nova-setup.exe"
 InstallDir "$PROGRAMFILES64\NOVA"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
+Icon "nova.ico"
+UninstallIcon "nova.ico"
 
 !define ENV "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
 !define UNINST "Software\Microsoft\Windows\CurrentVersion\Uninstall\NOVA"
@@ -68,6 +70,7 @@ Section
   WriteRegStr HKLM "${UNINST}" "DisplayVersion" "2.0"
   WriteRegStr HKLM "${UNINST}" "Publisher" "Thibault Savenkoff"
   WriteRegStr HKLM "${UNINST}" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKLM "${UNINST}" "DisplayIcon" "$INSTDIR\nova.exe,0"
   WriteRegStr HKLM "${UNINST}" "UninstallString" '"$INSTDIR\uninstall.exe"'
   WriteRegDWORD HKLM "${UNINST}" "NoModify" 1
   WriteRegDWORD HKLM "${UNINST}" "NoRepair" 1

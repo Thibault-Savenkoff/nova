@@ -22,6 +22,7 @@ static const wchar_t *BGRA = L"{6FDDC324-4E03-4BFE-B185-3D77768DC90F}";  // GUID
 static const wchar_t *DECODERS = L"{7ED96837-96F0-4812-B211-F13C24117ED3}"; // CATID_WICBitmapDecoders
 static const wchar_t *THUMBS = L"{E357FCCD-A995-4576-B01F-234630154E96}";   // IThumbnailProvider
 static const wchar_t *PHOTO_THUMBS = L"{C7657C4A-9F68-40FA-A4DF-96BC08EB3551}"; // Windows photo thumbnail provider
+static const wchar_t *PHOTOS = L"AppX43hnxtbyyps62jhe9sqpdzxn1790zetc";  // Microsoft Photos, image files
 static const uint8_t SIG[9] = {0x89, 'N', 'O', 'V', 'A', 0x0D, 0x0A, 0x1A, 0x0A};
 
 static HMODULE g_module;
@@ -320,6 +321,8 @@ STDAPI DllRegisterServer() {
   ok = ok && str(cat, L"CLSID", DECODER) && str(cat, L"FriendlyName", L"NOVA Decoder");
   wsprintfW(sub, L".nova\\ShellEx\\%s", THUMBS);
   ok = ok && str(L".nova", L"Content Type", L"image/x-nova") && str(L".nova", L"PerceivedType", L"image") && str(sub, nullptr, PHOTO_THUMBS);
+  // Photos in "Open with": its image ProgId (the one .jpg lists)
+  ok = ok && str(L".nova\\OpenWithProgids", PHOTOS, L"");
   // Explorer lists .nova as a picture (search, "Kind" column, photo views)
   const wchar_t *kind = L"picture";
   set(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\KindMap", L".nova", REG_SZ, kind,
@@ -342,6 +345,7 @@ STDAPI DllUnregisterServer() {
   RegDeleteTreeW(HKEY_CLASSES_ROOT, k);
   wsprintfW(k, L".nova\\ShellEx\\%s", THUMBS);
   RegDeleteTreeW(HKEY_CLASSES_ROOT, k);
+  RegDeleteTreeW(HKEY_CLASSES_ROOT, L".nova\\OpenWithProgids");
   HKEY m;
   if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\KindMap", 0, KEY_WRITE, &m) == ERROR_SUCCESS) {
     RegDeleteValueW(m, L".nova");

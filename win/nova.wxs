@@ -10,6 +10,8 @@
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
              Description="NOVA: nova.exe and the Windows Imaging Component codec"/>
     <Media Id="1" Cabinet="nova.cab" EmbedCab="yes"/>
+    <Icon Id="nova.ico" SourceFile="win/nova.ico"/>
+    <Property Id="ARPPRODUCTICON" Value="nova.ico"/>
 
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFiles64Folder">
@@ -61,6 +63,10 @@
             <RegistryKey Root="HKCR" Key=".nova">
               <RegistryValue Name="Content Type" Type="string" Value="image/x-nova"/>
               <RegistryValue Name="PerceivedType" Type="string" Value="image"/>
+            </RegistryKey>
+            <!-- Photos in "Open with": its image ProgId (the one .jpg lists) -->
+            <RegistryKey Root="HKCR" Key=".nova\OpenWithProgids">
+              <RegistryValue Name="AppX43hnxtbyyps62jhe9sqpdzxn1790zetc" Type="string" Value=""/>
             </RegistryKey>
             <RegistryKey Root="HKCR" Key=".nova\ShellEx\{E357FCCD-A995-4576-B01F-234630154E96}">
               <RegistryValue Type="string" Value="{C7657C4A-9F68-40FA-A4DF-96BC08EB3551}"/>

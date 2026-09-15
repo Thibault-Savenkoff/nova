@@ -32,3 +32,4 @@ win/sys/
 win/dlfcn.h
 dist/
 plugins/wic/nova_wic.dll
+win/nova_rc.o
