@@ -9,6 +9,7 @@ _nova() {
     'preview:512 px thumbnail of a .nova'
     'info:chunks, size, level, frames of a .nova'
     'bench:lossless size of images, without writing'
+    'version:print the version'
   )
   if (( CURRENT == 2 )); then
     _describe command cmds

@@ -10,8 +10,12 @@ Header
 
 Public
 
+  // Program version (install.sh, build.sh and the update check compare it with the release tags "v" + version).
+  - version:String := "2.0.0-beta"
+
   - usage <-
   (
+    ("NOVA " + version + "\n").print
     "Usage:\n".print
     // ponytail: lines <= 72 columns, so a small terminal does not wrap them
     "  nova encode <src...> [dst.nova] [options]\n".print
@@ -50,6 +54,7 @@ Public
     "  nova preview <src.nova> <dst.png>  thumbnail only (512 px), instant\n".print
     "  nova info    <src.nova>\n".print
     "  nova bench   <src.png|jpg...>\n".print
+    "  nova --version\n".print
   )
 
   - fail msg:String <-
@@ -1805,6 +1810,8 @@ Public
       read_nova (Command_args.at 2) decode_to (Command_args.at 3)
     }.elseif {(cmd != NULL) && {cmd == "info"} && {n = 3}} then {
       read_nova (Command_args.at 2) decode_to NULL
+    }.elseif {(cmd != NULL) && {(cmd == "--version") || {cmd == "version"}} && {n = 2}} then {
+      ("nova " + version + "\n").print
     }.elseif {(cmd != NULL) && {cmd == "bench"} && {n >= 3}} then {
       2.to (n - 1) do { i:Int
         load_sources (i, i)
