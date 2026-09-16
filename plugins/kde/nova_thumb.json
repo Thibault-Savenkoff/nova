@@ -1,10 +1,12 @@
 {
     "CacheThumbnail": true,
     "KPlugin": {
-        "Description": "NOVA images",
+        "Description": "Thumbnails of NOVA images",
+        "Description[fr]": "Miniatures des images « NOVA »",
         "MimeTypes": [
             "image/x-nova"
         ],
-        "Name": "NOVA Image Files"
+        "Name": "NOVA Images",
+        "Name[fr]": "Images « NOVA »"
     }
 }
