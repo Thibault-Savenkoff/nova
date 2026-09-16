@@ -25,6 +25,8 @@ docs/.build/
 # libnovadec test tool (test/libnova.sh)
 libnova/novadec
 plugins/qt/build/
+build-qt/
+build-kde/
 plugins/gdk-pixbuf/*.so
 plugins/glycin/target/
 nova.exe

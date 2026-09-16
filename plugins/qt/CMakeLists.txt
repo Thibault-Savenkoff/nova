@@ -10,4 +10,5 @@ add_library(qnova MODULE nova_qt.cpp ../../libnova/novadec.c)
 target_include_directories(qnova PRIVATE ../../libnova)
 target_link_libraries(qnova PRIVATE Qt6::Core Qt6::Gui Threads::Threads)
 set_target_properties(qnova PROPERTIES C_STANDARD 99 CXX_STANDARD 17)
-install(TARGETS qnova LIBRARY DESTINATION ${QT6_INSTALL_PLUGINS}/imageformats)
+# Absolute Qt plugin directory: with the default prefix the file would land in /usr/local, which Qt does not scan.
+install(TARGETS qnova LIBRARY DESTINATION ${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/imageformats)

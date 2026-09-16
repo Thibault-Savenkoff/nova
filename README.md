@@ -87,7 +87,8 @@ cp plugins/mime/nova.xml ~/.local/share/mime/packages/ && update-mime-database ~
 
 | Viewers | Plugin | Install |
 | --- | --- | --- |
-| KDE: Gwenview, Okular, Dolphin thumbnails, any Qt 6 app | `plugins/qt` | `cmake -S plugins/qt -B build-qt && cmake --build build-qt && sudo cmake --install build-qt` |
+| KDE: Gwenview, Okular, Krita, any Qt 6 app | `plugins/qt` | `cmake -S plugins/qt -B build-qt && cmake --build build-qt && sudo cmake --install build-qt` |
+| KDE: Dolphin thumbnails (KDE's image thumbnailer has a fixed list of types, so `.nova` needs its own) | `plugins/kde` | `plugins/qt` installed, then `cmake -S plugins/kde -B build-kde && cmake --build build-kde && sudo cmake --install build-kde` (needs `kf6-kio-devel`) |
 | GNOME: Loupe, Nautilus thumbnails (glycin) | `plugins/glycin` | `cargo build --release --manifest-path plugins/glycin/Cargo.toml`, then the two lines below |
 | GTK apps using gdk-pixbuf: Eye of GNOME, GIMP, older apps | `plugins/gdk-pixbuf` | `make -C plugins/gdk-pixbuf && sudo make -C plugins/gdk-pixbuf install` |
 | Windows: Explorer thumbnails, Photos, Paint, XnView MP (WIC) | `plugins/wic` | `dist/nova-setup.exe` from `win/dist.sh` (MinGW, NSIS), or `regsvr32 nova_wic.dll` as administrator |
