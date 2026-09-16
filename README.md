@@ -71,7 +71,8 @@ nova preview photo.nova thumb.png            # the embedded 512 px thumbnail, in
 nova info photo.nova                         # the chunks of the file
 ```
 
-EXIF (GPS included), XMP and the colour profile of the source are kept. Run `nova` with no arguments for every option.
+EXIF (GPS included), XMP and the colour profile of the source are kept. Run `nova` with no arguments for every
+option, and read [GUIDE.md](GUIDE.md) for what the modes, levels and quality settings actually do.
 
 NOVA stores 8 bits per channel. 10-bit HEIC images (iPhone screenshots) are rounded to 8 bits: at most 2 steps out of 1024 change, less than half an 8-bit level, which is invisible and keeps the files small.
 
@@ -134,6 +135,7 @@ What a codec cannot reach:
 
 | | |
 | --- | --- |
+| **Modes** | `adaptive` (the default) measures each image and codes it exactly or with the wavelet, `lossless` never changes a pixel, `lossy` always trades some. [GUIDE.md](GUIDE.md) has the rules. |
 | **Lossless codec** | Context mixing, as in paq and GraLIC: several models predict each bit and a logistic mixer blends them. Levels 0–4 trade time for size, from palette coding to blended predictors. |
 | **Lossy codec** | A wavelet codec (level 5), picked automatically for photos in adaptive mode. Quality 90 is about 45 dB: it looks identical to the source. |
 | **RAW** | Level 6 codes the camera's sensor frame exactly and keeps what LibRaw needs to develop it, so a `.nova` goes back to DNG or develops with the camera's look. |
