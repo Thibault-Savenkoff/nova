@@ -435,6 +435,9 @@ Public
   // Milliseconds since some fixed point (for the timings the CLI prints).
   - ms:Int <- `np_ms()`:Int
 
+  // A terminal on standard input: the command may ask the user a question.
+  - interactive:Boolean <- `isatty(0)`:Int = 1
+
   - start:Int <-
   // Before a job: waits for a free slot, then forks. Returns 0 in the child (which runs the job
   // then calls finish), > 0 in the parent, < 0 if fork failed (the parent runs the job itself).

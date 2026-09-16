@@ -14,8 +14,9 @@ Public
   (
     "Usage:\n".print
     // ponytail: lines <= 72 columns, so a small terminal does not wrap them
-    "  nova encode <src...> <dst.nova> [options]\n".print
+    "  nova encode <src...> [dst.nova] [options]\n".print
     "    sources: PNG, JPEG, HEIC/HEIF/AVIF (libheif), camera RAW (LibRaw)\n".print
+    "    without dst: the first source with .nova, next to it\n".print
     "    several sources = animation\n".print
     "    -m adaptive|lossless|lossy  default adaptive: lossless for\n".print
     "                                graphics, wavelet q 90 for photos\n".print
@@ -1553,9 +1554,17 @@ Public
     opt_q := 90
     i := 2
     {(i < n) && {((Command_args.at i).first) != '-'}}.while_do { i := i + 1 }
-    last_src := i - 2
-    (last_src < 2).if { fail "encode needs at least one source and a destination" }
-    dst_name := Command_args.at (i - 1)
+    // The last name is the destination when it ends in .nova or is no readable source;
+    // with no destination at all, it is made from the first source.
+    ((i > 2) && {((Command_args.at (i - 1)).has_suffix ".nova") || {! (File_utils.file_exists (Command_args.at (i - 1)))}}).if {
+      last_src := i - 2
+      dst_name := Command_args.at (i - 1)
+    } else {
+      last_src := i - 1
+      dst_name := default_dst (Command_args.at 2)
+    }
+    (last_src < 2).if { fail "encode needs at least one source" }
+    dst_name := keep_or_rename dst_name
     {i < n}.while_do {
       a := Command_args.at i
       (i + 1 >= n).if { fail ("missing value after " + a) }
@@ -1586,6 +1595,57 @@ Public
   )
 
   - t0:Int
+
+  // "photo.jpg" -> "photo.nova", next to the source: the destination of an encode without one.
+  - default_dst src:String :String <-
+  ( + i:Int
+    + result:String
+    i := src.upper
+    {(i >= 0) && {(src.at i) != '.'} && {(src.at i) != '/'}}.while_do { i := i - 1 }
+    ((i >= 0) && {(src.at i) = '.'}).if {
+      result := (src.substring 0 to (i - 1)) + ".nova"
+    } else {
+      result := src + ".nova"
+    }
+    result
+  )
+
+  // "photo.nova" taken -> the first free "photo-1.nova", "photo-2.nova"...
+  - free_name name:String :String <-
+  ( + base,result:String
+    + i:Int
+    base := name.substring 0 to (name.upper - 5)
+    i := 1
+    result := base + "-1.nova"
+    {File_utils.file_exists result}.while_do {
+      i := i + 1
+      result := base + "-" + i.to_string + ".nova"
+    }
+    result
+  )
+
+  // Destination that already exists: ask on a terminal, overwrite in a script (as before).
+  - keep_or_rename name:String :String <-
+  ( + result,answer:String
+    + c:Char
+    result := name
+    ((File_utils.file_exists name) && {Nova_par.interactive}).if {
+      ((short_name name) + " exists. [r] replace, [n] new name, [c] cancel: ").print
+      Stdin.read_line
+      answer := Stdin.last_string.to_string
+      c := 'c'
+      (answer.count > 0).if { c := (answer.at 0).to_lower }
+      (c = 'r').if {
+      }.elseif {c = 'n'} then {
+        result := free_name name
+        ("Writing " + (short_name result) + "\n").print
+      } else {
+        "Cancelled.\n".print
+        System.exit 0
+      }
+    }
+    result
+  )
 
   // "/a/b/IMG_1398.CR3" -> "IMG_1398.CR3"
   - short_name name:String :String <-
@@ -1692,7 +1752,7 @@ Public
     make_crc_table
     n := Command_args.count
     (n >= 2).if { cmd := Command_args.at 1 }
-    ((cmd != NULL) && {cmd == "encode"} && {n >= 4}).if {
+    ((cmd != NULL) && {cmd == "encode"} && {n >= 3}).if {
       parse_encode_args n
       ((last_src = 2) && {File_utils.file_exists (Command_args.at 2)} && {is_raw (Command_args.at 2)}).if {
         ((opt_m = 2) || {opt_l != 0}).if { fail "RAW sources are always lossless, level 6 (no -m lossy, no -l)" }

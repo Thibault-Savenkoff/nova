@@ -1,0 +1,42 @@
+#compdef nova
+# zsh completion for nova. Install: copy into a directory of $fpath (see README.md).
+
+_nova() {
+  local -a cmds
+  cmds=(
+    'encode:PNG, JPEG, HEIC, AVIF or RAW to .nova'
+    'decode:.nova to PNG, TIFF, JPEG, WebP, AVIF, HEIC, PAM'
+    'preview:512 px thumbnail of a .nova'
+    'info:chunks, size, level, frames of a .nova'
+    'bench:lossless size of images, without writing'
+  )
+  if (( CURRENT == 2 )); then
+    _describe command cmds
+    return
+  fi
+  case $words[2] in
+    encode)
+      _arguments \
+        '-m[mode]:mode:(adaptive lossless lossy)' \
+        '-l[codec level]:level:(0 1 2 3 4 5)' \
+        '-q[wavelet quality 0-100]:quality' \
+        '-e[max error per sample 1-64]:eps' \
+        '-d[frame delay in ms]:ms' \
+        '-live[Live Photo video]:video:_files -g "*.(mov|MOV)"' \
+        '*:image:_files -g "*.(png|PNG|jpg|JPG|jpeg|JPEG|heic|HEIC|heif|HEIF|avif|AVIF|nova|cr2|CR2|cr3|CR3|nef|NEF|arw|ARW|dng|DNG|raf|RAF|orf|ORF|rw2|RW2)(-.)"' ;;
+    decode)
+      _arguments \
+        '-q[output quality 1-100]:quality' \
+        '-m[WebP, AVIF, HEIC]:mode:(lossy lossless)' \
+        '-fast[WebP about 4x faster]' \
+        '-hdr[HDR rendition]' \
+        '-look[RAW look]:look:(canon darktable)' \
+        '*:file:_files' ;;
+    preview|info)
+      _arguments '*:nova file:_files -g "*.nova(-.)"' ;;
+    bench)
+      _arguments '*:image:_files -g "*.(png|PNG|jpg|JPG|jpeg|JPEG)(-.)"' ;;
+  esac
+}
+
+_nova "$@"

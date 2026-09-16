@@ -84,6 +84,17 @@ NOVA stores 8 bits per channel. 10-bit HEIC images (iPhone screenshots) are roun
 install -m755 nova ~/.local/bin/           # or: sudo install -m755 nova /usr/local/bin/
 ```
 
+Tab completion of commands, options and file names, for zsh:
+
+```sh
+mkdir -p ~/.local/share/zsh/site-functions
+cp completions/_nova ~/.local/share/zsh/site-functions/
+# in ~/.zshrc, before compinit (or before sourcing oh-my-zsh):
+fpath=(~/.local/share/zsh/site-functions $fpath)
+```
+
+Then open a new shell (`exec zsh`; if the completion does not show, `rm ~/.zcompdump*` first).
+
 There is no package yet. Note that OpenStack's `python3-novaclient` also provides a `nova` command: if you
 have it, whichever comes first in `PATH` wins.
 

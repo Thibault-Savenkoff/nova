@@ -79,8 +79,12 @@ In adaptive mode, without `-l` or `-q`, the encoder makes five decisions. Each o
 ## Encoding
 
 ```sh
-nova encode <sources...> <out.nova> [options]
+nova encode <sources...> [out.nova] [options]
 ```
+
+Leave the destination out and it is derived from the first source, next to it: `photo.jpg` gives `photo.nova`.
+If that file already exists and you are on a terminal, the encoder asks: `[r]` replace, `[n]` a new name
+(`photo-1.nova`, `photo-2.nova`, …), `[c]` cancel. In a script, with no terminal, it replaces as before.
 
 Sources: PNG, JPEG, HEIC, HEIF, AVIF (needs libheif), camera RAW (needs LibRaw). Several sources make an
 animation. Options: `-m`, `-l`, `-q`, `-e`, `-d ms` (frame delay), `-live file.mov`.

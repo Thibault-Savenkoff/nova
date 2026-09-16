@@ -8,6 +8,14 @@ trap 'rm -rf "$T"' EXIT
 PY="uv run -q --with pillow python test/oracle.py"
 [ -x test/img_probe ] || (cd test && lisaac img_probe.li > /dev/null)
 fail=0
+# Destination left out: derived from the source, next to it (no terminal here, so no question).
+cp test/corpus/* "$T/" 2>/dev/null || true
+d=$(ls "$T" | head -1)
+./nova encode "$T/$d" > /dev/null
+[ -f "$T/${d%.*}.nova" ] || { echo "DERIVED DESTINATION FAILED: $T/${d%.*}.nova"; fail=1; }
+# A last name that is not a readable file stays the destination, .nova or not.
+./nova encode "$T/$d" "$T/out.img" > /dev/null
+[ -f "$T/out.img" ] || { echo "EXPLICIT DESTINATION FAILED"; fail=1; }
 printf "%-28s %9s %9s %9s %8s %8s\n" image nova png_opt webp_ll nova/png nova/webp
 [ $# -eq 0 ] && set -- test/corpus/*
 for f in "$@"; do
