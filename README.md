@@ -64,7 +64,8 @@ nova encode frame*.png anim.nova -d 40       # several sources make an animation
 nova encode IMG_1401.CR3 IMG_1401.nova       # camera RAW, sensor frame kept exactly
 
 nova decode photo.nova photo.jpg -q 90       # also .png .tif .webp .avif .heic (-fast: quicker WebP)
-nova decode photo.nova photo.avif -hdr       # HDR (PQ, 10 bits) from the iPhone's gain map
+nova decode photo.nova photo.avif            # iPhone photo: SDR image + HDR gain map, shows right everywhere
+nova decode photo.nova photo.avif -hdr       # HDR (PQ, 10 bits): for editors and HDR players
 nova decode photo.nova photo.tif -hdr        # HDR as 16-bit float TIFF (linear), for editors
 nova decode IMG_1401.nova IMG_1401.dng       # RAW back to DNG, or developed to .png .tif .jpg
 nova preview photo.nova thumb.png            # the embedded 512 px thumbnail, instantly
@@ -150,7 +151,7 @@ What a codec cannot reach:
 | **Lossless codec** | Context mixing, as in paq and GraLIC: several models predict each bit and a logistic mixer blends them. Levels 0–4 trade time for size, from palette coding to blended predictors. |
 | **Lossy codec** | A wavelet codec (level 5), picked automatically for photos in adaptive mode. Quality 90 is about 45 dB: it looks identical to the source. |
 | **RAW** | Level 6 codes the camera's sensor frame exactly and keeps what LibRaw needs to develop it, so a `.nova` goes back to DNG or develops with the camera's look. |
-| **HDR** | iPhone photos carry an HDR gain map (ISO 21496-1). NOVA keeps it (1–3 % of the file), writes it back as an Ultra HDR JPEG, or applies it for PQ PNG, AVIF and HEIC (`-hdr`). The web page shows it on HDR screens. |
+| **HDR** | iPhone photos carry an HDR gain map (ISO 21496-1). NOVA keeps it (1–3 % of the file), writes it back in an Ultra HDR JPEG or an AVIF, or applies it for PQ PNG, AVIF and HEIC (`-hdr`, with the light levels players tone map by). The web page shows it on HDR screens. |
 | **Animation** | Frames after the first store only the rectangle that changed. |
 | **Speed** | Images are coded in independent stripes and decoded on every core, in the program and in the browser. |
 | **Container** | PNG-like chunks: `IHDR` header, `PREV` thumbnail first so viewers show something at once, `FDAT`/`FDLT` frames, `GMAP` HDR gain map, `MDAT` metadata, `LIVE` Live Photo video. Unknown chunks are skipped. |
@@ -164,7 +165,7 @@ lisaac nova.li -boost      # writes ./nova (and nova.c)
 ```
 
 HEIC/AVIF, WebP and RAW support load their libraries at run time, so `nova` builds without them and uses them when they are installed:
-[libheif](https://github.com/strukturag/libheif), [libwebp](https://chromium.googlesource.com/webm/libwebp) and [LibRaw](https://www.libraw.org) 0.22.
+[libheif](https://github.com/strukturag/libheif), [libavif](https://github.com/AOMediaCodec/libavif) 1.2+ (AVIF with a gain map; without it, the AVIF has no HDR), [libwebp](https://chromium.googlesource.com/webm/libwebp) and [LibRaw](https://www.libraw.org) 0.22.
 
 Windows: `win/build.sh` cross-compiles `nova.c` to `nova.exe` with MinGW-w64 (same output as on Linux; 4 cores by default, `NOVA_THREADS=n` for more).
 `win/dist.sh` packs it with the WIC codec and the zlib and libwebp DLLs into `dist/nova-setup.exe` (NSIS installer: `nova` on the PATH, codec registered, uninstaller in Settings > Apps), the same as `dist/nova-setup.msi` (for deployment tools), and `dist/nova-windows.zip`.
@@ -182,7 +183,7 @@ test/libnova.sh        # the C decoder of the plugins against the program
 test/js.sh             # the JavaScript decoder against the program
 test/replicas.sh       # the multi-core WebAssembly build against the program
 test/raw.sh            # RAW: sensor frame, DNG and developed images against LibRaw
-test/hdr.sh            # HDR: gain map in JavaScript = program, Ultra HDR JPEG read back by libuhdr
+test/hdr.sh            # HDR: gain map in JavaScript = program, Ultra HDR JPEG read back by libuhdr, AVIF gain map, clli
 test/unit.sh           # unit tests of the Lisaac modules, then corrupt files through `nova decode`
 test/libnova_unit.sh   # unit tests and fuzzing of libnovadec, the decoder inside the plugins
 ```

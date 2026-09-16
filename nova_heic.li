@@ -9,14 +9,18 @@ Header
   // ponytail: depth maps and other auxiliary images are not kept; burst/sequence files give their
   // primary image only; a 10-bit primary is read as 8 bits (iPhone HEIC screenshots: at most 2 of
   // 1024 steps off, invisible; keeping 10 bits would need 16-bit planes in the codec and cost size).
-  // Export (nova decode x.nova y.avif|heic): libheif's default encoder (AVIF: aom, HEIC: x265), 8-bit
+  // Export (nova decode x.nova y.avif|heic; a lossy AVIF with an HDR gain map goes through libavif,
+  // na_export below): libheif's default encoder (AVIF: aom, HEIC: x265), 8-bit
   // RGB(A); lossless = identity matrix (nclx 0) and 4:4:4, so RGB comes back exactly. EXIF, XMP, ICC.
   // ponytail: the EXIF orientation is not turned into irot/imir (NOVA pixels from HEIC or RAW are
   // already upright; a rotated JPEG source exported to HEIF shows unrotated).
   - include := `
 #include <dlfcn.h>
+#include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 `;
   - external := `
 struct nh_err { int code; int subcode; const char *message; };
@@ -295,6 +299,11 @@ static struct nh_err (*nh_encode)(void *, const void *, void *, const void *, vo
 static struct nh_err (*nh_add_exif)(void *, const void *, const void *, int);
 static struct nh_err (*nh_add_xmp)(void *, const void *, const void *, int);
 static struct nh_err (*nh_write_file)(void *, const char *);
+/* HDR light level boxes (clli, mdcv): optional, older libheif lacks them. Layouts from heif_color.h. */
+struct nh_clli { unsigned short max_cll, max_fall; };
+struct nh_mdcv { unsigned short px[3], py[3], wx, wy; unsigned int max_lum, min_lum; };
+static void (*nh_set_clli)(void *, const struct nh_clli *);
+static void (*nh_set_mdcv)(void *, const struct nh_mdcv *);
 
 static int nh_open_enc(void) {
   static int done;
@@ -315,6 +324,8 @@ static int nh_open_enc(void) {
   NE(nh_add_exif, "heif_context_add_exif_metadata") NE(nh_add_xmp, "heif_context_add_XMP_metadata")
   NE(nh_write_file, "heif_context_write_to_file")
 #undef NE
+  nh_set_clli = dlsym(nh_lib, "heif_image_set_content_light_level");
+  nh_set_mdcv = dlsym(nh_lib, "heif_image_set_mastering_display_colour_volume");
   done = 1;
   return 1;
 }
@@ -370,6 +381,41 @@ static int nh_export(const char *name, const unsigned char *rgba, int w, int h, 
     nh_set_nclx(img, nclx);
   }
   if (icn && !pq) nh_set_icc(img, "prof", icc, icn);
+  if (pq && nh_set_clli && nh_set_mdcv) {
+    /* Light levels of the PQ pixels, so players can tone map them to their screen: clli = brightest
+       sample and mean of each pixel's brightest channel (nits); mdcv = the image's own primaries.
+       ponytail: no real mastering display behind an iPhone photo, so its peak is MaxCLL. */
+    static const unsigned short p3[8] = {13250, 34500, 7500, 3000, 34000, 16000, 15635, 16450};
+    static const unsigned short bt709[8] = {15000, 30000, 7500, 3000, 32000, 16500, 15635, 16450};
+    const unsigned short *pr = prim == 12 ? p3 : bt709;   /* G, B, R x then y (HEVC order), white */
+    double lut[1024], sum = 0, peak = 0;
+    struct nh_clli cl;
+    struct nh_mdcv mv;
+    long i, n = (long)w * h;
+    for (i = 0; i < 1024; i++) {
+      double e = pow(i / 1023.0, 1 / 78.84375), v = e - 0.8359375;
+      lut[i] = 10000 * pow((v < 0 ? 0 : v) / (18.8515625 - 18.6875 * e), 1 / 0.1593017578125);
+    }
+    for (i = 0; i < n; i++) {
+      const unsigned char *s = pq + i * 6;
+      int c, m = 0;
+      for (c = 0; c < 3; c++) {
+        int v = (s[c * 2] << 8 | s[c * 2 + 1]) >> 6;
+        if (v > m) m = v;
+      }
+      sum += lut[m];
+      if (lut[m] > peak) peak = lut[m];
+    }
+    cl.max_cll = (unsigned short)(peak > 65535 ? 65535 : peak + 0.5);
+    cl.max_fall = (unsigned short)(n ? sum / n + 0.5 : 0);
+    for (i = 0; i < 3; i++) { mv.px[i] = pr[i * 2]; mv.py[i] = pr[i * 2 + 1]; }
+    mv.wx = pr[6];
+    mv.wy = pr[7];
+    mv.max_lum = (unsigned int)(cl.max_cll * 10000u);
+    mv.min_lum = 50;   /* 0.005 nits */
+    nh_set_clli(img, &cl);
+    nh_set_mdcv(img, &mv);
+  }
   /* The nclx box is only written when passed in the options (libheif's macOS workaround otherwise). */
   if (nclx && (opt = nh_opts_alloc()) && opt->version >= 4) { opt->nclx = nclx; opt->no_nclx = 0; opt->two_colr = 1; }
   e = nh_encode(ctx, img, enc, opt, &hdl);
@@ -389,6 +435,188 @@ end:
   if (img) nh_image_release(img);
   if (enc) nh_encoder_release(enc);
   if (ctx) nh_context_free(ctx);
+  return ok;
+}
+
+/* AVIF with an HDR gain map (ISO 21496-1 tmap, what libheif cannot write): libavif, loaded at run
+   time like libheif. The structures below mirror avif.h 1.2+ up to the fields used (checked with
+   offsetof against the real header of libavif 1.3.0); avifImageCreate / avifGainMapCreate /
+   avifEncoderCreate allocate them, so later fields may grow freely. */
+typedef struct { int n; unsigned d; } na_sfrac;
+typedef struct { unsigned n, d; } na_ufrac;
+typedef struct { unsigned char *data; size_t size; } na_rw;
+typedef struct {
+  unsigned width, height, depth;
+  int yuv_format, yuv_range, chroma_pos;
+  unsigned char *planes[3];
+  unsigned row_bytes[3];
+  int owns_planes;
+  unsigned char *alpha;
+  unsigned alpha_row;
+  int owns_alpha, alpha_premul;
+  na_rw icc;
+  unsigned short prim, trc, matrix;
+  unsigned short clli[2];
+  unsigned transform_flags;
+  unsigned pasp[2], clap[8];
+  unsigned char irot, imir;
+  na_rw exif, xmp;
+  void *properties;
+  size_t num_properties;
+  struct na_gain_map *gain_map;
+} na_image;
+struct na_gain_map {
+  na_image *image;
+  na_sfrac min[3], max[3];
+  na_ufrac gamma[3];
+  na_sfrac base_offset[3], alt_offset[3];
+  na_ufrac base_headroom, alt_headroom;
+  int use_base_colour_space;
+};
+typedef struct {
+  unsigned width, height, depth;
+  int format, upsampling, downsampling, avoid_libyuv, ignore_alpha, alpha_premul, is_float, max_threads;
+  unsigned char *pixels;
+  unsigned row_bytes;
+} na_rgb;
+typedef struct {
+  int codec_choice, max_threads, speed, keyframe_interval;
+  unsigned long long timescale;
+  int repetition_count;
+  unsigned extra_layer_count;
+  int quality, quality_alpha, min_q, max_q, min_q_alpha, max_q_alpha, tile_rows_log2, tile_cols_log2, auto_tiling;
+  int scaling[4];
+  size_t io_stats[2];
+  char diag[256];
+  void *data, *cs_options;
+  int header_format;
+  int quality_gain_map;
+} na_encoder;
+
+static void *na_lib;
+static na_image *(*na_image_create)(unsigned, unsigned, unsigned, int);
+static void (*na_image_destroy)(na_image *);
+static struct na_gain_map *(*na_gain_map_create)(void);
+static void (*na_rgb_defaults)(na_rgb *, const na_image *);
+static int (*na_rgb_to_yuv)(na_image *, const na_rgb *);
+static int (*na_set_icc)(na_image *, const unsigned char *, size_t);
+static int (*na_set_exif)(na_image *, const unsigned char *, size_t);
+static int (*na_set_xmp)(na_image *, const unsigned char *, size_t);
+static na_encoder *(*na_encoder_create)(void);
+static void (*na_encoder_destroy)(na_encoder *);
+static int (*na_encoder_write)(na_encoder *, const na_image *, na_rw *);
+static void (*na_rw_free)(na_rw *);
+static const char *(*na_result)(int);
+static char na_msg[320];
+
+static int na_open(void) {
+  static int done;
+  if (done) return done > 0;
+  done = -1;
+  na_lib = dlopen("libavif.so.16", RTLD_NOW | RTLD_LOCAL);
+  if (!na_lib) na_lib = dlopen("libavif.so", RTLD_NOW | RTLD_LOCAL);
+  if (!na_lib) na_lib = dlopen("libavif.16.dylib", RTLD_NOW | RTLD_LOCAL);
+  if (!na_lib) return 0;
+  /* avifEncoderGetGainMapSizeBytes: only in a libavif built with gain maps (1.2+) */
+  if (!dlsym(na_lib, "avifEncoderGetGainMapSizeBytes")) return 0;
+#define NA(v, s) if (!(*(void **)&v = dlsym(na_lib, s))) return 0;
+  NA(na_image_create, "avifImageCreate") NA(na_image_destroy, "avifImageDestroy")
+  NA(na_gain_map_create, "avifGainMapCreate") NA(na_rgb_defaults, "avifRGBImageSetDefaults")
+  NA(na_rgb_to_yuv, "avifImageRGBToYUV") NA(na_set_icc, "avifImageSetProfileICC")
+  NA(na_set_exif, "avifImageSetMetadataExif") NA(na_set_xmp, "avifImageSetMetadataXMP")
+  NA(na_encoder_create, "avifEncoderCreate") NA(na_encoder_destroy, "avifEncoderDestroy")
+  NA(na_encoder_write, "avifEncoderWrite") NA(na_rw_free, "avifRWDataFree") NA(na_result, "avifResultToString")
+#undef NA
+  done = 1;
+  return 1;
+}
+
+static unsigned na_u32(const unsigned char *p) { return (unsigned)p[0] << 24 | p[1] << 16 | p[2] << 8 | p[3]; }
+
+/* rgba (w x h, SDR, alpha ignored) + gain map rgba (gw x gh) + ISO 21496-1 metadata iso[0, isn) -> name,
+   AVIF 8 bits 4:2:0, primaries prim (sRGB transfer). 1 on success; 0 with na_msg, or -1 when libavif
+   (with gain maps) is missing, so the caller can fall back to a plain AVIF.
+   ponytail: first channel's metadata for the three (as Nova_hdr); 4:0:0 gain map when it is grey. */
+static int na_export(const char *name, const unsigned char *rgba, int w, int h, const unsigned char *gm, int gw, int gh,
+                     const unsigned char *iso, int isn, int prim, int q,
+                     const unsigned char *exif, long en, const unsigned char *icc, long icn, const unsigned char *xmp, long xn) {
+  na_image *img = 0;
+  na_encoder *enc = 0;
+  na_rw out = {0, 0};
+  na_rgb rgb;
+  struct na_gain_map *g;
+  long i, n = (long)gw * gh;
+  int r, c, grey = 1, ok = 0;
+  FILE *f;
+  if (!na_open()) return -1;
+  if (isn < 62) { snprintf(na_msg, sizeof na_msg, "gain map metadata too short"); return 0; }
+  img = na_image_create(w, h, 8, 3);
+  if (!img) goto oom;
+  img->prim = prim;
+  img->trc = 13;
+  img->matrix = 6;
+  na_rgb_defaults(&rgb, img);
+  rgb.format = 1;
+  rgb.ignore_alpha = 1;
+  rgb.pixels = (unsigned char *)rgba;
+  rgb.row_bytes = w * 4;
+  if ((r = na_rgb_to_yuv(img, &rgb))) goto fail;
+  for (i = 0; i < n && grey; i++) grey = gm[i * 4] == gm[i * 4 + 1] && gm[i * 4] == gm[i * 4 + 2];
+  if (!(g = img->gain_map = na_gain_map_create())) goto oom;
+  if (!(g->image = na_image_create(gw, gh, 8, grey ? 4 : 1))) goto oom;
+  na_rgb_defaults(&rgb, g->image);
+  rgb.format = 1;
+  rgb.ignore_alpha = 1;
+  rgb.pixels = (unsigned char *)gm;
+  rgb.row_bytes = gw * 4;
+  if ((r = na_rgb_to_yuv(g->image, &rgb))) goto fail;
+  g->base_headroom.n = na_u32(iso + 6);
+  g->base_headroom.d = na_u32(iso + 10);
+  g->alt_headroom.n = na_u32(iso + 14);
+  g->alt_headroom.d = na_u32(iso + 18);
+  for (c = 0; c < 3; c++) {
+    g->min[c].n = (int)na_u32(iso + 22);
+    g->min[c].d = na_u32(iso + 26);
+    g->max[c].n = (int)na_u32(iso + 30);
+    g->max[c].d = na_u32(iso + 34);
+    g->gamma[c].n = na_u32(iso + 38);
+    g->gamma[c].d = na_u32(iso + 42);
+    g->base_offset[c].n = (int)na_u32(iso + 46);
+    g->base_offset[c].d = na_u32(iso + 50);
+    g->alt_offset[c].n = (int)na_u32(iso + 54);
+    g->alt_offset[c].d = na_u32(iso + 58);
+  }
+  g->use_base_colour_space = (iso[5] & 0x40) != 0;
+  /* A Display P3 profile is said by the CICP above: left out, as libavif (and viewers built on it)
+     will not apply a gain map to an image with an ICC profile. */
+  if (icn && prim != 12 && (r = na_set_icc(img, icc, icn))) goto fail;
+  if (en && (r = na_set_exif(img, exif, en))) goto fail;
+  if (xn && (r = na_set_xmp(img, xmp, xn))) goto fail;
+  if (!(enc = na_encoder_create())) goto oom;
+  enc->quality = q;
+  enc->quality_gain_map = q;
+  enc->max_threads = (int)sysconf(_SC_NPROCESSORS_ONLN);
+  enc->speed = 6;          /* libheif's aom default; libavif's leaves aom at its slowest (30x longer) */
+  enc->auto_tiling = 1;    /* tiles: aom's threads work on a 24 Mpx photo */
+  if ((r = na_encoder_write(enc, img, &out))) goto fail;
+  f = fopen(name, "wb");
+  if (!f || fwrite(out.data, 1, out.size, f) != out.size) {
+    snprintf(na_msg, sizeof na_msg, "cannot write %s", name);
+    if (f) fclose(f);
+    goto end;
+  }
+  ok = fclose(f) == 0;
+  if (!ok) snprintf(na_msg, sizeof na_msg, "cannot write %s", name);
+  goto end;
+oom:
+  snprintf(na_msg, sizeof na_msg, "out of memory");
+  goto end;
+fail:
+  snprintf(na_msg, sizeof na_msg, "libavif: %s%s%s", na_result(r), enc && enc->diag[0] ? ": " : "", enc ? enc->diag : "");
+end:
+  na_rw_free(&out);
+  if (enc) na_encoder_destroy(enc);
+  if (img) na_image_destroy(img);
   return ok;
 }
 `;
@@ -437,6 +665,15 @@ Public
     `nh_export((char *)@pe, @pq, @w, @h, 3, @a, 0, @q, @e + @ep, @en, 0, 0, @x + @xp, @xn, @pq, @prim)`:Int != 0
   )
 
+  // AVIF with the HDR gain map gm (gw x gh, RGBA) and its ISO 21496-1 metadata iso[ip, ip + n): the
+  // SDR image shows everywhere, HDR screens apply the gain map. 1: written, 0: error (message),
+  // -1: no libavif with gain maps (write a plain AVIF instead).
+  - export_gain_map name:String px rgba:C_array Uint8 size (w,h:Int) gain (gm:C_array Uint8, gw,gh:Int) iso (m:C_array Uint8, mp,mn:Int) prim prim:Int q q:Int meta (e:C_array Uint8, ep,en:Int, c:C_array Uint8, cn:Int, x:C_array Uint8, xp,xn:Int) :Int <-
+  ( + pe:C_array Char
+    pe := name.to_external
+    `na_export((char *)@pe, @rgba, @w, @h, @gm, @gw, @gh, @m + @mp, @mn, @prim, @q, @e + @ep, @en, @c, @cn, @x + @xp, @xn)`:Int
+  )
+
   // HDR gain map of the last pixel load (gain_width 0: none): RGBA, and its ISO 21496-1 metadata.
   - gain_width:Int <- `nh_gm_w`:Int
 
@@ -451,6 +688,10 @@ Public
   - message:String <-
   ( + result:String_buffer
     result := String_buffer.create 64
-    result.from_external_copy (`nh_msg`:C_array Char)
+    (`na_msg[0]`:Int != 0).if {
+      result.from_external_copy (`na_msg`:C_array Char)
+    } else {
+      result.from_external_copy (`nh_msg`:C_array Char)
+    }
     result.to_string
   )

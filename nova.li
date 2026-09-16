@@ -38,7 +38,8 @@ Public
     "    -fast     WebP: about 4x faster, files 2-6 % larger\n".print
     "    -hdr      HDR rendition: PNG 16 bits, AVIF/HEIC 10 bits (PQ),\n".print
     "              TIFF 16-bit float (linear)\n".print
-    "    HDR gain map (iPhone HEIC): .jpg is written Ultra HDR\n".print
+    "    HDR gain map (iPhone HEIC): .jpg is written Ultra HDR, a lossy\n".print
+    "    .avif with the gain map (libavif)\n".print
     "    animation: dst_000.png, dst_001.png...\n".print
     "\n".print
     "  nova decode <raw.nova> <dst> [-look canon|darktable]\n".print
@@ -469,7 +470,7 @@ Public
   // Output format from the extension: .tif/.tiff, .jpg/.jpeg (quality opt_q), .webp, .avif/.heic/.heif,
   // .pam (RGBA, for the web viewer), else PNG.
   ( + ok,ll,av:Boolean
-    + q:Int
+    + q,gain:Int
     (((name.has_suffix ".tif") || {name.has_suffix ".tiff"}) && {opt_hdr} && {hdr_ok np}).if {
       write_tiff_hdr buf to name
     }.elseif {(name.has_suffix ".tif") || {name.has_suffix ".tiff"}} then {
@@ -516,7 +517,16 @@ Public
       q := opt_q
       (opt_q_set).if { }.elseif {av} then { q := 85 } else { q := 60 }
       ll := (opt_webp = 2) || {(opt_webp = 0) && {! Nova_codec.lossy_seen} && {raw_exif_n = 0}}
-      (raw_exif_n > 0).if {
+      gain := -1
+      (av && {! ll} && {hdr_ok np}).if {
+        // Lossy: SDR + HDR gain map (libavif), as the Ultra HDR JPEG; a plain AVIF when libavif cannot.
+        collect_meta
+        Nova_par.status ("Writing " + (short_name name) + " with its gain map...")
+        gain := Nova_heic.export_gain_map name px buf size (width, height) gain (gm, gm_w, gm_h) iso (data, gm_meta_pos, gm_meta_n) prim icc_primaries q q meta (data, exif_pos, exif_len, iccp, iccp_n, data, xmp_pos, xmp_len)
+        ok := gain = 1
+      }
+      (gain >= 0).if {
+      }.elseif {raw_exif_n > 0} then {
         ok := Nova_heic.export name pixels buf size (width, height) planes np avif av lossless ll quality q meta (raw_exif, 0, raw_exif_n, raw_exif, 0, raw_exif, 0, 0)
       } else {
         collect_meta

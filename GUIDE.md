@@ -132,12 +132,21 @@ An iPhone HEIC carries an HDR gain map (ISO 21496-1). NOVA keeps it, for 1–3 %
 
 ```sh
 nova decode photo.nova photo.jpg            # Ultra HDR JPEG (the gain map travels with it)
+nova decode photo.nova photo.avif           # AVIF with the gain map (needs libavif 1.2+)
 nova decode photo.nova photo.avif -hdr      # AVIF 10 bits, PQ
 nova decode photo.nova photo.png -hdr       # PNG 16 bits, PQ
 nova decode photo.nova photo.tif -hdr       # 16-bit float TIFF, linear, 1.0 = SDR white (for editors)
 ```
 
-Without `-hdr`, you get the SDR image, which is what most screens and programs expect.
+**To look at or share the photo, keep the gain map: `.jpg` or `.avif`, without `-hdr`.** They hold the SDR
+image, which every viewer shows as the iPhone does, and the gain map, which HDR screens apply. A lossless
+`.nova` (a screenshot) still gives a lossless AVIF, without the gain map; `.heic` has none either (libheif
+cannot write it).
+
+`-hdr` writes the HDR rendition itself, in absolute brightness (PQ, SDR white = 203 nits). It is for HDR
+editors and players: a viewer that does not tone map PQ to its screen, such as Gwenview on an SDR screen,
+shows it burnt, with cyan skies. The AVIF and HEIC carry the light levels (`clli`, `mdcv`) that players tone
+map by. Without `-hdr`, PNG, TIFF and HEIC get the SDR image only.
 
 ## Camera RAW
 
