@@ -2,6 +2,10 @@
 # Unit tests of the Lisaac modules (test/unit.li), with child processes and without
 # (NOVA_THREADS=1), then `nova decode` on corrupt copies of real files: it must end with an
 # error or a picture, never crash (signal) or hang. Run from the repo: test/unit.sh
+# Sanitizers: gcc -fsanitize=address -fsanitize=undefined -fsanitize-trap=all -fno-sanitize=alignment,shift-base
+# on nova.c and test/unit.c is clean. shift-base is left out on purpose (Lisaac shifts negative values,
+# which GCC defines), and encoding a JPEG traps in lib/draw/img/img_jpg.li of the Lisaac library:
+# lrot(x, 0) shifts a 32-bit value by 32, undefined in C but giving x on x86 and ARM alike. Not ours to fix.
 cd "$(dirname "$0")" || exit 1
 lisaac unit.li -add_path "$PWD/.." -boost > /dev/null 2>&1 || exit 1
 cd .. || exit 1

@@ -1,5 +1,6 @@
 /* Unit tests of libnovadec (libnova/novadec.c, included to reach its static functions).
-   Built and run by test/libnova_unit.sh. Arguments: pairs "file.nova expected.icc" ("-": no profile).
+   Built and run by test/libnova_unit.sh. Arguments: pairs "file.nova expected.icc", where the
+   profile is "-" for a file that has none and "?" when it is only exercised, not compared.
    - inflate_zlib against zlib: every block type (stored, fixed, dynamic), levels, strategies, sizes;
      corrupt and truncated streams must give NULL, never a crash;
    - nova_check, nova_read_info on bad input;
@@ -123,16 +124,49 @@ static void test_api(const char *nova) {
 
 static void test_icc(const char *nova, const char *expect) {
   size_t n, en = 0, len = 0;
-  uint8_t *d = load(nova, &n), *e = strcmp(expect, "-") ? load(expect, &en) : NULL, *icc;
+  int any = !strcmp(expect, "?");
+  uint8_t *d = load(nova, &n), *e = (strcmp(expect, "-") && !any) ? load(expect, &en) : NULL, *icc;
   CHECK(d != NULL, "cannot read %s", nova);
   if (!d) return;
   icc = nova_icc(d, n, &len);
   if (e) CHECK(icc && len == en && !memcmp(icc, e, en), "%s: icc %zu bytes, expected %zu", nova, icc ? len : 0, en);
-  else CHECK(!icc, "%s: icc found, none expected", nova);
+  else if (!any) CHECK(!icc, "%s: icc found, none expected", nova);
   printf("icc: %s %zu bytes\n", nova, icc ? len : 0);
   free(icc);
   free(d);
   free(e);
+}
+
+/* Corrupt files through the whole API: the plugins run inside a viewer, so a bad .nova must never
+   crash it. Built with sanitizers by test/libnova_unit.sh, which also runs it under valgrind. */
+static void fuzz(const char *nova, int tries) {
+  size_t n, len;
+  uint8_t *d = load(nova, &n), *b, *p;
+  nova_info info;
+  int t, w, h;
+  if (!d || n < 16) { free(d); return; }
+  for (t = 0; t < tries; t++) {
+    size_t m = n;
+    b = malloc(n);
+    memcpy(b, d, n);
+    switch (t % 4) {
+    case 0: { int k = 1 + rnd() % 4; while (k--) b[(rnd() << 8 | rnd()) % n] = rnd(); break; }
+    case 1: m = (size_t)((rnd() << 8 | rnd()) % n); break;               /* cut short */
+    case 2: b[((rnd() << 8 | rnd()) % (n < 200 ? n : 200))] ^= 1 << (rnd() % 8); break;   /* header */
+    default: { size_t q = (rnd() << 8 | rnd()) % n; while (q < n) b[q++] = rnd(); }       /* random tail */
+    }
+    memset(&info, 0, sizeof info);
+    nova_check(b, m);
+    nova_read_info(b, m, &info);
+    free(nova_decode(b, m, &info));
+    free(nova_decode_preview(b, m, &w, &h));
+    p = nova_icc(b, m, &len);
+    if (p && len == 0) CHECK(0, "%s: icc of %zu bytes returned", nova, len);
+    free(p);
+    free(b);
+  }
+  free(d);
+  printf("fuzz: %d corrupt copies of %s\n", tries, nova);
 }
 
 int main(int argc, char **argv) {
@@ -141,6 +175,7 @@ int main(int argc, char **argv) {
   for (i = 1; i + 1 < argc; i += 2) {
     test_api(argv[i]);
     test_icc(argv[i], argv[i + 1]);
+    fuzz(argv[i], 400);
   }
   printf(fails ? "%d FAIL\n" : "all OK\n", fails);
   return fails != 0;

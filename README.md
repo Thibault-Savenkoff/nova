@@ -91,7 +91,7 @@ cp plugins/mime/nova.xml ~/.local/share/mime/packages/ && update-mime-database ~
 | KDE: Dolphin thumbnails (KDE's image thumbnailer has a fixed list of types, so `.nova` needs its own) | `plugins/kde` | `plugins/qt` installed, then `cmake -S plugins/kde -B build-kde && cmake --build build-kde && sudo cmake --install build-kde` (needs `kf6-kio-devel`) |
 | GNOME: Loupe, Nautilus thumbnails (glycin) | `plugins/glycin` | `cargo build --release --manifest-path plugins/glycin/Cargo.toml`, then the two lines below |
 | GTK apps using gdk-pixbuf: Eye of GNOME, GIMP, older apps | `plugins/gdk-pixbuf` | `make -C plugins/gdk-pixbuf && sudo make -C plugins/gdk-pixbuf install` |
-| Windows: Explorer thumbnails, Photos, Paint, XnView MP (WIC) | `plugins/wic` | `dist/nova-setup.exe` from `win/dist.sh` (MinGW, NSIS), or `regsvr32 nova_wic.dll` as administrator |
+| Windows: Explorer thumbnails and preview, Paint, XnView MP (WIC) | `plugins/wic` | `dist/nova-setup.exe` from `win/dist.sh` (MinGW, NSIS), or `regsvr32 nova_wic.dll` as administrator |
 
 glycin loader, for your user:
 
@@ -101,7 +101,15 @@ printf '[loader:image/x-nova]\nExec=%s\n' "$PWD/plugins/glycin/target/release/gl
 ```
 
 Animations play in Qt and glycin (gdk-pixbuf shows the first frame). RAW files show their embedded thumbnail.
-Build needs: `qt6-qtbase-devel`, `gdk-pixbuf2-devel`, Rust 1.92 (Fedora package names).
+Build needs: `qt6-qtbase-devel`, `kf6-kio-devel`, `gdk-pixbuf2-devel`, Rust 1.92 (Fedora package names).
+
+What a codec cannot reach:
+
+- **Windows Photos** and the **iOS Photos** app take no third-party codec, whatever the format: `.nova` opens
+  in Windows Photo Viewer instead (set by the installer), which is sharp only at 100 % scaling and shows the
+  frames of an animation as pages rather than playing them. A NOVA viewer is the way out, and is not written yet.
+- **IrfanView** has no public plugin API; whether it reads WIC codecs is untested. XnView MP does.
+- KDE's own image thumbnailer carries a fixed list of MIME types, hence `plugins/kde`.
 
 ## What's inside
 
