@@ -1,4 +1,4 @@
-# NOVA guide
+# NOVA manual
 
 Everything the `nova` command does, and how to choose. The file format itself is in [FORMAT.md](FORMAT.md);
 installing and the viewer plugins are in [README.md](README.md).
