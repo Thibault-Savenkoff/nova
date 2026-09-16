@@ -21,8 +21,9 @@ Public
     "                                graphics, wavelet q 90 for photos\n".print
     "    -l 0-5    codec level (default: the encoder tries them);\n".print
     "              5 = lossy wavelet (photos)\n".print
-    "    -q 0-100  wavelet quality (default 90: ~45 dB, visually lossless)\n".print
-    "    -e eps    lossy max error per sample (default 2)\n".print
+    "    -q 0-100  wavelet quality (default 90, ~45 dB: visually lossless;\n".print
+    "              a JPEG source keeps its own quality, 50 + Q/2 up to 90)\n".print
+    "    -e 1-64   lossy max error per sample (default 2)\n".print
     "    -d ms     frame delay (animation)\n".print
     "    -live f.mov  adds the Live Photo video\n".print
     "    metadata (EXIF/GPS, XMP, ICC, text) of the first source are kept\n".print
@@ -33,7 +34,7 @@ Public
     "    -q 1-100  quality (default: JPEG/WebP 90, AVIF 85, HEIC 60: ~44 dB)\n".print
     "    -m lossy|lossless  WebP/AVIF/HEIC (default: lossless if the\n".print
     "                       .nova is)\n".print
-    "    -fast     WebP: about 4x faster, files ~5 % larger\n".print
+    "    -fast     WebP: about 4x faster, files 2-6 % larger\n".print
     "    -hdr      HDR rendition: PNG 16 bits, AVIF/HEIC 10 bits (PQ),\n".print
     "              TIFF 16-bit float (linear)\n".print
     "    HDR gain map (iPhone HEIC): .jpg is written Ultra HDR\n".print
