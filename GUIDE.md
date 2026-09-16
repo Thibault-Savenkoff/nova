@@ -6,7 +6,7 @@ installing and the viewer plugins are in [README.md](README.md).
 - [The three modes](#the-three-modes)
 - [Levels](#levels)
 - [Quality: -q and -e](#quality--q-and--e)
-- [What the encoder decides for you](#what-the-encoder-decides-for-you)
+- [How the encoder decides](#how-the-encoder-decides)
 - [Encoding](#encoding)
 - [Decoding](#decoding)
 - [Animations](#animations)
@@ -36,12 +36,12 @@ frame. Under 65 % the image is treated as a photo. Photos measure 0–45 %, text
 
 | Level | Codec | Speed | Notes |
 | --- | --- | --- | --- |
-| 0 | Palette + context mixing on the indices | Fastest | Only for an image of 256 colours or less, else it is refused |
-| 1 | Two direct models, one mixer | Fast | The baseline the others must beat |
-| 2 | Adds hashed contexts | | Good middle ground, and what alpha planes use |
-| 3 | Adds a second mixer | | |
-| 4 | Adds a third mixer, error-selected | Slowest | Tried automatically only from 16 Mpx, where each % is megabytes |
-| 5 | Wavelet, lossy (CDF 9/7) | Fast | Photos; takes `-q`, not `-e` |
+| 0 | Palette: the image as one plane of colour indices, then context mixing | Fastest | Only for an image of 256 colours or less, else it is refused |
+| 1 | MED prediction, 2 direct models, 1 mixer | Fast | The baseline the others must beat |
+| 2 | + 5 hashed models, a 2nd mixer, an APM | | Graphics, text, UI; also what alpha planes and lossless gain maps use |
+| 3 | + a blend of 5 predictors (NLMS) and cross-colour prediction | | Photos |
+| 4 | + a wide 24-tap NLMS as 6th predictor, a 3rd mixer | Slowest | Tried automatically only from 16 Mpx, where each % is megabytes |
+| 5 | Wavelet, lossy (YCoCg, CDF 9/7) | Fast | Photos; takes `-q`, not `-e`. Alpha stays exact |
 | 6 | Camera sensor frame | | Not selectable: RAW sources get it on their own |
 
 When you leave `-l` out, levels 1 to 3 are tried on the central 512 × 512 of the first frame (4 as well from
@@ -60,21 +60,114 @@ Two different knobs, one per codec:
 
 `-q 100` is not lossless: it is the finest wavelet step. For an exact file use `-m lossless`.
 
-## What the encoder decides for you
+## How the encoder decides
 
-In adaptive mode, without `-l` or `-q`, the encoder makes five decisions. Each one is measured, never guessed:
+Every choice below is made in this order, for every `nova encode`. None depends on the machine: the same
+source and options always give the same file, byte for byte, on 1 core or 16, on Linux or Windows.
 
-1. **Photo or graphics**, by the repeated-pixel share above.
-2. **Wavelet or exact**: a photo goes to level 5, unless coding it losslessly is within 10 % of the wavelet's
-   size — smooth synthetic images pass the photo test but code smaller exactly.
-3. **The level**, by trial on the central 512 × 512 (and the whole frame for the palette).
-4. **The quality of a JPEG source**: the JPEG's own quality is estimated from its quantisation table and
-   matched with `50 + Q/2`, capped at 90, so the file does not spend bits on the JPEG's artefacts.
-   A JPEG q 50 gives 75, a q 70 gives 85.
-5. **A second pass for grainy JPEGs**: if the result still takes over 85 % of the source JPEG, it is coded
-   again 5 quality steps lower per 21 % too much, down to 60.
+### 1. Reading the sources
 
-`-q`, `-l` or `-m lossless` each switch off the decisions they concern.
+- **Pixels** are loaded as 8-bit RGBA. A 10-bit HEIC (iPhone screenshots) is rounded to 8 bits: at most 2 of
+  1024 steps change, invisible, and 16-bit planes would cost size for nothing visible.
+- **Rotation:** a HEIC's rotation is applied to the pixels (libheif does it), so its EXIF orientation is reset
+  to 1. A JPEG's pixels stay as the camera wrote them, with its orientation tag, as every other format does.
+- **Alpha:** a 4th plane is stored only if at least one pixel of one frame is not fully opaque. An RGBA PNG
+  that is opaque everywhere is stored as RGB.
+- **Several sources** make an animation; they must all have the same size.
+- **A RAW source** (a CR3 by its header, or any file that is not PNG, JPEG or HEIF and that LibRaw opens:
+  NEF, ARW, DNG…) skips everything below: its sensor frame is stored exactly (level 6), with
+  what LibRaw needs to develop it. `-m lossy` and `-l` are refused.
+
+### 2. Photo or graphics
+
+The share of pixels equal to their left neighbour, in the first frame. **Under 65 %: a photo.** Measured on
+real images: photos 0–45 % (sensor noise makes neighbours differ), text, UI and screenshots 78–96 % (flat
+areas). The threshold sits in the gap between the two.
+
+### 3. The codec, per mode
+
+| Mode | Photo | Graphics |
+| --- | --- | --- |
+| `adaptive` (default) | Wavelet, level 5 (unless step 4 keeps it lossless) | Lossless, best level 0–3 (4 from 16 Mpx) |
+| `lossless` | Lossless, best level | Lossless, best level |
+| `lossy` | Wavelet, level 5 | Near-lossless: best level, `-e 2` |
+
+With `-l`, the level is yours and only the mode's rule for loss applies: `-l 5` is refused in lossless mode,
+and `-l 1` to `-l 4` on a photo in adaptive mode gives near-lossless `eps 1` (a photo coded exactly at level
+1–4 is rarely what someone forcing a level wants, and eps 1 is invisible). In lossy mode, `-l 1`–`-l 4` uses
+`-e` (2 by default).
+
+**Why a photo is not stored exactly by default.** Coding each pixel exactly keeps the sensor noise, and noise
+does not compress. Worse, when the source is itself lossy (HEIC, JPEG), an exact copy spends bytes keeping
+its compression artefacts. Measured on a 24 Mpx iPhone 17 Pro Max HEIC of 3.0 MB:
+
+| | Size | Of the HEIC |
+| --- | --- | --- |
+| `nova encode IMG.HEIC` (adaptive: level 5, q 90) | 2.8 MB | 93 % |
+| `nova encode IMG.HEIC -m lossless` (level 4) | 9.3 MB | 310 % |
+
+q 90 is about 45 dB: no visible difference with the HEIC. Use `-m lossless` for a PNG or a RAW you will edit,
+not to "keep the quality" of a HEIC or JPEG, which has already been decided by the phone.
+
+### 4. Wavelet or exact, for photos in adaptive mode
+
+Some images pass the photo test yet code smaller exactly: smooth gradients, renders, heavily denoised shots.
+The encoder codes the central 512 × 512 both ways, lossless at the best level and wavelet at the chosen
+quality. **Unless the wavelet saves at least 10 %, the image is stored lossless:** a smaller gain is not
+worth losing exactness for. Only adaptive mode does this, and only without `-l`.
+
+### 5. The quality of level 5
+
+- **Default: q 90** (about 45 dB, visually lossless), or your `-q`.
+- **A JPEG source without `-q`:** its own quality is estimated from its luminance quantisation table (as
+  ImageMagick does) and the wavelet gets `50 + Q/2`, at most 90. A q 50 JPEG gives 75, a q 70 gives 85,
+  a q 80 or more gives 90. Coding a low-quality JPEG at q 90 would faithfully keep its blocks and ringing:
+  measured, it made files of 115–167 % of the JPEG; the matched quality adds at most 0.6 dB of loss.
+  Only JPEG sources have a quantisation table to read; not done for animations.
+- **A grainy JPEG:** if the file still takes over 85 % of the JPEG, it is coded once more, 5 quality steps
+  lower per 21 % too much, never below 60. Film grain and noise cost more than the JPEG's quality says;
+  each 5 steps saves about 21 %. A grainy q 85 JPEG: 117 % at q 90, 71 % at q 80.
+
+### 6. The level, for lossless and near-lossless
+
+Levels 1, 2 and 3 are tried on the **central 512 × 512** of the first frame (level 4 too from 16 Mpx: it is
+the slowest, and only worth it where 1 % is megabytes). A sample is enough: the centre of an image is
+representative, and the trials stay short whatever the image size.
+
+- **Level 1 must be beaten by 3 %** to be dropped: it is the fastest to decode, so a gain under 3 % does
+  not justify a slower level. Above level 1, the smallest wins.
+- **Level 0 (palette)** is tried on the whole first frame, if all of it has 256 colours or less (one extra
+  colour anywhere breaks a palette). Its size is scaled to the sample's for the comparison.
+- In an animation, a later frame that brings more than 256 colours cannot use level 0: that region gets
+  level 2.
+
+### 7. What is stored besides the pixels
+
+- **Thumbnail (`PREV`):** only for images over 2 Mpx whose long side exceeds 1024 px; smaller images decode
+  in about a second anyway (a 1428 × 910 screenshot's preview was 16 % of its file). The thumbnail is 512 px,
+  box-filtered, wavelet q 75. Its budget is 1 byte per 128 pixels of the image (16 KB for 1080p); over it,
+  the quality drops to 56 (text-heavy screenshots), never lower.
+- **Metadata of the first source:** EXIF (GPS included), XMP, ICC profile, PNG text chunks and other
+  ancillary chunks, JPEG APP and COM segments, byte for byte. Pixel-structure chunks (tRNS, APNG frames)
+  are not metadata and are not copied.
+- **HDR gain map (`GMAP`)** of a still HEIC that has one: coded exactly (level 2) when the image is lossless,
+  else with the wavelet at `-q` (90 by default). It takes 1–3 % of the file.
+- **Live Photo video (`LIVE`)** given with `-live`, byte for byte.
+
+### 8. Animations
+
+The first frame is coded whole. Each next frame stores only the **rectangle that changed**, coded on top of
+the previous frame *as the decoder will see it* (after loss, if any), so errors never add up from frame to
+frame. An unchanged frame stores an empty rectangle and no pixels. The mode and level are decided on the first frame, for all.
+
+### 9. Parallel stripes
+
+Large images are cut into horizontal stripes coded and decoded independently: about 2 Mpx per stripe for
+levels 1–4, 0.5 Mpx for level 5, 16 stripes at most. The count comes from the image size only, never from
+the number of cores, which is why the file is identical everywhere. A stripe restarts its models, which costs a
+little size, the price of decoding on every core.
+
+`-q`, `-l`, `-e` and `-m` each switch off the decisions they concern; nothing else changes them.
 
 ## Encoding
 
