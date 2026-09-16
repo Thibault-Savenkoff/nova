@@ -63,7 +63,12 @@ private:
   bool readInfo() {
     if (infoOk) return true;
     if (!device()) return false;
+    // The whole file, leaving the device where it was: an option() (size, animation) may be asked
+    // during canRead(), and the next reader would then find nothing left (Gwenview reuses it).
+    const qint64 pos = device()->pos();
     data = device()->readAll();
+    if (data.isEmpty() && device()->seek(0)) data = device()->readAll();
+    device()->seek(pos);
     auto d = reinterpret_cast<const uint8_t *>(data.constData());
     if (nova_read_info(d, size_t(data.size()), &info)) return false;
     if (info.raw) {   // RAW sensor frame: the preview is what can be shown
