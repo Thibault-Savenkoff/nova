@@ -26,6 +26,8 @@ EOF
 ./nova info "$T/a.nova" | grep -A1 "MDAT\|LIVE"
 ./nova decode "$T/a.nova" "$T/a_out.png"
 cmp "$T/live.mov" "$T/a_out.mov" && echo "OK   live video"
+./nova decode "$T/a.nova" "$T/a_jpg.jpg" > /dev/null   # any output extension: a_jpg.mov, not a_jpg.jpg.mov
+cmp "$T/live.mov" "$T/a_jpg.mov" && echo "OK   live video next to a .jpg"
 # Re-encoding the decoded PNG keeps the private nvMd chunk (JPEG COM segment here).
 ./nova encode "$T/a_out.png" "$T/c.nova" > /dev/null
 ./nova decode "$T/c.nova" "$T/c_out.png" > /dev/null

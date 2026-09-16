@@ -1502,8 +1502,7 @@ Public
         ("Done: wrote " + count.to_string + " frames (" + (short_name (frame_name (dst, 0, True))) + "...) in " + elapsed).print
       }
       ((live_len > 0) && {! preview_only}).if {
-        base := dst
-        (base.has_suffix ".png").if { base := base.substring 0 to (base.upper - 4) }
+        base := no_ext dst
         Nova_codec.reset_out
         put_bytes (live_pos, live_pos + live_len)
         save_out (base + ".mov")
@@ -1607,16 +1606,16 @@ Public
   - t0:Int
 
   // "photo.jpg" -> "photo.nova", next to the source: the destination of an encode without one.
-  - default_dst src:String :String <-
+  - default_dst src:String :String <- (no_ext src) + ".nova"
+
+  // "dir/photo.jpg" -> "dir/photo" (a dot in a directory name is not an extension)
+  - no_ext name:String :String <-
   ( + i:Int
     + result:String
-    i := src.upper
-    {(i >= 0) && {(src.at i) != '.'} && {(src.at i) != '/'}}.while_do { i := i - 1 }
-    ((i >= 0) && {(src.at i) = '.'}).if {
-      result := (src.substring 0 to (i - 1)) + ".nova"
-    } else {
-      result := src + ".nova"
-    }
+    i := name.upper
+    {(i >= 0) && {(name.at i) != '.'} && {(name.at i) != '/'}}.while_do { i := i - 1 }
+    result := name
+    ((i > 0) && {(name.at i) = '.'}).if { result := name.substring 0 to (i - 1) }
     result
   )
 
@@ -1689,12 +1688,15 @@ Public
 
   - done_line src:Int <-
   // "Done: 26,050,253 bytes, 80.6 % of the source (lossless, level 6 (RAW)) in 7.5 s"
-  ( + r:Int
+  ( + r,n:Int
     + s:String
     Nova_par.clear
     s := "Done: " + (group (Nova_codec.out_count)) + " bytes"
-    (src > 0).if {
-      r := (Nova_codec.out_count * 1000 + src / 2) / src
+    n := src
+    // The Live Photo video is in the .nova: count it in the source too.
+    ((src > 0) && {live_src != NULL}).if { n := n + (file_size live_src) }
+    (n > 0).if {
+      r := (Nova_codec.out_count * 1000 + n / 2) / n
       s := s + ", " + (r / 10).to_string + "." + (r % 10).to_string + " % of the source"
     }
     (s + " (" + mode_name + ") in " + elapsed + "\n").print
