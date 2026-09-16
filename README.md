@@ -75,6 +75,25 @@ EXIF (GPS included), XMP and the colour profile of the source are kept. Run `nov
 
 NOVA stores 8 bits per channel. 10-bit HEIC images (iPhone screenshots) are rounded to 8 bits: at most 2 steps out of 1024 change, less than half an 8-bit level, which is invisible and keeps the files small.
 
+## Install
+
+**Linux**, from a build (see [Build](#build)):
+
+```sh
+install -m755 nova ~/.local/bin/           # or: sudo install -m755 nova /usr/local/bin/
+```
+
+There is no package yet. Note that OpenStack's `python3-novaclient` also provides a `nova` command: if you
+have it, whichever comes first in `PATH` wins.
+
+**Windows:** `dist/nova-setup.exe` or `dist/nova-setup.msi` (built by `win/dist.sh`) install `nova.exe`, put it
+on the `PATH` and register the codec, so the Explorer shows thumbnails and previews. `dist/nova-windows.zip`
+is the same files without an installer. Uninstall from Settings > Apps.
+
+**Browser:** nothing to install, the [web page](https://thibault-savenkoff.github.io/nova/) runs NOVA on your device.
+
+Desktop viewers need one more plugin, below.
+
 ## Image viewers
 
 `plugins/` makes `.nova` files open in desktop viewers and show thumbnails. The plugins decode with
@@ -144,16 +163,19 @@ The web version is built with [Emscripten](https://emscripten.org): `docs/build.
 Each test compares NOVA with a reference, byte for byte or pixel for pixel:
 
 ```sh
-test/all.sh       # every test below and more, one OK/FAIL line each (~40 min)
-test/check.sh     # lossless round trip of every image, with the size table
-test/libnova.sh   # the C decoder of the plugins against the program
-test/js.sh        # the JavaScript decoder against the program
-test/replicas.sh  # the multi-core WebAssembly build against the program
-test/raw.sh       # RAW: sensor frame, DNG and developed images against LibRaw
-test/hdr.sh       # HDR: gain map in JavaScript = program, Ultra HDR JPEG read back by libuhdr
+test/all.sh            # the 15 scripts, one OK/FAIL line each (~30 min)
+test/check.sh          # lossless round trip of every image, with the size table
+test/libnova.sh        # the C decoder of the plugins against the program
+test/js.sh             # the JavaScript decoder against the program
+test/replicas.sh       # the multi-core WebAssembly build against the program
+test/raw.sh            # RAW: sensor frame, DNG and developed images against LibRaw
+test/hdr.sh            # HDR: gain map in JavaScript = program, Ultra HDR JPEG read back by libuhdr
+test/unit.sh           # unit tests of the Lisaac modules, then corrupt files through `nova decode`
+test/libnova_unit.sh   # unit tests and fuzzing of libnovadec, the decoder inside the plugins
 ```
 
 `test/corpus/` holds small synthetic images. The photo tests read your own photos (`test/photos/`, not published).
+The tests need `uv` (Pillow, numpy, tifffile), `zlib-devel`, and use `valgrind` and `libasan` when they are installed.
 
 ## FAQ
 
@@ -162,6 +184,10 @@ It is a prototype-based language, compiled to C: the first compiled one. NOVA v2
 
 **Can the browser version open HEIC files?**
 In Safari only, which decodes HEIC itself. Other browsers do not ship an HEVC decoder, and this site does not either.
+
+**Does it run on macOS?**
+Untested: the code is POSIX C and should build, but nothing here has ever been compiled or run on a Mac, and
+there is no ImageIO or Quick Look plugin, so Finder and Preview will not show `.nova` files.
 
 **What does the browser version leave out?**
 Animations and Live Photos are created with the program only, and export is limited to PNG, JPEG and WebP. The page lists the rest.
