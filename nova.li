@@ -1009,8 +1009,6 @@ Public
     }
     (lvl = 0).if {
       lvl := pick_level np eps e
-      // Adaptive near-lossless that saves nothing (flat images, alpha-heavy): stay lossless.
-      ((md = 0) && {e > 0} && {lv = 0} && {(central np level lvl eps 0) <= (central np level lvl eps e)}).if { e := 0 }
     }
     (lvl = -1).if {
       lvl := 0
