@@ -62,6 +62,7 @@ Section
   File "..\dist\nova-windows\zlib1.dll"
   File "..\dist\nova-windows\libwebp-7.dll"
   File "..\dist\nova-windows\libsharpyuv-0.dll"
+  File "..\dist\nova-windows\nova.ps1"
   File "..\dist\nova-windows\LICENSE-*.txt"
   SetOutPath "$InstDir\samples"
   File "..\dist\nova-windows\*.nova"
@@ -160,5 +161,6 @@ Section "Uninstall"
   Delete "$InstDir\*.exe"
   Delete /REBOOTOK "$InstDir\*.dll"   ; Explorer may still hold the codec
   Delete "$InstDir\LICENSE-*.txt"
+  Delete "$InstDir\nova.ps1"
   RMDir "$InstDir"
 SectionEnd

@@ -85,10 +85,12 @@ NOVA stores 8 bits per channel. 10-bit HEIC images (iPhone screenshots) are roun
 curl -fsSL https://raw.githubusercontent.com/Thibault-Savenkoff/nova/v2/install.sh | bash
 ```
 
-Downloads the right binary (Intel or Apple Silicon on macOS), installs `nova` and its zsh completion into
-`~/.local`, registers the `.nova` file type, and offers to build the viewer plugins below for whichever
-desktop you have. `--system` installs into `/usr/local` instead (needs sudo); `--no-plugins` skips the
-viewers; `install.sh --help` lists the rest. To remove everything it installed, and nothing else:
+Downloads the right binary (Intel or Apple Silicon on macOS), installs `nova` and its shell completion
+(zsh, bash, fish -- bash needs the `bash-completion` package) into `~/.local`, registers the `.nova` file
+type, and offers to build the viewer plugins below for whichever desktop you have. `--system` installs
+into `/usr/local` instead (needs sudo); `--no-plugins` skips the viewers; `-y`/`--yes` skips every prompt
+(for scripts and Dockerfiles: also the default when there is no terminal to ask); `install.sh --help`
+lists the rest. To remove everything it installed, and nothing else:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Thibault-Savenkoff/nova/v2/install.sh | bash -s -- --uninstall
@@ -102,7 +104,9 @@ have it, whichever comes first in `PATH` wins.
 
 **Windows:** `dist/nova-setup.exe` or `dist/nova-setup.msi` (built by `win/dist.sh`) install `nova.exe`, put it
 on the `PATH` and register the codec, so the Explorer shows thumbnails and previews. `dist/nova-windows.zip`
-is the same files without an installer. Uninstall from Settings > Apps.
+is the same files without an installer. Uninstall from Settings > Apps. PowerShell tab completion
+(`nova.ps1`, next to `nova.exe`) is not wired into your `$PROFILE` automatically: see the zip's
+`README.txt`. cmd.exe has no such hook for a third-party program's arguments.
 
 **Browser:** nothing to install, the [web page](https://thibault-savenkoff.github.io/nova/) runs NOVA on your device.
 

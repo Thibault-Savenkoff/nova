@@ -50,7 +50,7 @@ Options:
   --from FILE     install from a local .tar.gz instead of downloading
   --no-plugins    skip the Qt/KDE/GNOME/GTK viewer plugins
   --no-deps       skip checking for the HEIC/AVIF/WebP/RAW libraries
-  --yes           don't ask before touching ~/.zshrc or building plugins
+  -y, --yes       don't ask before touching ~/.zshrc or building plugins
   --verbose       print every command this script runs (always shown on failure)
   --uninstall     remove everything a previous run installed
   -h, --help      this message
@@ -65,7 +65,7 @@ while [ $# -gt 0 ]; do
     --from) [ $# -ge 2 ] || { echo "install.sh: --from needs a value" >&2; exit 1; }; from=$2; shift ;;
     --no-plugins) plugins=0 ;;
     --no-deps) deps=0 ;;
-    --yes) yes=1 ;;
+    -y|--yes) yes=1 ;;
     --verbose) verbose=1 ;;
     --uninstall) uninstall=1 ;;
     -h|--help) usage; exit 0 ;;
@@ -310,10 +310,14 @@ install_bin() {
 }
 
 install_completion() {
-  step "Installing zsh completion"
+  step "Installing shell completion"
   local dir="$prefix/share/zsh/site-functions"
   install_file "$owner" "$src/completions/_nova" "$dir/_nova" 644
   add_fpath_line "$dir"
+  # bash and fish auto-load from these locations (if the shell/package is present): no rc-file edit.
+  install_file "$owner" "$src/completions/nova.bash" "$prefix/share/bash-completion/completions/nova" 644
+  install_file "$owner" "$src/completions/nova.fish" "$prefix/share/fish/vendor_completions.d/nova.fish" 644
+  ok "bash and fish pick it up automatically (a new shell; bash needs the bash-completion package)"
 }
 
 install_mime() {
