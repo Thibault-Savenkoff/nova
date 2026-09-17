@@ -540,8 +540,10 @@ Public
       (ok).if { } else { fail ("HEIF: " + Nova_heic.message) }
     }.elseif {name.has_suffix ".pam"} then {
       write_pam buf to name
-    } else {
+    }.elseif {name.has_suffix ".png"} then {
       write_png buf planes np to name
+    } else {
+      fail ("unsupported output extension: " + name + " (.png .tif .jpg .webp .avif .heic .heif .pam)")
     }
   )
 
