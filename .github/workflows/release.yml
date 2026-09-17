@@ -1,0 +1,124 @@
+name: Release
+
+# v2.* tags publish a GitHub Release with Linux and macOS binaries (install.sh
+# downloads these). Windows already has its own MSI/EXE installer (win/), not
+# built here. workflow_dispatch builds the same artifacts without publishing,
+# to try the pipeline out.
+on:
+  push:
+    tags: ["v2.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            os: linux
+            arch: x86_64
+          - runner: macos-latest
+            os: macos
+            arch: arm64
+          - runner: macos-15-intel
+            os: macos
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the pinned Lisaac Ω version from README.md
+        id: lisaac
+        run: |
+          v=$(grep -oE '\[Lisaac Ω\]\(https://lisaac\.org\) compiler \([0-9][^)]*\)' README.md |
+              grep -oE '\([0-9][^)]*\)$' | tr -d '()')
+          [ -n "$v" ] || { echo "::error::could not read the Lisaac version from README.md" >&2; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      # Lisaac Ω has no prebuilt binary: bumping the pinned version above
+      # rebuilds it once (slow: downloads the zip and compiles lisaac+elit
+      # from source) and this cache key changes, so every run after that
+      # restores it instead.
+      - name: Restore/build Lisaac Ω ${{ steps.lisaac.outputs.version }}
+        id: lisaac-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/lisaac
+          key: lisaac-${{ matrix.os }}-${{ matrix.arch }}-${{ steps.lisaac.outputs.version }}
+
+      - name: Install Lisaac Ω build dependencies (Linux)
+        if: steps.lisaac-cache.outputs.cache-hit != 'true' && matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential mesa-common-dev libgl1-mesa-dev pulseaudio-utils
+
+      - name: Install Lisaac Ω build dependencies (macOS)
+        if: steps.lisaac-cache.outputs.cache-hit != 'true' && matrix.os == 'macos'
+        run: brew install glfw pkg-config
+
+      - name: Build Lisaac Ω ${{ steps.lisaac.outputs.version }}
+        if: steps.lisaac-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/lisaac.zip" \
+            "https://lisaac-omega.github.io/downloads/lisaac_${{ steps.lisaac.outputs.version }}.zip"
+          unzip -q "$RUNNER_TEMP/lisaac.zip" -d "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/lisaac"
+          ./install.sh
+
+      - name: Add Lisaac Ω to PATH
+        run: |
+          # install.sh's own install location isn't documented anywhere we
+          # could find: locate the binary it produced under the cached tree
+          # instead of guessing a path.
+          # ponytail: find-based discovery: once a real run confirms the
+          # actual install location, this can become a plain PATH export.
+          dir=$(dirname "$(find "$RUNNER_TEMP/lisaac" -maxdepth 6 -type f -name lisaac -perm -u+x 2>/dev/null | head -1)")
+          [ -n "$dir" ] && [ -d "$dir" ] || { echo "::error::lisaac binary not found under $RUNNER_TEMP/lisaac after build" >&2; exit 1; }
+          echo "$dir" >> "$GITHUB_PATH"
+
+      - name: Build nova
+        run: |
+          lisaac nova.li -boost
+          ./nova --version
+
+      - name: Pack the release archive
+        run: |
+          mkdir -p dist
+          release/pack.sh ./nova ${{ matrix.os }} ${{ matrix.arch }} dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nova-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v2.')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches nova.li's version
+        run: |
+          tag=${GITHUB_REF#refs/tags/v}
+          v=$(sed -n 's/.*- version:String := "\(.*\)"/\1/p' nova.li)
+          [ "$tag" = "$v" ] || { echo "::error::tag v$tag does not match nova.li's version ($v); bump nova.li first" >&2; exit 1; }
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=${GITHUB_REF#refs/tags/}
+          extra=
+          case "$tag" in *beta*|*alpha*|*rc*) extra=--prerelease ;; esac
+          gh release create "$tag" dist/* --title "NOVA $tag" --generate-notes $extra
