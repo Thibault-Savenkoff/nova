@@ -79,22 +79,23 @@ NOVA stores 8 bits per channel. 10-bit HEIC images (iPhone screenshots) are roun
 
 ## Install
 
-**Linux**, from a build (see [Build](#build)):
+**Linux and macOS:**
 
 ```sh
-install -m755 nova ~/.local/bin/           # or: sudo install -m755 nova /usr/local/bin/
+curl -fsSL https://raw.githubusercontent.com/Thibault-Savenkoff/nova/v2/install.sh | bash
 ```
 
-Tab completion of commands, options and file names, for zsh:
+Downloads the right binary (Intel or Apple Silicon on macOS), installs `nova` and its zsh completion into
+`~/.local`, registers the `.nova` file type, and offers to build the viewer plugins below for whichever
+desktop you have. `--system` installs into `/usr/local` instead (needs sudo); `--no-plugins` skips the
+viewers; `install.sh --help` lists the rest. To remove everything it installed, and nothing else:
 
 ```sh
-mkdir -p ~/.local/share/zsh/site-functions
-cp completions/_nova ~/.local/share/zsh/site-functions/
-# in ~/.zshrc, before compinit (or before sourcing oh-my-zsh):
-fpath=(~/.local/share/zsh/site-functions $fpath)
+curl -fsSL https://raw.githubusercontent.com/Thibault-Savenkoff/nova/v2/install.sh | bash -s -- --uninstall
 ```
 
-Then open a new shell (`exec zsh`; if the completion does not show, `rm ~/.zcompdump*` first).
+Building from source instead (you have the [Lisaac Ω](https://lisaac.org) compiler)? See [Build](#build):
+`build.sh` compiles and runs the same installer on the result.
 
 There is no package yet. Note that OpenStack's `python3-novaclient` also provides a `nova` command: if you
 have it, whichever comes first in `PATH` wins.
@@ -105,13 +106,19 @@ is the same files without an installer. Uninstall from Settings > Apps.
 
 **Browser:** nothing to install, the [web page](https://thibault-savenkoff.github.io/nova/) runs NOVA on your device.
 
+Once a day, in a terminal, `nova` checks in the background for a newer version and prints one line if there
+is one; a failed check (no network) is silent, and it never runs in a script. `NOVA_NO_UPDATE_CHECK=1` turns
+it off.
+
 Desktop viewers need one more plugin, below.
 
 ## Image viewers
 
 `plugins/` makes `.nova` files open in desktop viewers and show thumbnails. The plugins decode with
 [`libnova/`](libnova/novadec.h), a small C decoder without dependencies (same pixels as `nova`, on every core).
-First install the file type (all desktops):
+`install.sh` builds and installs whichever of these your system has the tools for (see [Install](#install)).
+The table is for building from source without it, or for troubleshooting one plugin. First install the file
+type (all desktops):
 
 ```sh
 cp plugins/mime/nova.xml ~/.local/share/mime/packages/ && update-mime-database ~/.local/share/mime
@@ -161,11 +168,15 @@ What a codec cannot reach:
 You need the [Lisaac Ω](https://lisaac.org) compiler (0.6) and GCC.
 
 ```sh
-lisaac nova.li -boost      # writes ./nova (and nova.c)
+./build.sh          # compiles, then runs install.sh on the result (same options: --no-plugins, --system...)
+lisaac nova.li -boost      # or, just the binary: writes ./nova (and nova.c)
 ```
 
 HEIC/AVIF, WebP and RAW support load their libraries at run time, so `nova` builds without them and uses them when they are installed:
 [libheif](https://github.com/strukturag/libheif), [libavif](https://github.com/AOMediaCodec/libavif) 1.2+ (AVIF with a gain map; without it, the AVIF has no HDR), [libwebp](https://chromium.googlesource.com/webm/libwebp) and [LibRaw](https://www.libraw.org) 0.22.
+
+`release/pack.sh` builds the archive a release publishes (and what `install.sh --from archive.tar.gz` installs
+from, for testing one without downloading it); `.github/workflows/release.yml` runs it on a `v2.*` tag.
 
 Windows: `win/build.sh` cross-compiles `nova.c` to `nova.exe` with MinGW-w64 (same output as on Linux; 4 cores by default, `NOVA_THREADS=n` for more).
 `win/dist.sh` packs it with the WIC codec and the zlib and libwebp DLLs into `dist/nova-setup.exe` (NSIS installer: `nova` on the PATH, codec registered, uninstaller in Settings > Apps), the same as `dist/nova-setup.msi` (for deployment tools), and `dist/nova-windows.zip`.
@@ -177,7 +188,7 @@ The web version is built with [Emscripten](https://emscripten.org): `docs/build.
 Each test compares NOVA with a reference, byte for byte or pixel for pixel:
 
 ```sh
-test/all.sh            # the 15 scripts, one OK/FAIL line each (~30 min)
+test/all.sh            # the 16 scripts below, one OK/FAIL line each (~30 min)
 test/check.sh          # lossless round trip of every image, with the size table
 test/libnova.sh        # the C decoder of the plugins against the program
 test/js.sh             # the JavaScript decoder against the program
@@ -186,10 +197,15 @@ test/raw.sh            # RAW: sensor frame, DNG and developed images against Lib
 test/hdr.sh            # HDR: gain map in JavaScript = program, Ultra HDR JPEG read back by libuhdr, AVIF gain map, clli
 test/unit.sh           # unit tests of the Lisaac modules, then corrupt files through `nova decode`
 test/libnova_unit.sh   # unit tests and fuzzing of libnovadec, the decoder inside the plugins
+test/update.sh         # the update check, against a fake curl and release list (no network)
 ```
 
 `test/corpus/` holds small synthetic images. The photo tests read your own photos (`test/photos/`, not published).
 The tests need `uv` (Pillow, numpy, tifffile), `zlib-devel`, and use `valgrind` and `libasan` when they are installed.
+
+`test/install.sh` and `test/build.sh` cover the installer and the from-source build the same way, entirely
+under a throwaway `$HOME` and a local fake release server: not part of `test/all.sh` (they need `curl` and
+`python3`, and `test/build.sh` needs Lisaac itself), run them directly.
 
 ## FAQ
 
@@ -200,8 +216,9 @@ It is a prototype-based language, compiled to C: the first compiled one. NOVA v2
 In Safari only, which decodes HEIC itself. Other browsers do not ship an HEVC decoder, and this site does not either.
 
 **Does it run on macOS?**
-Untested: the code is POSIX C and should build, but nothing here has ever been compiled or run on a Mac, and
-there is no ImageIO or Quick Look plugin, so Finder and Preview will not show `.nova` files.
+It builds: GitHub Actions compiles and packages Intel and Apple Silicon binaries on every release. Running it
+has not been verified on a real Mac yet, and there is no ImageIO or Quick Look plugin, so Finder and Preview
+will not show `.nova` files.
 
 **What does the browser version leave out?**
 Animations and Live Photos are created with the program only, and export is limited to PNG, JPEG and WebP. The page lists the rest.
