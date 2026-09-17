@@ -24,6 +24,7 @@ yes=0
 from=
 uninstall=0
 version=
+verbose=0
 CC=${CC:-cc}
 # Set by test/install.sh to redirect system-wide (root) installs into a
 # fake root instead of touching the real system directories or needing
@@ -50,6 +51,7 @@ Options:
   --no-plugins    skip the Qt/KDE/GNOME/GTK viewer plugins
   --no-deps       skip checking for the HEIC/AVIF/WebP/RAW libraries
   --yes           don't ask before touching ~/.zshrc or building plugins
+  --verbose       print every command this script runs (always shown on failure)
   --uninstall     remove everything a previous run installed
   -h, --help      this message
 EOF
@@ -64,6 +66,7 @@ while [ $# -gt 0 ]; do
     --no-plugins) plugins=0 ;;
     --no-deps) deps=0 ;;
     --yes) yes=1 ;;
+    --verbose) verbose=1 ;;
     --uninstall) uninstall=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "install.sh: unknown option: $1" >&2; usage >&2; exit 1 ;;
@@ -100,18 +103,17 @@ ask() {  # ask "question" -> 0=yes. Never blocks on stdin when piped (curl | bas
   case $reply in [Yy]*) return 0 ;; *) return 1 ;; esac
 }
 
-run() {  # run user|root <cmd...>: prints the command (paths shortened with pretty), sudo's root ones
-         # unless redirected to TEST_ROOT
-  local kind=$1 a shown=""; shift
-  for a in "$@"; do shown="$shown $(pretty "$a")"; done
-  shown=${shown# }
-  if [ "$kind" = root ] && [ -z "$TEST_ROOT" ] && [ "$(id -u)" != 0 ]; then
-    printf '    $ sudo %s\n' "$shown"
-    sudo "$@"
-  else
-    printf '    $ %s\n' "$shown"
-    "$@"
+run() {  # run user|root <cmd...>: runs quietly unless --verbose, but always shows the command (with
+         # paths shortened by pretty) it if it fails; sudo's root ones unless redirected to TEST_ROOT
+  local kind=$1 a shown="" status; shift
+  [ "$kind" = root ] && [ -z "$TEST_ROOT" ] && [ "$(id -u)" != 0 ] && set -- sudo "$@"
+  [ $verbose = 1 ] && { for a in "$@"; do shown="$shown $(pretty "$a")"; done; printf '    $ %s\n' "${shown# }"; }
+  if "$@"; then status=0; else status=$?; fi
+  if [ $status -ne 0 ] && [ $verbose = 0 ]; then
+    for a in "$@"; do shown="$shown $(pretty "$a")"; done
+    printf '    $ %s\n' "${shown# }" >&2
   fi
+  return $status
 }
 
 # insert_before <file> <line-number-or-empty> <text>: inserts, or appends if <line-number> is empty.
@@ -289,7 +291,8 @@ unpack() {
   tar -xzf "$tmp/$archive" -C "$tmp" || die "could not unpack $archive"
   src="$tmp/nova-$version-$os-$arch"
   [ -d "$src" ] || die "unexpected archive layout: nova-$version-$os-$arch/ not found"
-  ok "$src"
+  [ $verbose = 1 ] && info "$(pretty "$src")"
+  return 0
 }
 
 # ---- install steps ----
