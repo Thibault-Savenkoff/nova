@@ -1,0 +1,481 @@
+#!/usr/bin/env bash
+# NOVA installer: downloads (or unpacks --from) a release, installs the
+# nova command, its zsh completion and the .nova MIME type, then offers to
+# build the viewer plugins (Qt/KDE, GNOME/glycin, GTK/gdk-pixbuf) for
+# whichever of those are present on this system.
+#
+# Also the uninstaller (--uninstall): every file and rc-file line this
+# script writes is recorded in a manifest, and uninstalling only ever
+# removes paths read back from that manifest -- never a directory, never
+# a guessed or computed path.
+#
+#   curl -fsSL https://raw.githubusercontent.com/Thibault-Savenkoff/nova/v2/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Thibault-Savenkoff/nova/v2/install.sh | bash -s -- --uninstall
+#
+# Bash 3.2 compatible (macOS ships nothing newer): no arrays, no [[ ]].
+set -eu
+
+repo=Thibault-Savenkoff/nova
+prefix=$HOME/.local
+system=0
+plugins=1
+deps=1
+yes=0
+from=
+uninstall=0
+version=
+CC=${CC:-cc}
+# Set by test/install.sh to redirect system-wide (root) installs into a
+# fake root instead of touching the real system directories or needing
+# real sudo. Empty in a normal install.
+TEST_ROOT=${NOVA_TEST_ROOT:-}
+# Test-only: overrides the GitHub URLs with a local server. Empty in a
+# normal install.
+RELEASE_BASE=${NOVA_RELEASE_BASE:-https://github.com/$repo/releases/download}
+API_BASE=${NOVA_API_BASE:-https://api.github.com/repos/$repo/releases}
+
+usage() {
+  cat <<'EOF'
+NOVA installer
+
+Usage:
+  install.sh [options]
+  install.sh --uninstall [--prefix DIR | --system]
+
+Options:
+  --system        install into /usr/local (needs sudo) instead of ~/.local
+  --prefix DIR    install into DIR instead of ~/.local or /usr/local
+  --version X.Y.Z install this version instead of the latest v2 release
+  --from FILE     install from a local .tar.gz instead of downloading
+  --no-plugins    skip the Qt/KDE/GNOME/GTK viewer plugins
+  --no-deps       skip checking for the HEIC/AVIF/WebP/RAW libraries
+  --yes           don't ask before touching ~/.zshrc or building plugins
+  --uninstall     remove everything a previous run installed
+  -h, --help      this message
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case $1 in
+    --system) system=1 ;;
+    --prefix) [ $# -ge 2 ] || { echo "install.sh: --prefix needs a value" >&2; exit 1; }; prefix=$2; shift ;;
+    --version) [ $# -ge 2 ] || { echo "install.sh: --version needs a value" >&2; exit 1; }; version=$2; shift ;;
+    --from) [ $# -ge 2 ] || { echo "install.sh: --from needs a value" >&2; exit 1; }; from=$2; shift ;;
+    --no-plugins) plugins=0 ;;
+    --no-deps) deps=0 ;;
+    --yes) yes=1 ;;
+    --uninstall) uninstall=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "install.sh: unknown option: $1" >&2; usage >&2; exit 1 ;;
+  esac
+  shift
+done
+[ $system = 1 ] && prefix=/usr/local
+[ $system = 1 ] && owner=root || owner=user
+
+# ---- output helpers ----
+step() { printf '\n==> %s\n' "$1"; }
+info() { printf '    %s\n' "$1"; }
+ok()   { printf '    \xe2\x9c\x93 %s\n' "$1"; }
+warn() { printf '    ! %s\n' "$1" >&2; }
+die()  { printf 'Error: %s\n' "$1" >&2; exit 1; }
+
+pretty() {  # pretty <path>: $HOME shown as ~, for messages only (never for what we write to disk)
+  case $1 in
+    "$HOME"/*) printf '~/%s' "${1#"$HOME"/}" ;;
+    "$HOME") printf '~' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+ask() {  # ask "question" -> 0=yes. Never blocks on stdin when piped (curl | bash): no terminal = no.
+  [ $yes = 1 ] && { info "$1 y (--yes)"; return 0; }
+  if [ -t 0 ]; then
+    printf '    %s [y/N] ' "$1" >&2
+    read -r reply || reply=n
+  else
+    reply=n
+    info "$1 n (no terminal to ask; pass --yes)"
+  fi
+  case $reply in [Yy]*) return 0 ;; *) return 1 ;; esac
+}
+
+run() {  # run user|root <cmd...>: prints the command, sudo's root ones unless redirected to TEST_ROOT
+  local kind=$1; shift
+  if [ "$kind" = root ] && [ -z "$TEST_ROOT" ] && [ "$(id -u)" != 0 ]; then
+    printf '    $ sudo %s\n' "$*"
+    sudo "$@"
+  else
+    printf '    $ %s\n' "$*"
+    "$@"
+  fi
+}
+
+# insert_before <file> <line-number-or-empty> <text>: inserts, or appends if <line-number> is empty.
+# Portable (no sed -i, whose -i flag differs between GNU and BSD/macOS sed).
+insert_before() {
+  local file=$1 at=$2 text=$3 t
+  t=$(mktemp)
+  if [ -n "$at" ]; then
+    awk -v n="$at" -v t="$text" 'NR==n{print t} {print}' "$file" > "$t"
+  else
+    cat "$file" > "$t"
+    printf '%s\n' "$text" >> "$t"
+  fi
+  cat "$t" > "$file"
+  rm -f "$t"
+}
+
+# ---- manifest: what we installed, read back (in reverse) by --uninstall ----
+# One of "user|root <path>" or "line <rc-file><TAB><text>" or "dolphin <previous Plugins= value>" per line.
+manifest="$prefix/share/nova/installed.txt"
+record() {
+  local line="$*"
+  mkdir -p "$(dirname "$manifest")" 2>/dev/null || true
+  if [ -w "$(dirname "$manifest")" ]; then
+    grep -qxF -- "$line" "$manifest" 2>/dev/null || printf '%s\n' "$line" >> "$manifest"
+  else
+    sudo mkdir -p "$(dirname "$manifest")"
+    sudo grep -qxF -- "$line" "$manifest" 2>/dev/null || printf '%s\n' "$line" | sudo tee -a "$manifest" > /dev/null
+  fi
+}
+
+install_file() {  # install_file user|root <source> <destination> <mode>
+  local dest=$3
+  [ "$1" = root ] && dest=$TEST_ROOT$3
+  run "$1" mkdir -p "$(dirname "$dest")"
+  run "$1" install -m "$4" "$2" "$dest"
+  record "$1" "$dest"
+}
+
+add_rc_line() {  # add_rc_line <line> <question> <ok-suffix>: append <line> to ~/.zshrc if it isn't there
+  local line=$1 prompt=$2 suffix=$3 rc="$HOME/.zshrc"
+  [ -f "$rc" ] || { warn "no ~/.zshrc, add manually: $line"; return 0; }
+  if grep -qxF -- "$line" "$rc" 2>/dev/null; then
+    record line "$rc"$'\t'"$line"
+    ok "~/.zshrc already adds it $suffix"
+    return 0
+  fi
+  ask "$prompt" || return 0
+  printf '%s\n' "$line" >> "$rc"
+  record line "$rc"$'\t'"$line"
+  ok "added to ~/.zshrc $suffix"
+}
+
+add_fpath_line() {  # like add_rc_line, but inserted before compinit/oh-my-zsh (they read fpath once)
+  local dir=$1 rc="$HOME/.zshrc" line at
+  line="fpath=($dir \$fpath)   # NOVA completion"
+  [ -f "$rc" ] || { warn "no ~/.zshrc, add manually before compinit: $line"; return 0; }
+  if grep -qxF -- "$line" "$rc" 2>/dev/null; then
+    record line "$rc"$'\t'"$line"
+    ok "~/.zshrc already adds $(pretty "$dir")"
+    return 0
+  fi
+  ask "zsh does not look in $(pretty "$dir"). Add it to ~/.zshrc (before compinit)?" || return 0
+  # A failed match (no compinit yet) is not an error: append at the end instead.
+  at=$(grep -nE '^[^#]*(source .*oh-my-zsh\.sh|compinit)' "$rc" | head -1 | cut -d: -f1) || at=
+  if [ -n "$at" ]; then
+    insert_before "$rc" "$at" "$line"
+  else
+    insert_before "$rc" "" "$line"
+    info "added at the end; move it above compinit if you add one later"
+  fi
+  record line "$rc"$'\t'"$line"
+  ok "added to ~/.zshrc; open a new terminal (if Tab still lists files: rm ~/.zcompdump*)"
+}
+
+# ---- uninstall ----
+enable_dolphin_thumbnailer() {
+  if ! command -v kreadconfig6 >/dev/null 2>&1 || ! command -v kwriteconfig6 >/dev/null 2>&1; then
+    info "kreadconfig6/kwriteconfig6 not found, enable novathumb in Dolphin's settings manually"
+    return 0
+  fi
+  local cur new
+  cur=$(kreadconfig6 --file dolphinrc --group PreviewSettings --key Plugins 2>/dev/null) || cur=
+  case ",$cur," in
+    *,novathumb,*) ok "Dolphin already uses the NOVA thumbnailer" ;;
+    *)
+      new=${cur:+$cur,}novathumb
+      run user kwriteconfig6 --file dolphinrc --group PreviewSettings --key Plugins "$new" ||
+        { warn "could not enable the Dolphin thumbnailer"; return 0; }
+      record dolphin "$cur"
+      ok "Dolphin thumbnails enabled for .nova (restart Dolphin)"
+      ;;
+  esac
+}
+
+remove_dolphin_thumbnailer() {  # $rest: the pre-install Plugins= value, read by do_uninstall's caller
+  command -v kwriteconfig6 >/dev/null 2>&1 || return 0
+  if [ -n "$rest" ]; then
+    run user kwriteconfig6 --file dolphinrc --group PreviewSettings --key Plugins "$rest" || return 0
+  else
+    run user kwriteconfig6 --file dolphinrc --group PreviewSettings --key Plugins --delete || return 0
+  fi
+  ok "Dolphin no longer uses the NOVA thumbnailer"
+}
+
+refresh_caches() {
+  command -v update-mime-database >/dev/null 2>&1 && run "$owner" update-mime-database "$prefix/share/mime" 2>/dev/null || true
+}
+
+do_uninstall() {
+  step "Uninstalling NOVA ($(pretty "$prefix"))"
+  [ -f "$manifest" ] || die "nothing to uninstall: $manifest not found (installed with another --prefix?)"
+  local kind rest file text
+  # Undo in reverse so, e.g., an rc-file line inserted before another added line still matches.
+  tac "$manifest" 2>/dev/null > "$tmp/manifest" || tail -r "$manifest" > "$tmp/manifest"
+  while IFS=' ' read -r kind rest; do
+    case $kind in
+      user|root)
+        # A single recorded file, never a directory: nothing here can turn into "rm -rf" of anything else.
+        [ -n "$rest" ] || continue
+        [ -e "$rest" ] || { info "already gone: $rest"; continue; }
+        run "$kind" rm -f -- "$rest" && ok "removed $rest" ;;
+      line)
+        file=${rest%%$'\t'*} text=${rest#*$'\t'}
+        if [ -n "$file" ] && [ -f "$file" ] && grep -qxF -- "$text" "$file"; then
+          # grep -v can exit 1 if removing $text empties the file -- not an error, so don't gate on it.
+          grep -vxF -- "$text" "$file" > "$tmp/rc" || true
+          cat "$tmp/rc" > "$file"
+          ok "removed from $file: $text"
+        fi ;;
+      dolphin)
+        remove_dolphin_thumbnailer ;;
+    esac
+  done < "$tmp/manifest"
+  refresh_caches
+  rm -f -- "$manifest"
+  ok "NOVA is uninstalled."
+}
+
+# ---- download / verify / unpack ----
+find_release() {
+  step "Finding the NOVA release"
+  local tag
+  if [ -n "$version" ]; then
+    tag="v$version"
+  else
+    # v1 ("NOVA Viewer") releases are also published, and one of them is the repo's "latest":
+    # filter to v2.* tags instead of trusting "latest".
+    tag=$(curl -fsSL "$API_BASE" | grep -o '"tag_name": *"v2\.[^"]*"' | head -1 | sed -E 's/.*"(v2\.[^"]*)"/\1/') || tag=
+    [ -n "$tag" ] || die "no v2 release found on github.com/$repo"
+    info "Latest v2 release on github.com/$repo"
+  fi
+  version=${tag#v}
+  archive="nova-$version-$os-$arch.tar.gz"
+  url="$RELEASE_BASE/$tag/$archive"
+  ok "version $version, for $os $arch"
+}
+
+download() {
+  step "Downloading $archive"
+  curl -fSL# -o "$tmp/$archive" "$url" || die "download failed: $url"
+}
+
+verify() {
+  local want got
+  want=$(curl -fsSL "$url.sha256" | awk '{print $1}') || want=
+  [ -n "$want" ] || die "could not fetch the checksum for $archive"
+  got=$(sha256sum "$tmp/$archive" | awk '{print $1}')
+  [ "$want" = "$got" ] || die "SHA-256 mismatch for $archive: the download is corrupt or was altered. Nothing was installed."
+  ok "SHA-256 checked ($got)"
+}
+
+unpack() {
+  step "Unpacking $archive"
+  tar -xzf "$tmp/$archive" -C "$tmp" || die "could not unpack $archive"
+  src="$tmp/nova-$version-$os-$arch"
+  [ -d "$src" ] || die "unexpected archive layout: nova-$version-$os-$arch/ not found"
+  ok "$src"
+}
+
+# ---- install steps ----
+install_bin() {
+  step "Installing the nova command"
+  install_file "$owner" "$src/bin/nova" "$prefix/bin/nova" 755
+  ok "nova $version -> $(pretty "$prefix/bin/nova")"
+  case ":$PATH:" in
+    *":$prefix/bin:"*) ;;
+    *)
+      warn "$(pretty "$prefix/bin") is not in PATH"
+      add_rc_line "export PATH=\"$prefix/bin:\$PATH\"   # NOVA" \
+        "Add it to ~/.zshrc?" "(open a new terminal)" ;;
+  esac
+}
+
+install_completion() {
+  step "Installing zsh completion"
+  local dir="$prefix/share/zsh/site-functions"
+  install_file "$owner" "$src/completions/_nova" "$dir/_nova" 644
+  add_fpath_line "$dir"
+}
+
+install_mime() {
+  step "Registering the .nova file type (image/x-nova)"
+  install_file "$owner" "$src/plugins/mime/nova.xml" "$prefix/share/mime/packages/nova.xml" 644
+  if command -v update-mime-database >/dev/null 2>&1; then
+    run "$owner" update-mime-database "$prefix/share/mime" || warn "update-mime-database failed"
+    ok "file managers now know .nova files"
+  else
+    warn "update-mime-database not found; .nova files won't get an icon/thumbnail until it runs"
+  fi
+}
+
+check_lib() {  # check_lib <linux-soname> <macos-dylib> <label>
+  local found=0 d
+  case $os in
+    linux)
+      command -v ldconfig >/dev/null 2>&1 && ldconfig -p 2>/dev/null | grep -q "$1" && found=1 ;;
+    macos)
+      for d in /opt/homebrew/lib /usr/local/lib; do [ -e "$d/$2" ] && { found=1; break; }; done ;;
+  esac
+  if [ $found = 1 ]; then ok "$3"; else warn "$3 (not found)"; fi
+}
+
+check_libs() {
+  [ $deps = 1 ] || return 0
+  step "Checking the libraries nova uses for other formats"
+  info "nova runs without them; each one adds formats (HEIC, AVIF, WebP, RAW)."
+  check_lib libheif.so.1 libheif.1.dylib "libheif: HEIC, HEIF, AVIF"
+  check_lib libavif.so.16 libavif.16.dylib "libavif: AVIF with an HDR gain map"
+  check_lib libwebp.so.7 libwebp.7.dylib "libwebp: WebP output"
+  check_lib libraw_r.so.25 libraw_r.25.dylib "LibRaw: camera RAW"
+}
+
+# cmake_plugin <dir> <label>: builds plugins/<dir>, installs it (Qt's own system plugin dir), records the files.
+cmake_plugin() {
+  local b="$tmp/build-$1" f
+  run user cmake -S "$src/plugins/$1" -B "$b" -DCMAKE_BUILD_TYPE=Release > "$tmp/$1.log" 2>&1 ||
+    { tail -20 "$tmp/$1.log" >&2; warn "$2: configuration failed (log above)"; return 1; }
+  run user cmake --build "$b" --parallel > "$tmp/$1.log" 2>&1 ||
+    { tail -20 "$tmp/$1.log" >&2; warn "$2: build failed (log above)"; return 1; }
+  DESTDIR=$TEST_ROOT run root cmake --install "$b" > "$tmp/$1.log" 2>&1 ||
+    { tail -20 "$tmp/$1.log" >&2; warn "$2: install failed (log above)"; return 1; }
+  # install_manifest.txt has no trailing newline after the last path: "|| [ -n "$f" ]" still reads it.
+  while read -r f || [ -n "$f" ]; do record root "$f"; done < "$b/install_manifest.txt"
+  ok "$2 installed"
+}
+
+make_gdk_pixbuf_plugin() {
+  local so="$tmp/libpixbufloader-nova.so" moduledir
+  moduledir=$(pkg-config --variable=gdk_pixbuf_moduledir gdk-pixbuf-2.0 2>/dev/null) || moduledir=
+  [ -n "$moduledir" ] || { warn "gdk-pixbuf loader: gdk_pixbuf_moduledir unknown, skipped"; return 1; }
+  # shellcheck disable=SC2046  # pkg-config's output must split into separate flags.
+  run user "$CC" -O2 -std=c99 -Wall -fPIC -shared \
+    -I"$src/libnova" "$src/plugins/gdk-pixbuf/io-nova.c" "$src/libnova/novadec.c" -o "$so" \
+    $(pkg-config --cflags --libs gdk-pixbuf-2.0) -lpthread \
+    > "$tmp/gdk-pixbuf.log" 2>&1 ||
+    { tail -20 "$tmp/gdk-pixbuf.log" >&2; warn "gdk-pixbuf loader: build failed (log above)"; return 1; }
+  install_file root "$so" "$moduledir/libpixbufloader-nova.so" 644
+  install_file root "$src/plugins/gdk-pixbuf/nova.thumbnailer" "/usr/share/thumbnailers/nova.thumbnailer" 644
+  if command -v gdk-pixbuf-query-loaders-64 >/dev/null 2>&1; then
+    run root gdk-pixbuf-query-loaders-64 --update-cache
+  elif command -v gdk-pixbuf-query-loaders >/dev/null 2>&1; then
+    run root gdk-pixbuf-query-loaders --update-cache
+  fi
+  ok "gdk-pixbuf loader installed"
+}
+
+cargo_glycin_plugin() {
+  local libdir bin_out
+  libdir=$(pkg-config --variable=loaderdir glycin-2 2>/dev/null) || libdir=
+  [ -n "$libdir" ] || { warn "glycin loader: could not find the loader directory (glycin-2.pc has no 'loaderdir'), skipped"; return 1; }
+  run user cargo build --release --manifest-path "$src/plugins/glycin/Cargo.toml" \
+    > "$tmp/glycin.log" 2>&1 ||
+    { tail -20 "$tmp/glycin.log" >&2; warn "glycin loader: build failed (log above)"; return 1; }
+  bin_out=$(find "$src/plugins/glycin/target/release" -maxdepth 1 -type f -name 'glycin-nova*' ! -name '*.d' | head -1)
+  [ -n "$bin_out" ] || { warn "glycin loader: build produced no binary, skipped"; return 1; }
+  install_file root "$bin_out" "$libdir/$(basename "$bin_out")" 755
+  ok "glycin loader installed"
+}
+
+install_plugins() {
+  if [ $plugins = 0 ]; then
+    step "Viewer plugins skipped (--no-plugins)"
+    return 0
+  fi
+  step "Viewer plugins (open .nova files in image viewers, show thumbnails)"
+  info "They are built here, for this system's Qt / GNOME. Installing them needs root (system plugin folders)."
+  echo
+
+  if command -v cmake >/dev/null 2>&1 && pkg-config --exists Qt6Core 2>/dev/null; then
+    info "KDE / Qt: Gwenview, Okular, Krita open .nova; Dolphin shows thumbnails."
+    if ask "Build and install the Qt and KDE plugins?"; then
+      cmake_plugin qt "Qt plugin (Gwenview, Okular, Krita)" || true
+      if pkg-config --exists KF6KIO 2>/dev/null; then
+        if cmake_plugin kde "Dolphin thumbnailer"; then enable_dolphin_thumbnailer; fi
+      else
+        info "KF6KIO not found, Dolphin thumbnailer skipped."
+      fi
+    fi
+  else
+    info "Qt 6 not found, Qt/KDE plugins skipped."
+  fi
+  echo
+
+  if pkg-config --exists glycin-2 2>/dev/null; then
+    info "GNOME (Loupe, Nautilus): open .nova via the glycin loader."
+    if command -v cargo >/dev/null 2>&1; then
+      if ask "Build and install the glycin loader?"; then cargo_glycin_plugin || true; fi
+    else
+      info "cargo not found (needs Rust), glycin loader skipped."
+    fi
+  else
+    info "GNOME (Loupe, Nautilus): not installed, glycin loader skipped."
+  fi
+  echo
+
+  if pkg-config --exists gdk-pixbuf-2.0 2>/dev/null; then
+    info "GTK / gdk-pixbuf: Eye of GNOME, GIMP and older GTK apps open .nova."
+    if ask "Build and install the gdk-pixbuf loader?"; then make_gdk_pixbuf_plugin || true; fi
+  else
+    info "gdk-pixbuf not found, GTK loader skipped."
+  fi
+}
+
+# ---- main ----
+case $(uname -s) in
+  Linux) os=linux ;;
+  Darwin) os=macos ;;
+  *) die "unsupported OS: $(uname -s)" ;;
+esac
+case $(uname -m) in
+  x86_64|amd64) arch=x86_64 ;;
+  arm64|aarch64) arch=arm64 ;;
+  *) die "unsupported architecture: $(uname -m)" ;;
+esac
+
+tmp=$(mktemp -d) || die "mktemp failed"
+trap 'rm -rf -- "$tmp"' EXIT
+
+if [ $uninstall = 1 ]; then
+  do_uninstall
+  exit 0
+fi
+
+printf 'NOVA installer  (%s %s, into %s)\n' "$os" "$arch" "$(pretty "$prefix")"
+
+if [ -n "$from" ]; then
+  [ -f "$from" ] || die "no such file: $from"
+  archive=$(basename "$from")
+  version=$(printf '%s' "$archive" | sed -E "s/^nova-(.+)-$os-$arch\\.tar\\.gz\$/\\1/")
+  [ -n "$version" ] && [ "$version" != "$archive" ] || die "unexpected archive name: $archive (expected nova-<version>-$os-$arch.tar.gz)"
+  cp "$from" "$tmp/$archive"
+else
+  find_release
+  download
+  verify
+fi
+unpack
+install_bin
+install_completion
+install_mime
+check_libs
+install_plugins
+
+step "Done"
+ok "nova $version is installed."
+info "Try:  nova encode photo.jpg          (writes photo.nova)"
+info "      nova decode photo.nova photo.png"
+info "Manual: https://github.com/$repo/blob/v2/MANUAL.md"
+info "Uninstall: curl -fsSL https://raw.githubusercontent.com/$repo/v2/install.sh | bash -s -- --uninstall"
