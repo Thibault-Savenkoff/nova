@@ -8,6 +8,15 @@ _Updated 2026-09-17._
   verified green) 5. daily, quiet update check (`c424a79`) 6. README (`c32f58d`). Still open: a
   public `v2.0.0-beta` pre-release goes out only after the user reviews the exact GitHub page/command
   (no `v2.*` tag pushed yet -- `install.sh`'s download path is untested against a real release).
+- `win/nova.nsi` rewritten around NSIS's `MultiUser.nsh` + `MUI2.nsh`: a wizard page now lets the user
+  pick a per-machine (HKLM, needs elevation) or per-user (HKCU) install, license page added, and
+  `ManifestDPIAware true` fixes the installer being blurry at non-100% Windows scaling. Also fixes the
+  publisher name casing (was "Thibault Savenkoff", should be "Thibault SAVENKOFF" -- same fix applied
+  to root `LICENSE` and `win/nova.wxs`). Build-tested here with `makensis` (fake `dist/nova-windows/`
+  files) -- not yet tested by actually running the installer on Windows. `win/nova.wxs` (the MSI) is
+  still per-machine only; user didn't ask for per-user there yet.
+- Icon quality (user-reported, real Windows test) is not fixable from here: needs a new multi-resolution
+  `win/nova.ico` asset, which nobody has supplied.
 - Missing system deps (cmake, Qt-devel, libheif...) are never auto-installed
   by install.sh/build.sh -- detected and skipped with a printed command to
   copy-paste instead. User's explicit call: auto-installing packages across
@@ -44,6 +53,16 @@ _Updated 2026-09-17._
   this sandbox -- Windows install/uninstall first since it conditions the installer's quality; then
   the web page on iPhone+PC, real photos round-trip, IrfanView, GIMP; GNOME and macOS untestable by
   either of us right now). User reports each result here as they run it; fix what breaks.
+- Test 1 (Windows install/uninstall) results, from a real run: 1.2/1.3/1.4 all pass. Bugs found and
+  fixed above (name casing, NSIS user/system + DPI + license). Icon quality flagged, not fixed (needs
+  a new asset). Not yet re-tested on real Windows after this round of fixes.
+- Real bug found and fixed: decoding a `.nova` to an unrecognized extension (e.g. `nova decode x.nova
+  x.cr3`, since CR3 was never a supported decode target) silently wrote a PNG's bytes under that name
+  instead of failing -- `write_image`'s extension dispatch (nova.li) had no `else { fail }`, just a
+  bare "anything else is PNG" fallback. Fixed and round-trip verified (`.png` still works, `.cr3` now
+  fails with a clear message) with the sandbox's local `lisaac` compiler.
+- `test/unit.sh` re-run after the `write_image` fix: all OK, 2768 tests / 0 failed, 720 corrupt files
+  decoded without a crash -- no regression.
 
 ### Traps
 - Lisaac drops a `(c != NULL)` test on a `C_array` that came from a backtick C expression (assumes
