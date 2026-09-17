@@ -40,8 +40,10 @@ _Updated 2026-09-17._
   aren't installed in this sandbox), and the whole thing on macOS. Reviewed by
   reasoning + shellcheck instead; treat a first real Linux desktop run (Qt/KDE
   present) as the next real test before trusting the plugin-install paths.
-- Next: publish the `v2.0.0-beta` pre-release (user reviews first), then a real Linux desktop run of
-  `install.sh`'s plugin step, and someone actually running the CI's macOS binary once.
+- Gating the `v2.0.0-beta` pre-release: a 5-part manual test list from the user (their machines, not
+  this sandbox -- Windows install/uninstall first since it conditions the installer's quality; then
+  the web page on iPhone+PC, real photos round-trip, IrfanView, GIMP; GNOME and macOS untestable by
+  either of us right now). User reports each result here as they run it; fix what breaks.
 
 ### Traps
 - Lisaac drops a `(c != NULL)` test on a `C_array` that came from a backtick C expression (assumes
