@@ -6,7 +6,7 @@
 cd "$(dirname "$0")/.." || exit 1
 L=$(mktemp -d)
 names=("$@")
-[ ${#names[@]} -eq 0 ] && names=(check anim lossy preview meta tiff jpeg webp heif hdr raw js libnova_unit unit replicas)
+[ ${#names[@]} -eq 0 ] && names=(check anim lossy preview meta tiff jpeg webp heif hdr raw js libnova_unit unit replicas update)
 fail=0
 for n in "${names[@]}"; do
   t0=$(date +%s)

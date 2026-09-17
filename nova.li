@@ -1821,5 +1821,6 @@ Public
       }
     } else {
       usage
-    }
+    };
+    Nova_update.check version
   )

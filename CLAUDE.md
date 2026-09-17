@@ -6,7 +6,8 @@ _Updated 2026-09-17._
 - Distribution plan for v2 (6 steps): 1. `nova --version` (done, `26cd6b9`) 2.
   `install.sh` + `release/pack.sh` (done, `a932e96`) 3. `build.sh` (done,
   `111e811`) 4. GitHub Actions release job (done, `183d32e`, verified green)
-  5. daily, quiet update check in `nova.li` 6. README. A public `v2.0.0-beta`
+  5. daily, quiet update check (`nova_update.li`, done) 6. README (next; must document
+  `NOVA_NO_UPDATE_CHECK=1`). A public `v2.0.0-beta`
   pre-release only goes out after the user reviews the exact GitHub page/command.
 - Missing system deps (cmake, Qt-devel, libheif...) are never auto-installed
   by install.sh/build.sh -- detected and skipped with a printed command to
@@ -22,25 +23,36 @@ _Updated 2026-09-17._
 - glycin loader install path is found via `pkg-config --variable=loaderdir
   glycin-2` rather than a hardcoded guess -- unverified on a real GNOME
   machine (none available here); skips cleanly with a warning if absent.
-- Model: session runs Sonnet 5 at effort `high`, not Opus -- user is on a
-  Claude Pro plan, and effort matters more than model choice for this kind of
-  careful-shell-scripting correctness work.
+- Model: user is on Claude Pro. Tell them which /model and /effort to set before each significant
+  task. Opus 5 `high` is on trial for the Lisaac work; if it eats the quota, Sonnet 5 (any effort)
+  and Opus only at `low`.
+- Update check: terminal only (isatty(2)), at the very end of `main`, reads a cached GitHub
+  release list and refreshes it in the background with curl at most once a day (cache mtime is
+  touched before spawning, so a loop over files spawns one curl). Cache:
+  `$XDG_CACHE_HOME/nova/releases.json` or `~/.cache/nova/`, `%LOCALAPPDATA%\nova\` on Windows.
+  Only tags of nova's own major version count (v1 releases exist on the same repo).
+- Lisaac Ω 0.6 is installed in the sandbox at `/home/agent/tools/lisaac/bin/lisaac` (on PATH via
+  `/etc/sandbox-persistent.sh`); only `bin/lisaac.c` was compiled, not elit (needs OpenGL).
 
 ### In flight
-- `install.sh`, `release/pack.sh`, `test/install.sh` are committed on `v2`
-  (`a932e96`) and pass `test/install.sh` locally (install/re-run/uninstall/
-  corrupt-archive/--from/unknown-version/--help, 17 checks). **Not yet pushed**:
-  `git push origin v2` failed with no GitHub credentials in this sandbox: user
-  needs to run `sbx secret set github --sandbox claude-nova -t "$(gh auth
-  token)"` on their host, then the push can be retried.
-- Not yet tested end-to-end: the actual plugin builds (cmake/pkg-config/cargo
+- The update check's Windows branch (`_mkdir`, `move /y`, `_spawnl` via `Environment.run`) and the
+  WebAssembly build (`#ifdef __EMSCRIPTEN__` returns early) compile untested: no MinGW / emcc here.
+- Not yet tested end-to-end: install.sh's plugin builds (cmake/pkg-config/cargo
   aren't installed in this sandbox), and the whole thing on macOS. Reviewed by
   reasoning + shellcheck instead; treat a first real Linux desktop run (Qt/KDE
   present) as the next real test before trusting the plugin-install paths.
-- Next: `build.sh` (build-from-source path, for people who have Lisaac), then
-  the GitHub Actions release workflow.
+- Next: README (step 6): document install.sh / build.sh / NOVA_NO_UPDATE_CHECK in place of the
+  manual install steps.
 
 ### Traps
+- Lisaac drops a `(c != NULL)` test on a `C_array` that came from a backtick C expression (assumes
+  non-NULL) -- the call then crashes on NULL. Test for NULL inside the C expression instead:
+  `` (`f() != 0`:Int = 1).if {...} `` (see `nova_update.li`).
+- A background child started just before nova exits in a pty dies of SIGHUP when the terminal
+  closes; a `trap '' HUP` in the spawned `sh -c` loses the race. nova ignores SIGHUP itself right
+  before spawning (inherited through fork/exec).
+- `Nova_par` reaps any child (`waitpid(-1, ...)`), so never start a background process before its
+  jobs are done.
 - The prior session's home-wiping incident (before this sandbox existed): its
   ad hoc test command set `S=...` in the outer (zsh) shell and then ran a
   separate `t.sh` in a fresh `bash` process -- `$S` was never exported, so
