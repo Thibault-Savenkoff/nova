@@ -3,12 +3,11 @@
 _Updated 2026-09-17._
 
 ### Decisions
-- Distribution plan for v2 (6 steps): 1. `nova --version` (done, `26cd6b9`) 2.
-  `install.sh` + `release/pack.sh` (done, `a932e96`) 3. `build.sh` (done,
-  `111e811`) 4. GitHub Actions release job (done, `183d32e`, verified green)
-  5. daily, quiet update check (`nova_update.li`, done) 6. README (next; must document
-  `NOVA_NO_UPDATE_CHECK=1`). A public `v2.0.0-beta`
-  pre-release only goes out after the user reviews the exact GitHub page/command.
+- Distribution plan for v2 (6 steps), **all done**: 1. `nova --version` (`26cd6b9`) 2. `install.sh` +
+  `release/pack.sh` (`a932e96`) 3. `build.sh` (`111e811`) 4. GitHub Actions release job (`183d32e`,
+  verified green) 5. daily, quiet update check (`c424a79`) 6. README (`c32f58d`). Still open: a
+  public `v2.0.0-beta` pre-release goes out only after the user reviews the exact GitHub page/command
+  (no `v2.*` tag pushed yet -- `install.sh`'s download path is untested against a real release).
 - Missing system deps (cmake, Qt-devel, libheif...) are never auto-installed
   by install.sh/build.sh -- detected and skipped with a printed command to
   copy-paste instead. User's explicit call: auto-installing packages across
@@ -41,8 +40,8 @@ _Updated 2026-09-17._
   aren't installed in this sandbox), and the whole thing on macOS. Reviewed by
   reasoning + shellcheck instead; treat a first real Linux desktop run (Qt/KDE
   present) as the next real test before trusting the plugin-install paths.
-- Next: README (step 6): document install.sh / build.sh / NOVA_NO_UPDATE_CHECK in place of the
-  manual install steps.
+- Next: publish the `v2.0.0-beta` pre-release (user reviews first), then a real Linux desktop run of
+  `install.sh`'s plugin step, and someone actually running the CI's macOS binary once.
 
 ### Traps
 - Lisaac drops a `(c != NULL)` test on a `C_array` that came from a backtick C expression (assumes
