@@ -100,13 +100,16 @@ ask() {  # ask "question" -> 0=yes. Never blocks on stdin when piped (curl | bas
   case $reply in [Yy]*) return 0 ;; *) return 1 ;; esac
 }
 
-run() {  # run user|root <cmd...>: prints the command, sudo's root ones unless redirected to TEST_ROOT
-  local kind=$1; shift
+run() {  # run user|root <cmd...>: prints the command (paths shortened with pretty), sudo's root ones
+         # unless redirected to TEST_ROOT
+  local kind=$1 a shown=""; shift
+  for a in "$@"; do shown="$shown $(pretty "$a")"; done
+  shown=${shown# }
   if [ "$kind" = root ] && [ -z "$TEST_ROOT" ] && [ "$(id -u)" != 0 ]; then
-    printf '    $ sudo %s\n' "$*"
+    printf '    $ sudo %s\n' "$shown"
     sudo "$@"
   else
-    printf '    $ %s\n' "$*"
+    printf '    $ %s\n' "$shown"
     "$@"
   fi
 }
@@ -229,15 +232,15 @@ do_uninstall() {
       user|root)
         # A single recorded file, never a directory: nothing here can turn into "rm -rf" of anything else.
         [ -n "$rest" ] || continue
-        [ -e "$rest" ] || { info "already gone: $rest"; continue; }
-        run "$kind" rm -f -- "$rest" && ok "removed $rest" ;;
+        [ -e "$rest" ] || { info "already gone: $(pretty "$rest")"; continue; }
+        run "$kind" rm -f -- "$rest" && ok "removed $(pretty "$rest")" ;;
       line)
         file=${rest%%$'\t'*} text=${rest#*$'\t'}
         if [ -n "$file" ] && [ -f "$file" ] && grep -qxF -- "$text" "$file"; then
           # grep -v can exit 1 if removing $text empties the file -- not an error, so don't gate on it.
           grep -vxF -- "$text" "$file" > "$tmp/rc" || true
           cat "$tmp/rc" > "$file"
-          ok "removed from $file: $text"
+          ok "removed from $(pretty "$file"): $text"
         fi ;;
       dolphin)
         remove_dolphin_thumbnailer ;;
