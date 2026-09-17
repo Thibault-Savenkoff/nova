@@ -1,79 +1,113 @@
 ; NOVA for Windows installer (NSIS 3): nova.exe on the PATH, WIC codec registered (Explorer thumbnails,
 ; Photos), uninstaller in Settings > Apps. Built by win/dist.sh from dist/nova-windows/.
+; Per-user (no admin) or per-machine (admin) install, picked on a wizard page: MultiUser.nsh
+; handles the privilege check, the registry hive (ShCtx) and $InstDir for both modes.
 Unicode true
 !include x64.nsh
 !include WinMessages.nsh
 !include StrFunc.nsh
 ${UnStrRep}
 
+!define UNINST "Software\Microsoft\Windows\CurrentVersion\Uninstall\NOVA"
+!define MULTIUSER_INSTALLMODE_DEFAULT_REGISTRY_KEY "${UNINST}"
+!define MULTIUSER_INSTALLMODE_DEFAULT_REGISTRY_VALUENAME "InstallMode"
+!define MULTIUSER_INSTALLMODE_INSTDIR "NOVA"
+!define MULTIUSER_EXECUTIONLEVEL Highest
+!define MULTIUSER_MUI
+
+!include LogicLib.nsh
+!include MultiUser.nsh
+!include MUI2.nsh
+
 Name "NOVA"
 OutFile "..\dist\nova-setup.exe"
-InstallDir "$PROGRAMFILES64\NOVA"
-RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 Icon "nova.ico"
 UninstallIcon "nova.ico"
+ManifestDPIAware true
 
-!define ENV "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
-!define UNINST "Software\Microsoft\Windows\CurrentVersion\Uninstall\NOVA"
+!define ENV_ALLUSERS "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+!define ENV_CURRENTUSER "Environment"
 
-Page directory
-Page instfiles
-UninstPage uninstConfirm
-UninstPage instfiles
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MULTIUSER_PAGE_INSTALLMODE
+!insertmacro MUI_PAGE_LICENSE "..\LICENSE"
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!insertmacro MUI_PAGE_FINISH
+
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+
+!insertmacro MUI_LANGUAGE "English"
 
 Function .onInit
   ${IfNot} ${RunningX64}
     MessageBox MB_OK|MB_ICONSTOP "NOVA needs 64-bit Windows."
     Abort
   ${EndIf}
+  !insertmacro MULTIUSER_INIT
+  SetRegView 64
+FunctionEnd
+
+Function un.onInit
+  !insertmacro MULTIUSER_UNINIT
   SetRegView 64
 FunctionEnd
 
 Section
-  SetOutPath "$INSTDIR"
+  SetOutPath "$InstDir"
   File "..\dist\nova-windows\nova.exe"
   File "..\dist\nova-windows\nova_wic.dll"
   File "..\dist\nova-windows\zlib1.dll"
   File "..\dist\nova-windows\libwebp-7.dll"
   File "..\dist\nova-windows\libsharpyuv-0.dll"
   File "..\dist\nova-windows\LICENSE-*.txt"
-  SetOutPath "$INSTDIR\samples"
+  SetOutPath "$InstDir\samples"
   File "..\dist\nova-windows\*.nova"
-  WriteUninstaller "$INSTDIR\uninstall.exe"
+  WriteUninstaller "$InstDir\uninstall.exe"
 
   ; the installer is 32-bit: run the 64-bit regsvr32 for the 64-bit codec
   ${DisableX64FSRedirection}
-  ExecWait '"$SYSDIR\regsvr32.exe" /s "$INSTDIR\nova_wic.dll"' $0
+  ExecWait '"$SYSDIR\regsvr32.exe" /s "$InstDir\nova_wic.dll"' $0
   ${EnableX64FSRedirection}
   StrCmp $0 0 +2
     MessageBox MB_OK|MB_ICONEXCLAMATION "The viewer codec could not be registered (regsvr32 error $0)."
 
-  ; nova.exe on the system PATH (new terminals)
+  ; nova.exe on the PATH (new terminals): HKLM for an all-users install, HKCU for the current user only
   ; NSIS strings stop at ${NSIS_MAX_STRLEN} characters: a longer PATH would come back cut, so leave it alone
-  ReadRegStr $1 HKLM "${ENV}" "Path"
-  StrLen $3 "$1;$INSTDIR"
+  ${if} $MultiUser.InstallMode == "AllUsers"
+    ReadRegStr $1 HKLM "${ENV_ALLUSERS}" "Path"
+  ${else}
+    ReadRegStr $1 HKCU "${ENV_CURRENTUSER}" "Path"
+  ${endif}
+  StrLen $3 "$1;$InstDir"
   IntCmp $3 ${NSIS_MAX_STRLEN} pathlong 0 pathlong
   Push $1
-  Push ";$INSTDIR"
+  Push ";$InstDir"
   Call StrContains
   Pop $2
   StrCmp $2 "" 0 pathdone
-    WriteRegExpandStr HKLM "${ENV}" "Path" "$1;$INSTDIR"
+    ${if} $MultiUser.InstallMode == "AllUsers"
+      WriteRegExpandStr HKLM "${ENV_ALLUSERS}" "Path" "$1;$InstDir"
+    ${else}
+      WriteRegExpandStr HKCU "${ENV_CURRENTUSER}" "Path" "$1;$InstDir"
+    ${endif}
     Goto pathdone
   pathlong:
-    MessageBox MB_OK "Your PATH is too long to edit safely: add $INSTDIR to it yourself to run nova from a terminal."
+    MessageBox MB_OK "Your PATH is too long to edit safely: add $InstDir to it yourself to run nova from a terminal."
   pathdone:
   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=2000
 
-  WriteRegStr HKLM "${UNINST}" "DisplayName" "NOVA image format"
-  WriteRegStr HKLM "${UNINST}" "DisplayVersion" "2.0"
-  WriteRegStr HKLM "${UNINST}" "Publisher" "Thibault Savenkoff"
-  WriteRegStr HKLM "${UNINST}" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKLM "${UNINST}" "DisplayIcon" "$INSTDIR\nova.exe,0"
-  WriteRegStr HKLM "${UNINST}" "UninstallString" '"$INSTDIR\uninstall.exe"'
-  WriteRegDWORD HKLM "${UNINST}" "NoModify" 1
-  WriteRegDWORD HKLM "${UNINST}" "NoRepair" 1
+  WriteRegStr ShCtx "${UNINST}" "DisplayName" "NOVA image format"
+  WriteRegStr ShCtx "${UNINST}" "DisplayVersion" "2.0"
+  WriteRegStr ShCtx "${UNINST}" "Publisher" "Thibault SAVENKOFF"
+  WriteRegStr ShCtx "${UNINST}" "InstallLocation" "$InstDir"
+  WriteRegStr ShCtx "${UNINST}" "DisplayIcon" "$InstDir\nova.exe,0"
+  WriteRegStr ShCtx "${UNINST}" "UninstallString" '"$InstDir\uninstall.exe"'
+  WriteRegDWORD ShCtx "${UNINST}" "NoModify" 1
+  WriteRegDWORD ShCtx "${UNINST}" "NoRepair" 1
+  WriteRegStr ShCtx "${UNINST}" "InstallMode" "$MultiUser.InstallMode"
 SectionEnd
 
 ; Pushes "" if the needle (top) is not in the haystack (below it), else the needle.
@@ -102,25 +136,29 @@ Function StrContains
   Exch $R0
 FunctionEnd
 
-Function un.onInit
-  SetRegView 64
-FunctionEnd
-
 Section "Uninstall"
   ${DisableX64FSRedirection}
-  ExecWait '"$SYSDIR\regsvr32.exe" /s /u "$INSTDIR\nova_wic.dll"'
+  ExecWait '"$SYSDIR\regsvr32.exe" /s /u "$InstDir\nova_wic.dll"'
   ${EnableX64FSRedirection}
-  ReadRegStr $1 HKLM "${ENV}" "Path"
+  ${if} $MultiUser.InstallMode == "AllUsers"
+    ReadRegStr $1 HKLM "${ENV_ALLUSERS}" "Path"
+  ${else}
+    ReadRegStr $1 HKCU "${ENV_CURRENTUSER}" "Path"
+  ${endif}
   StrLen $3 $1
   IntCmp $3 ${NSIS_MAX_STRLEN} unpathdone 0 unpathdone
-  ${UnStrRep} $1 $1 ";$INSTDIR" ""
-  WriteRegExpandStr HKLM "${ENV}" "Path" $1
+  ${UnStrRep} $1 $1 ";$InstDir" ""
+  ${if} $MultiUser.InstallMode == "AllUsers"
+    WriteRegExpandStr HKLM "${ENV_ALLUSERS}" "Path" $1
+  ${else}
+    WriteRegExpandStr HKCU "${ENV_CURRENTUSER}" "Path" $1
+  ${endif}
   unpathdone:
   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=2000
-  DeleteRegKey HKLM "${UNINST}"
-  RMDir /r "$INSTDIR\samples"
-  Delete "$INSTDIR\*.exe"
-  Delete /REBOOTOK "$INSTDIR\*.dll"   ; Explorer may still hold the codec
-  Delete "$INSTDIR\LICENSE-*.txt"
-  RMDir "$INSTDIR"
+  DeleteRegKey ShCtx "${UNINST}"
+  RMDir /r "$InstDir\samples"
+  Delete "$InstDir\*.exe"
+  Delete /REBOOTOK "$InstDir\*.dll"   ; Explorer may still hold the codec
+  Delete "$InstDir\LICENSE-*.txt"
+  RMDir "$InstDir"
 SectionEnd

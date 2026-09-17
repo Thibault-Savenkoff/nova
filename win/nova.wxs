@@ -5,7 +5,7 @@
      Refresh (a nova_wic.dll export) tells Explorer the file types changed, after install and before the
      codec is removed on uninstall. -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Id="*" Name="NOVA image format" Version="2.0.0" Manufacturer="Thibault Savenkoff" Language="1033"
+  <Product Id="*" Name="NOVA image format" Version="2.0.0" Manufacturer="Thibault SAVENKOFF" Language="1033"
            UpgradeCode="6C1D4E0B-8F7A-4C55-9B7E-2A1F3D5C7E90">
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
              Description="NOVA: nova.exe and the Windows Imaging Component codec"/>
