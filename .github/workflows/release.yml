@@ -64,7 +64,7 @@ jobs:
         if: steps.lisaac-cache.outputs.cache-hit != 'true'
         run: |
           curl -fsSL -o "$RUNNER_TEMP/lisaac.zip" \
-            "https://lisaac-omega.github.io/downloads/lisaac_${{ steps.lisaac.outputs.version }}.zip"
+            "https://lisaac.org/downloads/lisaac_${{ steps.lisaac.outputs.version }}.zip"
           unzip -q "$RUNNER_TEMP/lisaac.zip" -d "$RUNNER_TEMP"
           cd "$RUNNER_TEMP/lisaac"
           ./install.sh
