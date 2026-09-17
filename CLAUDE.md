@@ -4,10 +4,14 @@ _Updated 2026-09-17._
 
 ### Decisions
 - Distribution plan for v2 (6 steps): 1. `nova --version` (done, `26cd6b9`) 2.
-  `install.sh` + `release/pack.sh` (done, `a932e96`) 3. `build.sh` 4. GitHub
-  Actions release job (Linux + macOS binaries) 5. daily, quiet update check in
-  `nova.li` 6. README. A public `v2.0.0-beta` pre-release only goes out after
-  the user reviews the exact GitHub page/command.
+  `install.sh` + `release/pack.sh` (done, `a932e96`) 3. `build.sh` (done,
+  `111e811`) 4. GitHub Actions release job (done, `183d32e`, verified green)
+  5. daily, quiet update check in `nova.li` 6. README. A public `v2.0.0-beta`
+  pre-release only goes out after the user reviews the exact GitHub page/command.
+- Missing system deps (cmake, Qt-devel, libheif...) are never auto-installed
+  by install.sh/build.sh -- detected and skipped with a printed command to
+  copy-paste instead. User's explicit call: auto-installing packages across
+  distros needs sudo and can break a system, too risky for what this is.
 - `install.sh --uninstall` is manifest-only: every file and rc-file line it
   writes is recorded in `$prefix/share/nova/installed.txt`, and uninstall only
   ever `rm -f`s a single path read back from that file -- never a directory,
