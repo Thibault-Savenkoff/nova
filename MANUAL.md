@@ -124,9 +124,6 @@ worth losing exactness for. Only adaptive mode does this, and only without `-l`.
   a q 80 or more gives 90. Coding a low-quality JPEG at q 90 would faithfully keep its blocks and ringing:
   measured, it made files of 115–167 % of the JPEG; the matched quality adds at most 0.6 dB of loss.
   Only JPEG sources have a quantisation table to read; not done for animations.
-- **A grainy JPEG:** if the file still takes over 85 % of the JPEG, it is coded once more, 5 quality steps
-  lower per 21 % too much, never below 60. Film grain and noise cost more than the JPEG's quality says;
-  each 5 steps saves about 21 %. A grainy q 85 JPEG: 117 % at q 90, 71 % at q 80.
 
 ### 6. The level, for lossless and near-lossless
 

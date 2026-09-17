@@ -3,6 +3,24 @@
 _Updated 2026-09-17._
 
 ### Decisions
+- Removed `encode_jpeg_retry` from `nova.li`: it re-lowered quality (down to 60) whenever a JPEG-
+  sourced `.nova` exceeded 85% of the source JPEG's size. User's call: chasing a size target against
+  a competing format isn't a real quality decision and biases the codec toward worse images -- the
+  encoder should only adapt to the image's own content, not to beating another file. Kept the
+  `50 + Q/2` JPEG-quality-matching rule (that one *is* content-adaptive: it reads the source JPEG's
+  own quality, not its size). `MANUAL.md`'s "A grainy JPEG" paragraph removed to match.
+- Follow-up adaptive-mode audit (user asked for "better in every respect"): the core heuristics
+  (65% photo/graphics split, 3% level-1 hurdle, 10% wavelet-savings hurdle, `50 + Q/2`) are
+  well-calibrated and safe-by-construction (uncertain cases fall back to lossless/exact, never to
+  more loss) -- deliberately left untouched, no new signals/knobs added for unproven edge cases.
+  Fixed two real inconsistencies instead: (1) `put_gain_map` was encoding the HDR gain map at
+  `opt_q` instead of `e` (the quality actually chosen for the main image after JPEG-matching) --
+  two chunks of the same file answering the same adaptive question differently; now both use `e`.
+  (2) `encode_frames`' wavelet-vs-lossless 10% trial called `pick_level` twice (same args, same
+  answer) on the "ends up lossless" path -- deduped into one call via a new `lossless_lv` local.
+  `test/unit.sh`: 2768/0 failed after each change.
+
+### Decisions
 - Distribution plan for v2 (6 steps), **all done**: `nova --version` (`26cd6b9`), `install.sh` +
   `release/pack.sh` (`a932e96`), `build.sh` (`111e811`), GitHub Actions release job (`183d32e`,
   verified green), daily quiet update check (`c424a79`), README (`c32f58d`). Still open: a public
@@ -51,9 +69,11 @@ _Updated 2026-09-17._
 
 ### Traps
 - This sandbox's `test/all.sh` will show FAIL on `tiff`/`jpeg`/`webp`/`heif` (missing
-  `test/photos/screenshot.png` -- gitignored, user's own photos, not present here) and `update`
-  (the `script` binary, from util-linux, isn't installed here). Both are environment gaps, not
-  regressions -- verify against a specific code change before assuming a real bug.
+  `test/photos/screenshot.png` -- gitignored, user's own photos, not present here). Environment gap,
+  not a regression -- verify against a specific code change before assuming a real bug.
+- `test/update.sh` (needs `script(1)` for a fake pty) flakes when launched as a background task with
+  no real tty attached (fails after 2 checks, ~1s) but passes "ALL OK" run directly in a terminal.
+  `script` itself is installed here -- re-run in foreground before trusting a background FAIL on it.
 - Lisaac drops a `(c != NULL)` test on a `C_array` that came from a backtick C expression (assumes
   non-NULL) -- the call then crashes on NULL. Test for NULL inside the C expression instead:
   `` (`f() != 0`:Int = 1).if {...} `` (see `nova_update.li`).

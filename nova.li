@@ -949,36 +949,11 @@ Public
 
   - mode_name:String
 
-  // Quality of the level 5 frame just coded (0: not level 5).
-  - lossy_q:Int
-
-  - encode_jpeg_retry <-
-  // A JPEG source coded without -q that still takes over 85 % of the JPEG (film grain, noise: they
-  // cost more than the JPEG's quality says) is coded once more, 5 quality steps lower per 21 % too
-  // much (measured: -21 % per 5 steps), down to 60. A grainy q 85 JPEG: 117 % at q 90, 71 % at q 80.
-  ( + fs,sz,n:Int
-    ((! opt_q_set) && {lossy_q > 60} && {meta_src != NULL} && {frames.count = 1}).if {
-      fs := file_size meta_src
-      sz := Nova_codec.out_count * 100
-      {(sz > fs * 85) && {lossy_q - 5 * n > 60}}.while_do {
-        sz := sz * 79 / 100
-        n := n + 1
-      }
-      ((n > 0) && {(jpeg_quality meta_src) > 0}).if {
-        opt_q := (lossy_q - 5 * n).max 60
-        opt_q_set := True
-        Nova_par.status ("Grainy JPEG: coding again at quality " + opt_q.to_string + "...")
-        load_sources (2, 2)
-        encode_frames opt_d mode opt_m level opt_l eps opt_e
-      }
-    }
-  )
-
   - encode_frames d:Int mode md:Int level lv:Int eps ep:Int <-
   // Frames -> Nova_codec.out. md: 0 adaptive, 1 lossless, 2 lossy. lv: 0 pick, -1 level 0, else the level.
   // Frames are coded from `work`, which holds the reconstructed image (lossy changes pixels):
   // a delta is coded on top of the previous reconstructed frame, as the decoder will see it.
-  ( + np,e,lvl,q:Int
+  ( + np,e,lvl,q,lossless_lv:Int
     + animated,photo:Boolean
     + work,next:C_array Uint8
     np := 3
@@ -1001,17 +976,19 @@ Public
       e := opt_q
       // JPEG source without -q: a quality matching the JPEG's, so the .nova does not spend bits on its
       // artefacts (50 + Q / 2, at most 90: JPEG q 50 -> 75, q 70 -> 85, measured to add <= 0.6 dB of
-      // loss; q 90 was 115-167 % of low-quality JPEGs). See also encode_jpeg_retry.
+      // loss; q 90 was 115-167 % of low-quality JPEGs).
       ((! opt_q_set) && {! animated} && {meta_src != NULL}).if {
         q := jpeg_quality meta_src
         (q > 0).if { e := (50 + q / 2).min 90 }
       }
-      lossy_q := e
       // Adaptive: smooth synthetic images pass the photo test but code smaller losslessly
       // (best lossless level, as pick_level would choose it). Lossy must save >= 10 % to be worth it.
-      ((md = 0) && {lv = 0} && {(central np level (pick_level np eps 0) eps 0) * 9 <= (central np level 5 eps e) * 10}).if {
-        lvl := 0
-        e := 0
+      ((md = 0) && {lv = 0}).if {
+        lossless_lv := pick_level np eps 0
+        ((central np level lossless_lv eps 0) * 9 <= (central np level 5 eps e) * 10).if {
+          lvl := lossless_lv
+          e := 0
+        }
       }
     }
     (lvl = 0).if {
@@ -1101,7 +1078,7 @@ Public
     (e = 0).if {
       Nova_codec.encode (Nova_heic.gain_map) stride (Nova_heic.gain_width) region (0, 0, Nova_heic.gain_width, Nova_heic.gain_height) planes 3 level 2 eps 0
     } else {
-      Nova_codec.encode (Nova_heic.gain_map) stride (Nova_heic.gain_width) region (0, 0, Nova_heic.gain_width, Nova_heic.gain_height) planes 3 level 5 eps opt_q
+      Nova_codec.encode (Nova_heic.gain_map) stride (Nova_heic.gain_width) region (0, 0, Nova_heic.gain_width, Nova_heic.gain_height) planes 3 level 5 eps e
     }
     end_chunk
   )
@@ -1786,9 +1763,7 @@ Public
       (frames.count > 1).if { (", " + frames.count.to_string + " frames").print }
       '\n'.print
       meta_src := Command_args.at 2
-      lossy_q := 0
       encode_frames opt_d mode opt_m level opt_l eps opt_e
-      encode_jpeg_retry
       Nova_par.status ("Writing " + (short_name dst_name) + "...")
       save_out dst_name
       n := 0
