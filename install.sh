@@ -405,6 +405,15 @@ cargo_glycin_plugin() {
   install_file root "$bin_out" "$execdir/$name" 755
   printf '[loader:image/x-nova]\nExec=%s/%s\n' "$execdir" "$name" > "$tmp/glycin-nova.conf"
   install_file root "$tmp/glycin-nova.conf" "$confdir/glycin-nova.conf" 644
+  # Nautilus thumbnails: glycin-thumbnailer is a generic tool that thumbnails whatever glycin can
+  # load, so registering the loader above is enough to make it work for .nova too. Newer GNOME
+  # (glycin-loaders' era) ships this instead of the older gdk-pixbuf-thumbnailer, which
+  # make_gdk_pixbuf_plugin's own nova.thumbnailer still targets for systems that have it.
+  if command -v glycin-thumbnailer > /dev/null 2>&1; then
+    printf '[Thumbnailer Entry]\nTryExec=glycin-thumbnailer\nExec=glycin-thumbnailer --input %%u --output %%o --size %%s\nMimeType=image/x-nova;\n' \
+      > "$tmp/nova-glycin.thumbnailer"
+    install_file root "$tmp/nova-glycin.thumbnailer" "/usr/share/thumbnailers/nova-glycin.thumbnailer" 644
+  fi
   ok "glycin loader installed"
 }
 
