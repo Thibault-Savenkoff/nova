@@ -123,11 +123,23 @@ _Updated 2026-09-18._
 - PowerShell completion (`completions/nova.ps1`): not yet tested -- no `pwsh` here (not in Fedora's
   default repos) and it's Windows-only anyway; next step is testing it directly on the user's
   Windows machine (already used for the `wic` plugin test).
-- macOS and GNOME (`plugins/gdk-pixbuf`, `plugins/glycin`): no test environment available (user's
-  other machine is Windows). User is setting up a GNOME VM (Boxes or VirtualBox) to test GNOME;
-  macOS still has no plan. Not yet tested end-to-end; the update check's Windows/WebAssembly
-  branches are also untested for the same reason (no MinGW/emcc runtime here to execute them, only
-  to compile).
+- macOS: no test environment available, no plan yet.
+- **GNOME testing (real VM, Fedora 44 + GNOME Shell 50, glycin 2.1.5): in progress.** `plugins/qt`
+  and `plugins/gdk-pixbuf` installed and built cleanly via `./build.sh` there (Qt plugin works even
+  outside KDE). `plugins/kde` correctly skipped (no KF6KIO on a GNOME box, expected).
+  **`plugins/glycin` install was broken, fixed (`c8c4bb8`), not yet re-verified:** `install.sh`
+  assumed `glycin-2.pc` exposes a `loaderdir` pkg-config variable -- it doesn't on glycin 2.1.x, so
+  the build was always skipped. Root-caused by dumping the real `.pc` file and `rpm -ql
+  glycin-loaders` on the test VM: loaders live under a versioned, convention-based directory
+  (`/usr/libexec/glycin-loaders/2+/`, `/usr/share/glycin-loaders/2+/conf.d/`), derived from the
+  `.pc`'s own `prefix` variable instead. Also found nova's glycin loader never shipped a `.conf` file
+  registering it for `image/x-nova` (checked `glycin-svg.conf`'s format on the same machine to get
+  it right) -- even a correctly-placed binary was invisible to glycin without one; `install.sh` now
+  generates and installs it. Next: user re-runs `./build.sh` in the VM (a first `cargo build
+  --release` for glycin's dependency tree is slow, in progress at time of writing) and tests opening
+  a `.nova` in Loupe/Nautilus.
+- The update check's Windows/WebAssembly branches are untested for lack of a runtime here to execute
+  them (only to compile).
 - Plugin test status (real machines): `plugins/qt` and `plugins/kde` built and installed cleanly on
   Fedora KDE (`cmake -S plugins/{qt,kde} -B build-... && cmake --build ... && sudo cmake --install
   ...`), `.nova` thumbnails confirmed showing in Dolphin (noticeably slower than a JPEG thumbnail --
