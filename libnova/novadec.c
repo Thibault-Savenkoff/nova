@@ -6,9 +6,12 @@
    three wavelet planes are decoded on up to one thread per core (NOVADEC_THREADS=n overrides;
    build with -DNOVADEC_NO_THREADS for one thread).
    ponytail: RAW frames (level 6) are not decoded (use the PREV thumbnail). */
-#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#if !defined(_WIN32) && !defined(__APPLE__) && !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L   /* sysconf, pthreads under -std=c99 */
 #endif
+/* Not defined on __APPLE__: it hides Darwin's own extensions (_SC_NPROCESSORS_ONLN isn't strict
+   POSIX) instead of just adding POSIX ones, unlike glibc where this define is purely additive.
+   macOS's default (undefined) feature-test macros already expose sysconf and pthreads under -std=c99. */
 #include "novadec.h"
 #include <stdlib.h>
 #include <string.h>
