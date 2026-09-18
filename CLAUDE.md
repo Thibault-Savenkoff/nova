@@ -135,9 +135,19 @@ _Updated 2026-09-18._
   `.pc`'s own `prefix` variable instead. Also found nova's glycin loader never shipped a `.conf` file
   registering it for `image/x-nova` (checked `glycin-svg.conf`'s format on the same machine to get
   it right) -- even a correctly-placed binary was invisible to glycin without one; `install.sh` now
-  generates and installs it. Next: user re-runs `./build.sh` in the VM (a first `cargo build
-  --release` for glycin's dependency tree is slow, in progress at time of writing) and tests opening
-  a `.nova` in Loupe/Nautilus.
+  generates and installs it (`ec10155`). Also fixed: double-click on a `.nova` said "no application
+  installed" even with a working loader, because GNOME resolves the default app for a MIME type from
+  `mimeapps.list`, not from which loader can technically decode it -- `install.sh` now runs
+  `xdg-mime default org.gnome.Loupe.desktop image/x-nova` when Loupe is present (`ec10155`).
+  **Still open: Nautilus itself won't generate a `.nova` thumbnail** (generic icon shown, a
+  `~/.cache/thumbnails/fail/gnome-thumbnail-factory/` entry appears every time) even though
+  `glycin-thumbnailer` invoked by hand on the exact same file succeeds and produces a real PNG. Ruled
+  out on the real VM: bwrap sandboxing works (`bwrap --ro-bind / / ... echo` succeeds), SELinux isn't
+  denying anything (`ausearch -m avc` clean, binary correctly labelled `bin_t`), no seccomp kill
+  (`ausearch -m SECCOMP`/`ANOM_ABEND` empty), and it's not a general glycin/VM problem (an SVG in the
+  same folder thumbnails fine). Current hypothesis being tested: Nautilus's factory may request a
+  different `--size` than the 256 used in manual testing, hitting a real bug in nova's own decoder
+  only at certain sizes -- untested as of this note.
 - The update check's Windows/WebAssembly branches are untested for lack of a runtime here to execute
   them (only to compile).
 - Plugin test status (real machines): `plugins/qt` and `plugins/kde` built and installed cleanly on
