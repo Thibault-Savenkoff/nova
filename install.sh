@@ -406,13 +406,24 @@ cargo_glycin_plugin() {
   printf '[loader:image/x-nova]\nExec=%s/%s\n' "$execdir" "$name" > "$tmp/glycin-nova.conf"
   install_file root "$tmp/glycin-nova.conf" "$confdir/glycin-nova.conf" 644
   # Nautilus thumbnails: glycin-thumbnailer is a generic tool that thumbnails whatever glycin can
-  # load, so registering the loader above is enough to make it work for .nova too. Newer GNOME
-  # (glycin-loaders' era) ships this instead of the older gdk-pixbuf-thumbnailer, which
-  # make_gdk_pixbuf_plugin's own nova.thumbnailer still targets for systems that have it.
-  if command -v glycin-thumbnailer > /dev/null 2>&1; then
-    printf '[Thumbnailer Entry]\nTryExec=glycin-thumbnailer\nExec=glycin-thumbnailer --input %%u --output %%o --size %%s\nMimeType=image/x-nova;\n' \
-      > "$tmp/nova-glycin.thumbnailer"
+  # load, so registering the loader above is enough to make it work for .nova too, in principle.
+  # Newer GNOME (glycin-loaders' era) ships this instead of the older gdk-pixbuf-thumbnailer, which
+  # make_gdk_pixbuf_plugin's own nova.thumbnailer still targets for systems that have it. The other
+  # glycin-shipped .thumbnailer files all use glycin-thumbnailer's absolute path (the factory spawns
+  # it outside an interactive shell's PATH), so this does too -- confirmed NOT sufficient on its own
+  # by itself on a real GNOME 50 VM (still no thumbnail); see CLAUDE.md, not chased further.
+  local gt_path
+  gt_path=$(command -v glycin-thumbnailer 2>/dev/null) || gt_path=
+  if [ -n "$gt_path" ]; then
+    printf '[Thumbnailer Entry]\nTryExec=%s\nExec=%s --input %%u --output %%o --size %%s\nMimeType=image/x-nova;\n' \
+      "$gt_path" "$gt_path" > "$tmp/nova-glycin.thumbnailer"
     install_file root "$tmp/nova-glycin.thumbnailer" "/usr/share/thumbnailers/nova-glycin.thumbnailer" 644
+  fi
+  # A working loader is not enough for double-click-to-open: GNOME resolves the default app for a
+  # MIME type from mimeapps.list, not from which loader can technically decode it, so Loupe (which
+  # decodes .nova fine once given the file) never gets offered unless set as the default here.
+  if [ -f /usr/share/applications/org.gnome.Loupe.desktop ] && command -v xdg-mime > /dev/null 2>&1; then
+    run user xdg-mime default org.gnome.Loupe.desktop image/x-nova
   fi
   ok "glycin loader installed"
 }
