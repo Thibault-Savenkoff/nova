@@ -38,8 +38,8 @@ _Updated 2026-09-18._
   (`Register-ArgumentCompleter`) ships in the Windows zip/NSIS/MSI instead (`win/dist.sh`/`.nsi`/
   `.wxs`), since `install.sh` never runs on Windows; not auto-wired into `$PROFILE`. cmd.exe has no
   hook for a third-party program's argument completion -- nothing shipped for it.
-- Icon quality (real Windows test) needs a new multi-resolution `win/nova.ico`; nobody has supplied
-  one yet.
+- Icon quality: stale note, checked and closed. `win/nova.ico` (`0d9eef0`) is already multi-resolution
+  (256/64/48/32/24/16 px) and legible down to 16 px -- no further work needed.
 - Missing system deps (cmake, Qt-devel, libheif...) are never auto-installed by install.sh/build.sh
   -- detected and skipped with a printed command to copy-paste. Deliberate: auto-installing across
   distros needs sudo and can break a system.
@@ -115,9 +115,19 @@ _Updated 2026-09-18._
   found and fixed the CR3 bug, name casing, and the NSIS issues above. Not yet re-tested on real
   Windows since. The user's `~/test_nova/Tests.md` pass above covers most of tests 2-5's ground
   (encode/decode/metadata/bench/RAW on real files) though not run through IrfanView/GIMP specifically.
-- Not yet tested end-to-end: the whole thing on macOS, fish and PowerShell completion behavior (no
-  fish/pwsh here -- only syntax-checked), and the update check's Windows/WebAssembly branches (no
-  MinGW/emcc runtime here to execute them, only to compile).
+- **fish completion: tested and fixed (`f7a4279`).** Installed fish here, verified non-interactively
+  with `complete -C'nova ...'` (no real shell needed). Found and fixed a real bug: `nova <TAB>` at
+  the top level showed the 6 subcommands mixed in with every file in the current directory, because
+  fish falls back to default file completion unless a rule opts out with `-f`. All other paths
+  (`-m`, `-l`, `-look`, positional file args) checked correct.
+- PowerShell completion (`completions/nova.ps1`): not yet tested -- no `pwsh` here (not in Fedora's
+  default repos) and it's Windows-only anyway; next step is testing it directly on the user's
+  Windows machine (already used for the `wic` plugin test).
+- macOS and GNOME (`plugins/gdk-pixbuf`, `plugins/glycin`): no test environment available (user's
+  other machine is Windows). User is setting up a GNOME VM (Boxes or VirtualBox) to test GNOME;
+  macOS still has no plan. Not yet tested end-to-end; the update check's Windows/WebAssembly
+  branches are also untested for the same reason (no MinGW/emcc runtime here to execute them, only
+  to compile).
 - Plugin test status (real machines): `plugins/qt` and `plugins/kde` built and installed cleanly on
   Fedora KDE (`cmake -S plugins/{qt,kde} -B build-... && cmake --build ... && sudo cmake --install
   ...`), `.nova` thumbnails confirmed showing in Dolphin (noticeably slower than a JPEG thumbnail --
