@@ -842,9 +842,16 @@ Public
         }
         frames.add_last f
       }.elseif {Image.init name} then {
-        frames.add_last (Image.load (Image.rgb_alpha))
+        // Copied, not stored as-is: some coders (the JPEG one) reuse one shared output buffer
+        // across loads, which would make every animation frame alias the last one decoded.
+        src := Image.load (Image.rgb_alpha)
         iw := Image.img_x
         ih := Image.img_y
+        f := C_array Uint8.create (iw * ih * 4)
+        0.to (iw * ih * 4 - 1) do { j:Int
+          f.at j put (src.at j)
+        }
+        frames.add_last f
       } else {
         fail ("cannot read image " + name)
       }
@@ -1791,8 +1798,12 @@ Public
       ("nova " + version + "\n").print
     }.elseif {(cmd != NULL) && {cmd == "bench"} && {n >= 3}} then {
       2.to (n - 1) do { i:Int
-        load_sources (i, i)
-        encode_frames 100 mode 1 level 0 eps 0
+        (is_raw (Command_args.at i)).if {
+          encode_raw (Command_args.at i)
+        } else {
+          load_sources (i, i)
+          encode_frames 100 mode 1 level 0 eps 0
+        }
         Nova_par.clear
         ((Command_args.at i) + "  " + Nova_codec.out_count.to_string + " bytes  " + ((Nova_codec.out_count * 8 * 1000) / (width * height)).to_string + " mbit/pixel\n").print
       }
