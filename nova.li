@@ -779,7 +779,7 @@ Public
     raw_exif := C_array Uint8.create n
     0.to (n - 1) do { i:Int raw_exif.at i put (o.at i) }
     raw_exif_n := n
-    Nova_tiff.write_dng NULL data data rawh rh metas (meta_pos, meta_len) size (width, height)
+    Nova_tiff.write_dng NULL data data rawh rh metas (meta_pos, meta_len) size (width, height) thumb (NULL, 0, 0, 0)
     tif := (name.has_suffix ".tif") || {name.has_suffix ".tiff"}
     bits := 8
     (tif).if { bits := 16 }
@@ -1307,9 +1307,9 @@ Public
 
   - read_nova name:String decode_to dst:String <-
   // dst = NULL: print the chunk list (info). Else write each frame as PNG.
-  ( + pos,t,len,c,np,x0,y0,dw,dh,count,flags,nframes,live_pos,live_len,rawh,n:Int
-    + done,animated,raw:Boolean
-    + cur,next:C_array Uint8
+  ( + pos,t,len,c,np,x0,y0,dw,dh,count,flags,nframes,live_pos,live_len,rawh,n,tw,th,tn:Int
+    + done,animated,raw,have_thumb:Boolean
+    + cur,next,tb:C_array Uint8
     + base:String
     meta_pos.clear
     meta_len.clear
@@ -1377,8 +1377,15 @@ Public
             Nova_par.status ("Writing " + (short_name dst) + "...")
             write_pgm dst
           }.elseif {dst.has_suffix ".dng"} then {
+            tn := 0
+            (have_thumb).if {
+              (Nova_jpeg.encode next size (tw, th) quality 85 exif (next, 0, 0) icc (next, 0, 0) xmp (next, 0, 0)).if {
+                tn := Nova_jpeg.size
+                tb := copy_bytes (Nova_jpeg.data) size tn
+              }
+            }
             Nova_par.status ("Writing " + (short_name dst) + "...")
-            Nova_tiff.write_dng dst data data rawh rawh metas (meta_pos, meta_len) size (width, height)
+            Nova_tiff.write_dng dst data data rawh rawh metas (meta_pos, meta_len) size (width, height) thumb (tb, tn, tw, th)
           } else {
             develop_raw dst rawh rawh
           }
@@ -1434,6 +1441,17 @@ Public
           count := 1
           nframes := 0
           done := True
+        }.elseif {raw && {dst.has_suffix ".dng"}} then {
+          // Kept for write_dng below: an Exif-style JPEG thumbnail, from the RAW's own 512 px
+          // preview (already a real LibRaw half-size development, not the bare sensor).
+          tw := u16 pos
+          th := u16 (pos + 2)
+          np := u8 (pos + 4)
+          ((tw > 0) && {th > 0} && {(np = 3) || {np = 4}}).if {
+            next := C_array Uint8.create (tw * th * 4)
+            0.to (tw * th - 1) do { i:Int next.at (i * 4 + 3) put 255 }
+            (Nova_codec.decode data from (pos + 5) size (len - 5) into next stride tw region (0, 0, tw, th) planes np).if { have_thumb := True }
+          }
         }
       }.elseif {(t = t_gmap) && {len >= 7}} then {
         gm_w := u16 pos

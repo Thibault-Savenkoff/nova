@@ -15,6 +15,22 @@ Public
   // File byte order: big-endian ("MM") or little-endian ("II"); src blocks are read the same way.
   - big:Boolean
 
+  // Optional thumbnail (a full baseline JPEG) written as a second, Exif-style IFD1 after `finish`'s
+  // main IFD0: NewSubfileType 1, Compression 6, JPEGInterchangeFormat/Length pointing at the JPEG
+  // bytes appended after it. thumb_n = 0: no thumbnail (the default; `start` resets it).
+  - thumb:C_array Uint8
+  - thumb_n:Int
+  - thumb_w:Int
+  - thumb_h:Int
+
+  - set_thumb t:C_array Uint8 size n:Int wh (w,h:Int) <-
+  (
+    thumb := t
+    thumb_n := n
+    thumb_w := w
+    thumb_h := h
+  )
+
   - u8 p:Int :Int <- (src.at p).to_int
 
   - u32 p:Int :Int <- ((u8 p) << 24) | ((u8 (p + 1)) << 16) | ((u8 (p + 2)) << 8) | (u8 (p + 3))
@@ -260,6 +276,7 @@ Public
     blocks.clear
     ext := C_array Uint8.create cap
     ext_n := 0
+    thumb_n := 0
   )
 
   - o16 v:Int <-
@@ -287,7 +304,7 @@ Public
   - finish name:String pixels mode:Int size (w,h:Int) <-
   // Writes the file: header, sorted IFD, tag data, pixels (mode 0: Nova_raw samples as 16 bits,
   // 1: the strips of Nova_zlib.tiff, 2: none). name = NULL: left in Nova_codec.out.
-  ( + n,k,t,base,pix,ty,v,pos:Int
+  ( + n,k,t,base,pix,ty,v,pos,pixel_bytes,ifd1_off:Int
     + d:C_array Uint8
     n := ent.count / 5
     1.to (n - 1) do { i:Int
@@ -314,6 +331,13 @@ Public
     }
     0.to (blocks.count / 3 - 1) do { i:Int
       move_ifd (blocks.at (i * 3 + 2)) in (blocks.at (i * 3), blocks.at (i * 3 + 1)) by (base + (blocks.at (i * 3))) depth 0
+    }
+    (mode = 0).if { pixel_bytes := w * h * 2 }.elseif {mode = 1} then { pixel_bytes := Nova_zlib.size } else { pixel_bytes := 0 }
+    (thumb_n > 0).if {
+      ifd1_off := pix + pixel_bytes
+      0.to (n - 1) do { i:Int
+        ((ent.at (i * 5)) = 330).if { ent.at (i * 5 + 3) put ifd1_off }
+      }
     }
     Nova_codec.reset_out
     (big).if {
@@ -365,6 +389,59 @@ Public
       0.to (Nova_zlib.size - 1) do { i:Int
         Nova_codec.put_byte ((d.at i).to_int)
       }
+    }
+    (thumb_n > 0).if {
+      // IFD1, Exif-thumbnail style: a full baseline JPEG, old-style Compression 6, pointed to by
+      // JPEGInterchangeFormat/Length. Header is 2 (count) + 9*12 (entries) + 4 (next IFD) = 114
+      // bytes, so the JPEG bytes start right after, at ifd1_off + 114, and BitsPerSample's 3
+      // SHORTs (it doesn't fit inline) right after those, at ifd1_off + 114 + thumb_n.
+      o16 9
+      o16 254
+      o16 4
+      o32 1
+      o32 1
+      o16 256
+      o16 4
+      o32 1
+      o32 thumb_w
+      o16 257
+      o16 4
+      o32 1
+      o32 thumb_h
+      o16 258
+      o16 3
+      o32 3
+      o32 (ifd1_off + 114 + thumb_n)
+      o16 259
+      o16 3
+      o32 1
+      o16 6
+      o16 0
+      o16 262
+      o16 3
+      o32 1
+      o16 6
+      o16 0
+      o16 277
+      o16 3
+      o32 1
+      o16 3
+      o16 0
+      o16 513
+      o16 4
+      o32 1
+      o32 (ifd1_off + 114)
+      o16 514
+      o16 4
+      o32 1
+      o32 thumb_n
+      o32 0
+      0.to (thumb_n - 1) do { i:Int
+        Nova_codec.put_byte ((thumb.at i).to_int)
+      }
+      o16 8
+      o16 8
+      o16 8
     }
     (name != NULL).if { Nova.save_out name }
   )
@@ -480,7 +557,10 @@ Public
   // DNG
   //
 
-  - write_dng name:String data d:C_array Uint8 rawh rh:Int metas (mp,ml:Array Int) size (w,h:Int) <-
+  - write_dng name:String data d:C_array Uint8 rawh rh:Int metas (mp,ml:Array Int) size (w,h:Int) thumb (t:C_array Uint8, tn,tw,th:Int) <-
+  // thumb: an optional pre-encoded baseline JPEG (tn = 0: none) for the Exif-style IFD1 `finish`
+  // appends. Passed in, not set beforehand: `start` (right below) resets thumb_n to 0, so a setter
+  // called before write_dng would have its thumbnail wiped before it's ever used.
   ( + nb,fo,o,flt,filters,top,left,vw,vh,bl,c4,c5,pos,cap,k,cl:Int
     + cfa:C_array Int
     src := d
@@ -488,6 +568,13 @@ Public
     cap := 65536
     0.to (ml.upper) do { i:Int cap := cap + ml.at i }
     start cap
+    (tn > 0).if {
+      set_thumb t size tn wh (tw, th)
+      // SubIFDs (330): DNG readers find a preview/thumbnail through this tag on IFD0, not through
+      // the classic Exif IFD0->IFD1 next-pointer chain (that's for plain Exif JPEGs). Value patched
+      // to the real IFD1 offset in `finish`, once it's known.
+      add 330 type 4 count 1 value 0 kind 0
+    }
     top := u32 (rh + 1)
     left := u32 (rh + 5)
     vw := u32 (rh + 9)
