@@ -387,15 +387,24 @@ make_gdk_pixbuf_plugin() {
 }
 
 cargo_glycin_plugin() {
-  local libdir bin_out
-  libdir=$(pkg-config --variable=loaderdir glycin-2 2>/dev/null) || libdir=
-  [ -n "$libdir" ] || { warn "glycin loader: could not find the loader directory (glycin-2.pc has no 'loaderdir'), skipped"; return 1; }
+  # glycin-2.pc has no 'loaderdir' variable (recent glycin: loaders live under a versioned
+  # "<API version>+" directory, e.g. /usr/libexec/glycin-loaders/2+, discovered by convention, not
+  # by pkg-config). Built from the .pc's own 'prefix', matching every glycin-loaders package layout
+  # observed so far (glycin-heif, glycin-svg, ...).
+  local prefix execdir confdir bin_out name
+  prefix=$(pkg-config --variable=prefix glycin-2 2>/dev/null) || prefix=
+  [ -n "$prefix" ] || prefix=/usr
+  execdir="$prefix/libexec/glycin-loaders/2+"
+  confdir="$prefix/share/glycin-loaders/2+/conf.d"
   run user cargo build --release --manifest-path "$src/plugins/glycin/Cargo.toml" \
     > "$tmp/glycin.log" 2>&1 ||
     { tail -20 "$tmp/glycin.log" >&2; warn "glycin loader: build failed (log above)"; return 1; }
   bin_out=$(find "$src/plugins/glycin/target/release" -maxdepth 1 -type f -name 'glycin-nova*' ! -name '*.d' | head -1)
   [ -n "$bin_out" ] || { warn "glycin loader: build produced no binary, skipped"; return 1; }
-  install_file root "$bin_out" "$libdir/$(basename "$bin_out")" 755
+  name=$(basename "$bin_out")
+  install_file root "$bin_out" "$execdir/$name" 755
+  printf '[loader:image/x-nova]\nExec=%s/%s\n' "$execdir" "$name" > "$tmp/glycin-nova.conf"
+  install_file root "$tmp/glycin-nova.conf" "$confdir/glycin-nova.conf" 644
   ok "glycin loader installed"
 }
 
