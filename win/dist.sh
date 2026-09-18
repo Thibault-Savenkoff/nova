@@ -15,7 +15,8 @@ NOVA for Windows (test build)
 
 1. nova.exe: open a terminal here, then: nova encode photo.jpg photo.nova / nova decode photo.nova photo.jpg
 2. Viewer support: right-click install.bat > Run as administrator.
-   Then open the .nova files here in Explorer (thumbnails) and Photos.
+   Then open the .nova files here in Explorer (thumbnails) and Windows Photo Viewer. The modern
+   Photos app takes no third-party codec, whatever the format -- it will not open .nova.
 3. Remove: right-click uninstall.bat > Run as administrator.
 
 zlib1.dll (zlib) and libwebp-7.dll, libsharpyuv-0.dll (libwebp) write PNG and WebP; keep them next to nova.exe.

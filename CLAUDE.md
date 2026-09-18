@@ -72,52 +72,41 @@ _Updated 2026-09-18._
      `bench` always took the non-RAW path. Fixed by adding the same `is_raw` -> `encode_raw` branch
      to `bench`'s loop. Both animation and bench fixes are committed (see below) -- confirmed by the
      user on real files: bench+CR3 "c'est bon", animation "3 frames différentes exportées".
-  3. **DNG output had no embedded thumbnail** -- still being worked on, kept OUT of the commit
-     above, working tree only. See its own entry below; two attempts so far have not produced a
-     visible thumbnail on the user's machine.
-- **DNG thumbnail attempt log (not committed, not working yet):**
-  - Attempt 1: `Nova_tiff.write_dng` now optionally appends a second, Exif-thumbnail-style IFD1
-    (`NewSubfileType 1, Compression 6, JPEGInterchangeFormat/Length`) after the main pixel data,
-    sourced from the RAW's own PREV chunk (LibRaw half-size preview, already in every RAW `.nova`).
-    Result: no thumbnail. Root cause found: `write_dng` calls `start` as its first statement, and
-    `start` resets `thumb_n := 0` -- but the call site set the thumbnail via `Nova_tiff.set_thumb`
-    *before* calling `write_dng`, so `start` wiped it before `finish` ever saw it.
-  - Attempt 2: fixed the ordering (`write_dng` now takes `thumb (t, tn, tw, th)` as parameters and
-    calls `set_thumb` itself, right after `start`). Also speculatively added a `BitsPerSample`
-    (258) entry, reasoning some TIFF readers require it. Result on the user's machine: still no
-    thumbnail.
-  - **Do not add a third speculative tag.** Per outside review: BitsPerSample was very unlikely to
-    be the real blocker (extractors that read tags 513/514 just grab the JPEG byte range) and was
-    added without any local verification -- net risk, not progress. The actual next step is a
-    Python script the user can run on their *existing* `out.dng` (no rebuild needed) that parses
-    IFD0's next-IFD-offset and, if non-zero, IFD1's tags and the JPEG SOI/EOI bytes at the claimed
-    offset. That number tells us which of two completely different bugs this is: (a) next-IFD-offset
-    is still 0 -> nothing was ever written, most likely because the user tested against a stale
-    binary (they install to `~/.local/bin`, separate from the repo's `./nova`) rather than a real
-    IFD1 bug -- ask them to test with `./nova` directly from the repo to rule this out; or (b) a
-    valid IFD1 with a real JPEG inside it exists but no viewer shows it -- meaning the bytes are
-    fine and the real problem is that DNG readers (Gwenview via LibRaw/KImageFormats) look for
-    previews via SubIFDs (tag 330) rather than the classic Exif IFD1 next-pointer chain, which is a
-    different, bigger fix. Do not touch `nova_tiff.li` again until this comes back.
-  - Also useful: `finish`'s IFD1 code path is shared by `write_image`'s TIFF output (mode 1), so it
-    can be exercised and checked byte-for-byte with `test/corpus/*.png` alone -- no CR3, no LibRaw
-    needed -- via a test-only env-var hook (mirroring the existing `NOVA_RECON`/`NOVA_GAINMAP`
-    pattern) that isn't built yet. Would turn this into a one-second local loop instead of a
-    one-message-per-attempt loop with the user. Worth building before attempt 3.
+  3. **DNG output had no embedded thumbnail** -- fixed and committed separately (`8ceb5ce`), see
+     its own entry below.
+- **DNG thumbnail: done and committed (`8ceb5ce`).** `write_dng`/`Nova_tiff.finish` embed the RAW's
+  PREV-chunk preview (LibRaw half-size development) as a JPEG thumbnail, referenced from IFD0 via a
+  `SubIFDs` (tag 330) entry -- not the classic Exif IFD0->IFD1 next-pointer chain, which is for plain
+  Exif JPEGs and which DNG readers don't follow for previews. Two earlier attempts (a `start`-vs-
+  `set_thumb` ordering bug, then a wrong guess that a missing `BitsPerSample` tag was the blocker)
+  didn't work; a byte-level diagnostic (parsing IFD0's next-IFD offset and IFD1 by hand in Python) is
+  what found the real cause. Confirmed both via a direct `libraw_unpack_thumb()` test (correct
+  tformat/width/height/length) and visually in Gwenview. **Still black in Dolphin** -- isolated to
+  Dolphin's own `rawthumbnail.so` (kdegraphics-thumbnailers) failing to show a thumbnail that LibRaw
+  itself reads correctly; "RAW images" preview is enabled in Dolphin's settings and the thumbnail
+  cache was cleared, so this isn't a nova-side bug or an easy config fix. Closed on nova's side.
+  Useful for future TIFF/IFD work: `finish`'s IFD1 code path is shared by `write_image`'s TIFF output
+  (mode 1), so it can be exercised locally against `test/corpus/*.png` alone, no CR3/LibRaw needed.
 - `nova decode raw.nova out.pgm` "looks black" -- confirmed non-bug. User checked pixel extrema
   (`1943, 16383`): real sensor data, not black; just a naive linear view of unprocessed raw values
   (expected, per MANUAL.md -- the bare sensor frame has no demosaic/white-balance/gamma). Closed.
-- HDR gain map (#18): user tested a real iPhone HEIC with a GMAP chunk -> Ultra HDR JPEG. Gwenview
-  "pas terrible", darktable shows the same image as the source HEIC either way. Likely not a nova
-  bug: `write_ultrahdr`'s own comment says "SDR viewers show the SDR image", and neither Gwenview
-  nor darktable are known to support Ultra HDR gain maps (a 2023 format, mainly Android/Chrome
-  support so far) -- darktable showing the unmodified SDR base image is probably the *correct*
-  fallback, not evidence the gain map is broken. Offered to write a segment-dump script to check
-  the MPF/XMP gain map structurally if the user wants; not done yet, no response.
-- HDR `-hdr` rendering differences (#17): user says results differ "visuellement" between decoded
-  formats/options but hasn't said which pair -- MANUAL.md documents that `-hdr` legitimately looks
-  different per viewer (raw PQ, "burnt, cyan skies" without tone-mapping) so this may also be
-  expected. Still open, waiting on the user for which exact files/options they compared.
+- Gwenview crash opening an animated `.nova` (JPEG sources): reported once, alongside the animation
+  JPEG-aliasing bug (both frames-related). No longer reproduces after that fix was committed
+  (`9f69c34`) -- likely the same root cause (all frames aliasing one shared buffer destabilized the
+  Qt plugin). Closed, no separate fix made; re-open if it recurs.
+- **HDR gain map (#18): closed, not a bug.** A structural dump (MPF segment + both JPEGs' `hdrgm:`
+  XMP gain-map description) of a real Ultra HDR JPEG confirmed everything spec-correct: valid MPF
+  linking the SDR and gain-map images, complete `hdrgm:` fields (GainMapMin/Max, Gamma, Offsets,
+  HDRCapacityMin/Max) on the gain-map image. Confirmed rendering correctly on the user's iPhone.
+  Gwenview/darktable showing "pas terrible"/the plain SDR image is expected: neither supports Ultra
+  HDR gain maps (a 2023 format, mainly Android/Chrome so far) -- not evidence of a nova bug.
+- **HDR `-hdr` rendering differences (#17): closed, not a bug.** `nova decode x.nova out.{png,avif,
+  heic,tif} -hdr` gave visibly different-looking results per format (PNG flat/no contrast, TIFF
+  over-contrasted, AVIF over-exposed, HEIC different from source) -- exactly the documented,
+  by-design behavior: `-hdr` writes raw PQ (PNG/AVIF/HEIC) or linear (TIFF) values meant for an
+  HDR-aware editor/player, not a plain viewer (MANUAL.md's HDR section already says as much). The
+  non-`-hdr` Ultra HDR JPEG/AVIF (the one meant for normal viewing) was confirmed to look correct
+  and identical across viewers, including on the user's iPhone.
 - Real bug found earlier (real Windows test) and fixed: decoding to an unrecognized extension (e.g.
   `nova decode x.nova x.cr3`) silently wrote a PNG under that name instead of failing --
   `write_image` (nova.li) had no `else { fail }`. Fixed, verified (round-trip + `test/unit.sh`:
@@ -126,10 +115,21 @@ _Updated 2026-09-18._
   found and fixed the CR3 bug, name casing, and the NSIS issues above. Not yet re-tested on real
   Windows since. The user's `~/test_nova/Tests.md` pass above covers most of tests 2-5's ground
   (encode/decode/metadata/bench/RAW on real files) though not run through IrfanView/GIMP specifically.
-- Not yet tested end-to-end: install.sh's plugin builds (cmake/pkg-config/cargo aren't installed in
-  this sandbox), the whole thing on macOS, fish and PowerShell completion behavior (no fish/pwsh
-  here -- only syntax-checked), and the update check's Windows/WebAssembly branches (no MinGW/emcc
-  runtime here to execute them, only to compile).
+- Not yet tested end-to-end: the whole thing on macOS, fish and PowerShell completion behavior (no
+  fish/pwsh here -- only syntax-checked), and the update check's Windows/WebAssembly branches (no
+  MinGW/emcc runtime here to execute them, only to compile).
+- Plugin test status (real machines): `plugins/qt` and `plugins/kde` built and installed cleanly on
+  Fedora KDE (`cmake -S plugins/{qt,kde} -B build-... && cmake --build ... && sudo cmake --install
+  ...`), `.nova` thumbnails confirmed showing in Dolphin (noticeably slower than a JPEG thumbnail --
+  a real `nova` decode per thumbnail, not investigated further, likely expected). `plugins/wic`
+  (Windows Explorer) confirmed working too: `win/build.sh` and `plugins/wic/build.sh` cross-compile
+  fine on Fedora (MinGW-w64, already installed) -- only `nova.exe` and `nova_wic.dll` need to reach
+  the Windows machine, no MinGW/MSYS2 needed there, just `regsvr32 nova_wic.dll` as admin. Confirmed
+  the modern Windows Photos app cannot use third-party WIC codecs regardless of format (sandboxed) --
+  `.nova` opens in the legacy Windows Photo Viewer instead, as README.md already documented;
+  `win/dist.sh`'s own bundled README.txt wrongly said "Photos" -- fixed to name Photo Viewer and
+  say Photos won't open it. `plugins/gdk-pixbuf` and `plugins/glycin` (GNOME) have no test
+  environment available (user's other machine is Windows, not GNOME) -- untested, no plan yet.
 
 ### Traps
 - This sandbox's `test/all.sh` will show FAIL on `tiff`/`jpeg`/`webp`/`heif` (missing
