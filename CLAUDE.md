@@ -123,7 +123,21 @@ _Updated 2026-09-18._
 - PowerShell completion (`completions/nova.ps1`): not yet tested -- no `pwsh` here (not in Fedora's
   default repos) and it's Windows-only anyway; next step is testing it directly on the user's
   Windows machine (already used for the `wic` plugin test).
-- macOS: no test environment available, no plan yet.
+- **macOS: tested for real (user's MacBook Air M4, ARM64).** `./build.sh` compiles and installs the
+  core `nova` CLI cleanly -- confirmed working (`nova encode`/`decode` round-trip). Found and fixed
+  a real cross-platform bug (`072f6f7`): `libnova/novadec.c` unconditionally defined
+  `_POSIX_C_SOURCE 200809L`, which on Darwin (unlike glibc, where it's purely additive) hides Apple's
+  own extensions instead of just adding POSIX ones -- broke `sysconf(_SC_NPROCESSORS_ONLN)`, used to
+  size the decoder's thread pool. Fixed by not defining it under `__APPLE__` (macOS's default
+  feature-test macros already expose what's needed). After the fix, `plugins/qt` also builds and
+  installs cleanly on macOS via `./build.sh` -- untested in an actual Qt app (user has none on this
+  Mac to try it with). KDE/GNOME plugins correctly skipped (not applicable on macOS).
+  `update-mime-database not found` is expected, not a bug -- macOS has no shared-mime-info framework.
+  **No native Finder/Quick Look/Preview support yet** (would need a new ImageIO plugin, comparable in
+  scope to `plugins/wic` on Windows -- code signing, notarization and app-extension sandboxing all
+  have their own untested pitfalls). Decision: deliberately deferred past the v2 release rather than
+  rushed in -- ship v2 with a working CLI on macOS and the native plugins nova already has elsewhere
+  (Windows WIC, Linux Qt/KDE/GNOME/GTK), build and test the ImageIO plugin properly afterward.
 - **GNOME testing (real VM, Fedora 44 + GNOME Shell 50, glycin 2.1.5): in progress.** `plugins/qt`
   and `plugins/gdk-pixbuf` installed and built cleanly via `./build.sh` there (Qt plugin works even
   outside KDE). `plugins/kde` correctly skipped (no KF6KIO on a GNOME box, expected).
