@@ -1,9 +1,9 @@
 name: Release
 
 # v2.* tags publish a GitHub Release with Linux and macOS binaries (install.sh
-# downloads these). Windows already has its own MSI/EXE installer (win/), not
-# built here. workflow_dispatch builds the same artifacts without publishing,
-# to try the pipeline out.
+# downloads these) and the Windows zip, NSIS installer and MSI (win/dist.sh).
+# workflow_dispatch builds the same artifacts without publishing, to try the
+# pipeline out.
 on:
   push:
     tags: ["v2.*"]
@@ -96,9 +96,52 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+      # The Windows job cross-compiles this instead of building Lisaac Ω again.
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'linux'
+        with:
+          name: c-source
+          path: nova.c
+          if-no-files-found: error
+
+  windows:
+    # nova.exe and the WIC codec cross-compile from the nova.c the Linux job
+    # already wrote. Fedora because win/dist.sh reads MinGW's Fedora sysroot
+    # and needs mingw64-zlib/mingw64-libwebp, which Debian and Ubuntu do not
+    # package at all.
+    needs: build
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      # git and tar are what checkout and the artifact actions need; the rest
+      # is the list win/dist.sh documents.
+      - name: Install the cross-compiler and the packaging tools
+        run: |
+          dnf install -y --setopt=install_weak_deps=False git tar zip \
+            mingw64-gcc mingw64-gcc-c++ mingw64-zlib mingw64-libwebp \
+            mingw32-nsis msitools
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: c-source
+
+      - name: Build the Windows files
+        run: bash win/dist.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nova-windows
+          path: |
+            dist/nova-windows.zip
+            dist/nova-setup.exe
+            dist/nova-setup.msi
+          if-no-files-found: error
+
   publish:
     if: startsWith(github.ref, 'refs/tags/v2.')
-    needs: build
+    needs: [build, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -111,6 +154,9 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
+          # Only the release files: c-source is the Windows job's input, not
+          # something to attach to the release.
+          pattern: nova-*
           path: dist
           merge-multiple: true
 
