@@ -41,9 +41,18 @@ _Updated 2026-09-18._
   `mingw64-zlib`/`mingw64-libwebp`, which Debian and Ubuntu do not package at all. `publish` waits
   on it and now downloads only `nova-*`, so `c-source` stays an input instead of being attached to
   the release. **Verify with `workflow_dispatch` before the next tag** (it runs `build` + `windows`
-  and skips `publish`); two things could not be checked from this machine (no network, no Docker):
-  that `fedora:latest` still packages `mingw32-nsis`/`msitools` under those names, and that
-  `actions/checkout` is happy in a Fedora container after the `dnf install` of `git`/`tar`.
+  and skips `publish`) -- **done, green** (run `35514505701`, `windows` job 59s): both worries were
+  unfounded, `fedora:latest` packages `mingw32-nsis`/`msitools` under those names and
+  `actions/checkout` is fine in the container after the `dnf install`. Artifact contents verified
+  here: `nova-setup.exe` 1.5 MB, `nova-setup.msi` 2.5 MB, `nova-windows.zip` 1.5 MB holding
+  `nova.exe`, `nova_wic.dll`, the zlib/libwebp DLLs, the three sample `.nova`, the `.bat` pair and
+  the fixed `nova.ps1`. Not yet attached to the published `v2.0.0-beta` release -- that needs a
+  `gh release upload`, ask the user first.
+  Note for triggering it again: the repo's default branch is `main` (still v1), whose `release.yml`
+  has no `workflow_dispatch`, so GitHub shows no "Run workflow" button for the v2 one. The web UI
+  reads that button off the default branch only; the API does not care, so
+  `gh workflow run release.yml --ref v2 -R Thibault-Savenkoff/nova` works. For the same reason runs
+  are labelled "Build & Release" (main's `name:`) even though the file executed is v2's.
 - `win/nova.nsi` rewritten around NSIS's `MultiUser.nsh` + `MUI2.nsh`: a wizard page lets the user
   pick per-machine (HKLM, elevation) or per-user (HKCU) install, license page, `ManifestDPIAware
   true` (was blurry at non-100% Windows scaling). `win/nova.wxs` (MSI) is still per-machine only.
