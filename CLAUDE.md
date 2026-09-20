@@ -160,6 +160,27 @@ _Updated 2026-09-18._
   Known gap, deliberately not built: unlike `nova.bash`/`.fish`, the ps1 does not filter file
   completion by extension (`.nova` for `preview`/`info`, images for `bench`, `.mov` for `-live`) --
   it offers every file. Cosmetic, add only if it grates in real use.
+  Inherent PowerShell limit, not a nova bug and nothing to fix: `Register-ArgumentCompleter -Native`
+  matches the command name as typed, so `nova` and `nova.exe` both complete but a path-qualified
+  `.\nova.exe` does not (it falls back to listing files). Checked here with `TabExpansion2`. It only
+  bites when running from an unzipped folder that is not on PATH; the installer puts `nova` on PATH,
+  so the normal case is fine. Sourcing `nova.ps1` from `$PROFILE` is still manual either way.
+- **Real-Windows re-test in progress (user's machine, 2026-09-20)**, using the CI-built artifacts.
+  Two findings so far, both about the zip route rather than the codec:
+  1. `nova-setup.exe` is blocked twice by Windows: SmartScreen ("Éditeur inconnu", unsigned) and
+     then Defender itself with `Trojan:Win32/Wacatac.C!ml`. The `!ml` suffix is a machine-learning
+     heuristic and this is the classic false positive for an unsigned MinGW-built NSIS installer --
+     being submitted to Microsoft (microsoft.com/wdsi/filesubmission, as **Software developer**, not
+     Home customer: that path is for the software's own author and is not deprioritised). Until the
+     binary is signed this recurs on every build, because SmartScreen reputation for an unsigned
+     file is tied to the file hash. See the code-signing note above.
+  2. `install.bat` does not self-elevate, so a double-click fails with `0x80040201`
+     (`SELFREG_E_CLASS`) -- `DllRegisterServer` writes to `HKEY_CLASSES_ROOT` and `HKLM`
+     (`plugins/wic/nova_wic.cpp:294`, `:334`) and returns that for any failed write. A `regsvr32`
+     from an elevated shell registers fine (confirmed: `HKCR\.nova` present with `NOVA.Image`,
+     `image/x-nova`, `PerceivedType: image`). `win/dist.sh`'s README.txt does say "right-click >
+     Run as administrator", but the error code gives no hint. Offered the user a UAC self-elevation
+     stanza in `install.bat`; not built yet, awaiting their answer.
 - **macOS: tested for real (user's MacBook Air M4, ARM64).** `./build.sh` compiles and installs the
   core `nova` CLI cleanly -- confirmed working (`nova encode`/`decode` round-trip). Found and fixed
   a real cross-platform bug (`072f6f7`): `libnova/novadec.c` unconditionally defined
