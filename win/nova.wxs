@@ -27,7 +27,7 @@
             <File Id="libgcc.dll" Source="dist/nova-windows/libgcc_s_seh-1.dll"/>
             <File Id="liblcms2.dll" Source="dist/nova-windows/liblcms2-2.dll"/>
             <File Id="libstdcxx.dll" Source="dist/nova-windows/libstdc++-6.dll"/>
-            <File Id="nova.ps1" Source="dist/nova-windows/nova.ps1"/>
+            <File Id="nova.completion.ps1" Source="dist/nova-windows/nova-completion.ps1"/>
             <!-- The MSI has no components page: it ships the script, the user runs it. -->
             <File Id="nova.profile.ps1" Source="dist/nova-windows/nova-profile.ps1"/>
             <File Id="lic.nova" Source="dist/nova-windows/LICENSE-nova.txt"/>

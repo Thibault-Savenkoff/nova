@@ -105,8 +105,10 @@ have it, whichever comes first in `PATH` wins.
 **Windows:** `nova-setup.exe` or `nova-setup.msi` (on the release page, and built by `win/dist.sh`) install
 `nova.exe`, put it on the `PATH` and register the codec, so the Explorer shows thumbnails and previews.
 `nova-windows.zip` is the same files without an installer. Uninstall from Settings > Apps. PowerShell tab
-completion (`nova.ps1`, next to `nova.exe`) is not wired into your `$PROFILE` automatically: see the zip's
-`README.txt`. cmd.exe has no such hook for a third-party program's arguments.
+completion is an optional component of the installer, or `nova-profile.ps1` next to `nova.exe` run once
+(the zip's `README.txt` has the details). It is named `nova-completion.ps1`, not `nova.ps1`, because
+PowerShell resolves a bare `nova` to a `.ps1` on the `PATH` in preference to `nova.exe`. cmd.exe has no
+such hook for a third-party program's arguments.
 
 Camera RAW works: the package carries LibRaw. **HEIC and AVIF do not**, on Windows only -- nova loads
 libheif at run time and there is no MinGW build of it to ship. Put `libheif.dll` next to `nova.exe` and

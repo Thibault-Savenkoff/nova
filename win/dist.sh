@@ -6,7 +6,10 @@ M=/usr/x86_64-w64-mingw32/sys-root/mingw
 D=dist/nova-windows
 bash win/build.sh && bash plugins/wic/build.sh || exit 1
 rm -rf $D dist/nova-windows.zip && mkdir -p $D
-cp nova.exe plugins/wic/nova_wic.dll $M/bin/{zlib1,libwebp-7,libsharpyuv-0}.dll docs/samples/{photo,screenshot,animation}.nova completions/nova.ps1 $D/
+cp nova.exe plugins/wic/nova_wic.dll $M/bin/{zlib1,libwebp-7,libsharpyuv-0}.dll docs/samples/{photo,screenshot,animation}.nova $D/
+# Not "nova.ps1": this folder goes on the PATH, and PowerShell resolves a bare `nova` to a .ps1
+# there in preference to nova.exe -- the command then silently does nothing at all.
+cp completions/nova.ps1 $D/nova-completion.ps1
 # Camera RAW: nova dlopens libraw_r.so.25, which win/nova_win.h turns into libraw_r-25.dll.
 # The other three are LibRaw's own DLL dependencies inside the MinGW sysroot, from
 # `objdump -p` on it: without them LoadLibrary fails and RAW is silently unavailable.
@@ -22,7 +25,7 @@ cat > $D/README.txt <<'EOF'
 NOVA for Windows (test build)
 
 0. Windows marks everything extracted from a downloaded zip, which makes PowerShell refuse to run
-   nova.ps1. Clear it once, in PowerShell, from this folder:
+   nova-completion.ps1. Clear it once, in PowerShell, from this folder:
        Get-ChildItem -Recurse | Unblock-File
    Ticking "Unblock" in the zip's Properties before extracting does the same for every file at once.
 
@@ -66,16 +69,16 @@ done
 cat > $D/nova-profile.ps1 <<'EOF'
 # Adds (or, with -Remove, takes out) the line that loads NOVA's tab completion, in your PowerShell
 # profile. Run it once: .\nova-profile.ps1
-param([switch]$Remove, [string]$Script = "$PSScriptRoot\nova.ps1")
+param([switch]$Remove, [string]$Script = "$PSScriptRoot\nova-completion.ps1")
 if (-not (Test-Path $PROFILE)) {
     if ($Remove) { return }
     New-Item -ItemType File -Path $PROFILE -Force | Out-Null
 }
-$kept = @(Get-Content -LiteralPath $PROFILE | Where-Object { $_ -notmatch 'nova\.ps1' })
+$kept = @(Get-Content -LiteralPath $PROFILE | Where-Object { $_ -notmatch 'nova-completion\.ps1' })
 if (-not $Remove) { $kept += ". `"$Script`"" }
 Set-Content -LiteralPath $PROFILE -Value $kept
 EOF
-sed -i 's/$/\r/' $D/README.txt $D/LICENSE-*.txt $D/nova.ps1 $D/nova-profile.ps1 $D/install.bat $D/uninstall.bat
+sed -i 's/$/\r/' $D/README.txt $D/LICENSE-*.txt $D/nova-completion.ps1 $D/nova-profile.ps1 $D/install.bat $D/uninstall.bat
 (cd dist && zip -qr nova-windows.zip nova-windows) && ls -l dist/nova-windows.zip
 # Installer (sudo dnf install mingw32-nsis): dist/nova-setup.exe
 if command -v makensis >/dev/null; then makensis -V2 win/nova.nsi && ls -l dist/nova-setup.exe; else echo "makensis missing: no nova-setup.exe"; fi

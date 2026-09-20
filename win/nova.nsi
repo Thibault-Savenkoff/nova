@@ -64,7 +64,7 @@ Section "NOVA" SecCore
   ; Every DLL win/dist.sh staged: the codec, zlib/libwebp, and LibRaw with its own dependencies.
   ; A glob so that adding one to dist.sh does not silently leave it out of the installer.
   File "..\dist\nova-windows\*.dll"
-  File "..\dist\nova-windows\nova.ps1"
+  File "..\dist\nova-windows\nova-completion.ps1"
   File "..\dist\nova-windows\LICENSE-*.txt"
   SetOutPath "$InstDir\samples"
   File "..\dist\nova-windows\*.nova"
@@ -117,7 +117,7 @@ SectionEnd
 ; nova-profile.ps1) rather than NSIS guessing the profile's encoding. On a per-machine install this
 ; is the profile of whoever runs the installer, which is what the description says.
 Section /o "PowerShell tab completion" SecPs
-  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$InstDir\nova-profile.ps1" -Script "$InstDir\nova.ps1"' $0
+  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$InstDir\nova-profile.ps1" -Script "$InstDir\nova-completion.ps1"' $0
   StrCmp $0 0 +2
     MessageBox MB_OK|MB_ICONEXCLAMATION "Could not add the completion line to your PowerShell profile (error $0). Run nova-profile.ps1 in $InstDir yourself."
 SectionEnd
@@ -179,7 +179,7 @@ Section "Uninstall"
   Delete "$InstDir\*.exe"
   Delete /REBOOTOK "$InstDir\*.dll"   ; Explorer may still hold the codec
   Delete "$InstDir\LICENSE-*.txt"
-  Delete "$InstDir\nova.ps1"
+  Delete "$InstDir\nova-completion.ps1"
   Delete "$InstDir\nova-profile.ps1"
   RMDir "$InstDir"
 SectionEnd
