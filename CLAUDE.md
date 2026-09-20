@@ -120,9 +120,17 @@ _Updated 2026-09-18._
   the top level showed the 6 subcommands mixed in with every file in the current directory, because
   fish falls back to default file completion unless a rule opts out with `-f`. All other paths
   (`-m`, `-l`, `-look`, positional file args) checked correct.
-- PowerShell completion (`completions/nova.ps1`): not yet tested -- no `pwsh` here (not in Fedora's
-  default repos) and it's Windows-only anyway; next step is testing it directly on the user's
-  Windows machine (already used for the `wic` plugin test).
+- **PowerShell completion: tested and fixed (`766bfec`).** `pwsh` 7.6.6 turned out to be installed
+  here after all (CLAUDE.md previously said it wasn't), so it was verified non-interactively via
+  `TabExpansion2 -inputScript ... -cursorColumn` -- no real shell or Windows box needed. Found one
+  real bug with three symptoms: `$prev = $tokens[-2]` and `$tokens.Count -le 2` assumed the word
+  being completed is already a `CommandElement`, which after a trailing space it is not, so every
+  index was off by one -- `nova encode -m <TAB>` listed files instead of `adaptive lossless lossy`
+  (same for `-l`, `-look`), and `nova encode <TAB>`/`nova bench <TAB>` re-offered the subcommand
+  list instead of files. Fixed with an explicit `$pos`. 15 cases checked, all correct.
+  Known gap, deliberately not built: unlike `nova.bash`/`.fish`, the ps1 does not filter file
+  completion by extension (`.nova` for `preview`/`info`, images for `bench`, `.mov` for `-live`) --
+  it offers every file. Cosmetic, add only if it grates in real use.
 - **macOS: tested for real (user's MacBook Air M4, ARM64).** `./build.sh` compiles and installs the
   core `nova` CLI cleanly -- confirmed working (`nova encode`/`decode` round-trip). Found and fixed
   a real cross-platform bug (`072f6f7`): `libnova/novadec.c` unconditionally defined
