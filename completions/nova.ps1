@@ -8,11 +8,15 @@ Register-ArgumentCompleter -Native -CommandName nova -ScriptBlock {
     $tokens = $commandAst.CommandElements | ForEach-Object { $_.ToString() }
     $cmds = 'encode', 'decode', 'preview', 'info', 'bench', 'version'
 
-    $result = if ($tokens.Count -le 2) {
+    # After a trailing space the word being completed is not yet a CommandElement,
+    # so its index is $tokens.Count rather than $tokens.Count - 1.
+    $pos = if ($wordToComplete) { $tokens.Count - 1 } else { $tokens.Count }
+    $prev = if ($pos -ge 1) { $tokens[$pos - 1] } else { '' }
+
+    $result = if ($pos -le 1) {
         $cmds + '--version'
     } else {
         $sub = $tokens[1]
-        $prev = $tokens[-2]
         switch ($prev) {
             '-m' { if ($sub -eq 'encode') { 'adaptive', 'lossless', 'lossy' } else { 'lossy', 'lossless' } }
             '-l' { '0', '1', '2', '3', '4', '5' }
