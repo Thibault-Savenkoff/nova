@@ -58,10 +58,9 @@ FunctionEnd
 Section
   SetOutPath "$InstDir"
   File "..\dist\nova-windows\nova.exe"
-  File "..\dist\nova-windows\nova_wic.dll"
-  File "..\dist\nova-windows\zlib1.dll"
-  File "..\dist\nova-windows\libwebp-7.dll"
-  File "..\dist\nova-windows\libsharpyuv-0.dll"
+  ; Every DLL win/dist.sh staged: the codec, zlib/libwebp, and LibRaw with its own dependencies.
+  ; A glob so that adding one to dist.sh does not silently leave it out of the installer.
+  File "..\dist\nova-windows\*.dll"
   File "..\dist\nova-windows\nova.ps1"
   File "..\dist\nova-windows\LICENSE-*.txt"
   SetOutPath "$InstDir\samples"

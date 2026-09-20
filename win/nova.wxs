@@ -21,10 +21,17 @@
             <File Id="zlib1.dll" Source="dist/nova-windows/zlib1.dll"/>
             <File Id="libwebp.dll" Source="dist/nova-windows/libwebp-7.dll"/>
             <File Id="libsharpyuv.dll" Source="dist/nova-windows/libsharpyuv-0.dll"/>
+            <!-- Camera RAW. The soname is pinned the same way nova_rawin.li pins .so.25:
+                 a LibRaw major bump needs a code change anyway, and wixl fails loudly here. -->
+            <File Id="libraw.dll" Source="dist/nova-windows/libraw_r-25.dll"/>
+            <File Id="libgcc.dll" Source="dist/nova-windows/libgcc_s_seh-1.dll"/>
+            <File Id="liblcms2.dll" Source="dist/nova-windows/liblcms2-2.dll"/>
+            <File Id="libstdcxx.dll" Source="dist/nova-windows/libstdc++-6.dll"/>
             <File Id="nova.ps1" Source="dist/nova-windows/nova.ps1"/>
             <File Id="lic.nova" Source="dist/nova-windows/LICENSE-nova.txt"/>
             <File Id="lic.zlib" Source="dist/nova-windows/LICENSE-zlib.txt"/>
             <File Id="lic.webp" Source="dist/nova-windows/LICENSE-libwebp.txt"/>
+            <File Id="lic.libraw" Source="dist/nova-windows/LICENSE-libraw.txt"/>
             <Environment Id="Path" Name="PATH" Value="[INSTALLDIR]" Action="set" Part="last" System="yes" Permanent="no"/>
           </Component>
           <Component Id="Codec" Guid="7E8F9A0B-1C2D-4E3F-8A4B-5C6D7E8F9A12" Win64="yes">
