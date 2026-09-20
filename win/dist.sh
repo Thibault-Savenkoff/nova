@@ -11,6 +11,9 @@ cp nova.exe plugins/wic/nova_wic.dll $M/bin/{zlib1,libwebp-7,libsharpyuv-0}.dll 
 # The other three are LibRaw's own DLL dependencies inside the MinGW sysroot, from
 # `objdump -p` on it: without them LoadLibrary fails and RAW is silently unavailable.
 cp $M/bin/libraw_r-*.dll $M/bin/{libgcc_s_seh-1,liblcms2-2,libstdc++-6}.dll $D/
+# Fedora ships its MinGW DLLs unstripped: libstdc++-6.dll alone is 29 MB of debug
+# symbols nobody here can use, five times the rest of the package put together.
+x86_64-w64-mingw32-strip $D/*.dll
 cp /usr/share/licenses/mingw64-libwebp/COPYING $D/LICENSE-libwebp.txt
 cat /usr/share/licenses/mingw64-LibRaw/{COPYRIGHT,LICENSE.LGPL} > $D/LICENSE-libraw.txt
 sed -n '1,/madler/p' $M/include/zlib.h > $D/LICENSE-zlib.txt
