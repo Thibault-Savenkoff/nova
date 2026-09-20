@@ -29,9 +29,9 @@ _Updated 2026-09-18._
   the body out of hundreds of raw commit lines with no framing -- it now prefers
   `release/NOTES-<tag>.md` when present and falls back to `--generate-notes` for later patch
   releases. Everything else is ready: `nova.li` already reads `2.0.0-beta` so the tag/version guard
-  passes, and `*beta*` sets `--prerelease` on its own. Not checked from here: the `--notes-file`
-  path had never run before this tag (the publish job is gated on a `v2.*` ref, so `workflow_dispatch`
-  skips it) -- worth confirming the release body is the hand-written one and not a commit dump.
+  passes, and `*beta*` sets `--prerelease` on its own. The `--notes-file` path had never run before
+  this tag (the publish job is gated on a `v2.*` ref, so `workflow_dispatch` skips it) -- confirmed
+  correct by the user on the live page: the release body is the hand-written file, not a commit dump.
 - `win/nova.nsi` rewritten around NSIS's `MultiUser.nsh` + `MUI2.nsh`: a wizard page lets the user
   pick per-machine (HKLM, elevation) or per-user (HKCU) install, license page, `ManifestDPIAware
   true` (was blurry at non-100% Windows scaling). `win/nova.wxs` (MSI) is still per-machine only.
