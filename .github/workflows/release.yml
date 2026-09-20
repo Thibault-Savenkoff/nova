@@ -119,6 +119,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag=${GITHUB_REF#refs/tags/}
-          extra=
-          case "$tag" in *beta*|*alpha*|*rc*) extra=--prerelease ;; esac
-          gh release create "$tag" dist/* --title "NOVA $tag" --generate-notes $extra
+          # Hand-written notes when release/NOTES-<tag>.md exists, else from the commits.
+          notes=release/NOTES-$tag.md
+          if [ -f "$notes" ]; then set -- --notes-file "$notes"; else set -- --generate-notes; fi
+          case "$tag" in *beta*|*alpha*|*rc*) set -- "$@" --prerelease ;; esac
+          gh release create "$tag" dist/* --title "NOVA $tag" "$@"
