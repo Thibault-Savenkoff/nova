@@ -174,7 +174,21 @@ _Updated 2026-09-18._
      Home customer: that path is for the software's own author and is not deprioritised). Until the
      binary is signed this recurs on every build, because SmartScreen reputation for an unsigned
      file is tied to the file hash. See the code-signing note above.
-  2. `install.bat` does not self-elevate, so a double-click fails with `0x80040201`
+  2. **Camera RAW did not work on Windows at all** (`nova encode IMG.CR3` -> "libraw not found"),
+     although RAW is a headline v2 feature: `win/dist.sh` shipped only zlib and libwebp, and nothing
+     said so. **Fixed and verified in CI**: Fedora packages `mingw64-LibRaw` 0.22.1, exactly the
+     version `nova_rawin.li` pins, and its DLL is `libraw_r-25.dll` -- which `win/nova_win.h`'s
+     `dlopen` shim already derives from `"libraw_r.so.25"`, so no code changed. Its dependency
+     closure (walked with `objdump -p` in a throwaway CI branch rather than guessed) adds
+     `libgcc_s_seh-1`, `liblcms2-2` and `libstdc++-6`. Also found: Fedora's MinGW DLLs are
+     unstripped, `libstdc++-6.dll` alone was 29.7 MB -- `dist.sh` now strips them, so the installer
+     went 8.6 MB -> 2.65 MB and the zip 11.4 MB -> 3.1 MB (about +1.1 MB over the pre-LibRaw build).
+     `nova.nsi` globs `*.dll` now so a new DLL cannot miss the installer; `nova.wxs` cannot glob and
+     pins `libraw_r-25.dll` by name, which fails loudly at `wixl` time on a LibRaw major bump --
+     acceptable because such a bump needs a `nova_rawin.li` change anyway.
+     **HEIC and AVIF stay unavailable on Windows**: Fedora has no MinGW build of libheif or libavif.
+     Said in the zip's README.txt and in README.md now.
+  3. `install.bat` does not self-elevate, so a double-click fails with `0x80040201`
      (`SELFREG_E_CLASS`) -- `DllRegisterServer` writes to `HKEY_CLASSES_ROOT` and `HKLM`
      (`plugins/wic/nova_wic.cpp:294`, `:334`) and returns that for any failed write. A `regsvr32`
      from an elevated shell registers fine (confirmed: `HKCR\.nova` present with `NOVA.Image`,

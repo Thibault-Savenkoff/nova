@@ -102,11 +102,15 @@ Building from source instead (you have the [Lisaac Ω](https://lisaac.org) compi
 There is no package yet. Note that OpenStack's `python3-novaclient` also provides a `nova` command: if you
 have it, whichever comes first in `PATH` wins.
 
-**Windows:** `dist/nova-setup.exe` or `dist/nova-setup.msi` (built by `win/dist.sh`) install `nova.exe`, put it
-on the `PATH` and register the codec, so the Explorer shows thumbnails and previews. `dist/nova-windows.zip`
-is the same files without an installer. Uninstall from Settings > Apps. PowerShell tab completion
-(`nova.ps1`, next to `nova.exe`) is not wired into your `$PROFILE` automatically: see the zip's
+**Windows:** `nova-setup.exe` or `nova-setup.msi` (on the release page, and built by `win/dist.sh`) install
+`nova.exe`, put it on the `PATH` and register the codec, so the Explorer shows thumbnails and previews.
+`nova-windows.zip` is the same files without an installer. Uninstall from Settings > Apps. PowerShell tab
+completion (`nova.ps1`, next to `nova.exe`) is not wired into your `$PROFILE` automatically: see the zip's
 `README.txt`. cmd.exe has no such hook for a third-party program's arguments.
+
+Camera RAW works: the package carries LibRaw. **HEIC and AVIF do not**, on Windows only -- nova loads
+libheif at run time and there is no MinGW build of it to ship. Put `libheif.dll` next to `nova.exe` and
+they start working. Neither installer is signed yet, so SmartScreen shows "unknown publisher".
 
 **Browser:** nothing to install, the [web page](https://thibault-savenkoff.github.io/nova/) runs NOVA on your device.
 
