@@ -32,6 +32,7 @@ ManifestDPIAware true
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MULTIUSER_PAGE_INSTALLMODE
 !insertmacro MUI_PAGE_LICENSE "..\LICENSE"
+!insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
@@ -55,9 +56,11 @@ Function un.onInit
   SetRegView 64
 FunctionEnd
 
-Section
+Section "NOVA" SecCore
+  SectionIn RO
   SetOutPath "$InstDir"
   File "..\dist\nova-windows\nova.exe"
+  File "..\dist\nova-windows\nova-profile.ps1"
   ; Every DLL win/dist.sh staged: the codec, zlib/libwebp, and LibRaw with its own dependencies.
   ; A glob so that adding one to dist.sh does not silently leave it out of the installer.
   File "..\dist\nova-windows\*.dll"
@@ -110,6 +113,20 @@ Section
   WriteRegStr ShCtx "${UNINST}" "InstallMode" "$MultiUser.InstallMode"
 SectionEnd
 
+; Off by default: it edits a file the user owns. PowerShell does the edit itself (see
+; nova-profile.ps1) rather than NSIS guessing the profile's encoding. On a per-machine install this
+; is the profile of whoever runs the installer, which is what the description says.
+Section /o "PowerShell tab completion" SecPs
+  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$InstDir\nova-profile.ps1" -Script "$InstDir\nova.ps1"' $0
+  StrCmp $0 0 +2
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Could not add the completion line to your PowerShell profile (error $0). Run nova-profile.ps1 in $InstDir yourself."
+SectionEnd
+
+!insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} "nova.exe on the PATH, and the codec that shows .nova thumbnails and previews in the Explorer."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecPs} "Adds one line to the PowerShell profile of the account running this installer, so that pressing Tab completes nova's arguments. cmd.exe has no equivalent."
+!insertmacro MUI_FUNCTION_DESCRIPTION_END
+
 ; Pushes "" if the needle (top) is not in the haystack (below it), else the needle.
 Function StrContains
   Exch $R0   ; needle
@@ -156,10 +173,13 @@ Section "Uninstall"
   unpathdone:
   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=2000
   DeleteRegKey ShCtx "${UNINST}"
+  ; Harmless when the completion was never installed: the script only drops matching lines.
+  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$InstDir\nova-profile.ps1" -Remove'
   RMDir /r "$InstDir\samples"
   Delete "$InstDir\*.exe"
   Delete /REBOOTOK "$InstDir\*.dll"   ; Explorer may still hold the codec
   Delete "$InstDir\LICENSE-*.txt"
   Delete "$InstDir\nova.ps1"
+  Delete "$InstDir\nova-profile.ps1"
   RMDir "$InstDir"
 SectionEnd

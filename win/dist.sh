@@ -21,11 +21,16 @@ cp LICENSE $D/LICENSE-nova.txt
 cat > $D/README.txt <<'EOF'
 NOVA for Windows (test build)
 
+0. Windows marks everything extracted from a downloaded zip, which makes PowerShell refuse to run
+   nova.ps1. Clear it once, in PowerShell, from this folder:
+       Get-ChildItem -Recurse | Unblock-File
+   Ticking "Unblock" in the zip's Properties before extracting does the same for every file at once.
+
 1. nova.exe: open a terminal here, then: nova encode photo.jpg photo.nova / nova decode photo.nova photo.jpg
-2. Viewer support: right-click install.bat > Run as administrator.
+2. Viewer support: double-click install.bat (it asks for administrator rights itself).
    Then open the .nova files here in Explorer (thumbnails) and Windows Photo Viewer. The modern
    Photos app takes no third-party codec, whatever the format -- it will not open .nova.
-3. Remove: right-click uninstall.bat > Run as administrator.
+3. Remove: double-click uninstall.bat.
 
 zlib1.dll (zlib) and libwebp-7.dll, libsharpyuv-0.dll (libwebp) write PNG and WebP; libraw_r-25.dll
 (LibRaw) with libgcc_s_seh-1.dll, liblcms2-2.dll and libstdc++-6.dll read camera RAW files. Keep them
@@ -34,12 +39,43 @@ all next to nova.exe. Their licenses: LICENSE-zlib.txt, LICENSE-libwebp.txt, LIC
 HEIC and AVIF are not available in this build: nova loads libheif at run time and there is no MinGW
 build of it to ship. Put libheif.dll next to nova.exe yourself and they start working.
 
-4. Tab completion, PowerShell only (cmd.exe has no such hook for a third-party program): add to your
-   $PROFILE (not done automatically): . "C:\path\to\nova.ps1"
+4. Tab completion, PowerShell only (cmd.exe has no such hook for a third-party program). Run once:
+       .\nova-profile.ps1
+   It adds one line to your PowerShell profile; .\nova-profile.ps1 -Remove takes it back out.
 EOF
-printf '@echo off\r\ncd /d "%%~dp0"\r\nregsvr32 nova_wic.dll\r\n' > $D/install.bat
-printf '@echo off\r\ncd /d "%%~dp0"\r\nregsvr32 /u nova_wic.dll\r\n' > $D/uninstall.bat
-sed -i 's/$/\r/' $D/README.txt $D/LICENSE-*.txt $D/nova.ps1
+# DllRegisterServer writes to HKEY_CLASSES_ROOT and HKLM, so without elevation regsvr32 fails with
+# 0x80040201 (SELFREG_E_CLASS) and nothing says why. `net session` is the usual test: it needs
+# administrator rights and nothing else. Relaunch elevated rather than make the user know to.
+for f in install uninstall; do
+  [ $f = install ] && flags="" || flags="/u "
+  cat > $D/$f.bat <<EOF
+@echo off
+cd /d "%~dp0"
+net session >nul 2>&1
+if errorlevel 1 (
+  powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+  exit /b
+)
+regsvr32 $flags nova_wic.dll
+EOF
+done
+# PowerShell has no auto-load directory for argument completers, so the only way to make the
+# completion permanent is a line in the user's $PROFILE. PowerShell edits its own file here:
+# doing it from NSIS would mean guessing the profile's encoding, and getting that wrong corrupts
+# a file the user owns. Idempotent both ways, so a reinstall cannot double the line.
+cat > $D/nova-profile.ps1 <<'EOF'
+# Adds (or, with -Remove, takes out) the line that loads NOVA's tab completion, in your PowerShell
+# profile. Run it once: .\nova-profile.ps1
+param([switch]$Remove, [string]$Script = "$PSScriptRoot\nova.ps1")
+if (-not (Test-Path $PROFILE)) {
+    if ($Remove) { return }
+    New-Item -ItemType File -Path $PROFILE -Force | Out-Null
+}
+$kept = @(Get-Content -LiteralPath $PROFILE | Where-Object { $_ -notmatch 'nova\.ps1' })
+if (-not $Remove) { $kept += ". `"$Script`"" }
+Set-Content -LiteralPath $PROFILE -Value $kept
+EOF
+sed -i 's/$/\r/' $D/README.txt $D/LICENSE-*.txt $D/nova.ps1 $D/nova-profile.ps1 $D/install.bat $D/uninstall.bat
 (cd dist && zip -qr nova-windows.zip nova-windows) && ls -l dist/nova-windows.zip
 # Installer (sudo dnf install mingw32-nsis): dist/nova-setup.exe
 if command -v makensis >/dev/null; then makensis -V2 win/nova.nsi && ls -l dist/nova-setup.exe; else echo "makensis missing: no nova-setup.exe"; fi
