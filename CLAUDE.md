@@ -23,7 +23,13 @@ _Updated 2026-09-18._
   `release/pack.sh` (`a932e96`), `build.sh` (`111e811`), GitHub Actions release job (`183d32e`,
   verified green), daily quiet update check (`c424a79`), README (`c32f58d`). Still open: a public
   `v2.0.0-beta` pre-release goes out only after the user reviews the exact GitHub page/command (no
-  `v2.*` tag pushed yet).
+  `v2.*` tag pushed yet). **Release notes written and approved by the user (`3899d0a`)**:
+  `release/NOTES-v2.0.0-beta.md`. The publish step used `--generate-notes`, which would have made
+  the body out of hundreds of raw commit lines with no framing -- it now prefers
+  `release/NOTES-<tag>.md` when present and falls back to `--generate-notes` for later patch
+  releases. Everything else is ready: `nova.li` already reads `2.0.0-beta` so the tag/version guard
+  passes, and `*beta*` sets `--prerelease` on its own. **The only remaining step is pushing the tag**
+  (`git tag v2.0.0-beta && git push origin v2.0.0-beta`) -- deliberately not done, it publishes.
 - `win/nova.nsi` rewritten around NSIS's `MultiUser.nsh` + `MUI2.nsh`: a wizard page lets the user
   pick per-machine (HKLM, elevation) or per-user (HKCU) install, license page, `ManifestDPIAware
   true` (was blurry at non-100% Windows scaling). `win/nova.wxs` (MSI) is still per-machine only.
