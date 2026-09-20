@@ -219,6 +219,25 @@ _Updated 2026-09-18._
   `win/dist.sh`'s own bundled README.txt wrongly said "Photos" -- fixed to name Photo Viewer and
   say Photos won't open it. `plugins/gdk-pixbuf` and `plugins/glycin` (GNOME) have no test
   environment available (user's other machine is Windows, not GNOME) -- untested, no plan yet.
+- **Code signing on Windows: open, worth doing eventually.** `nova-setup.exe` is unsigned, so
+  SmartScreen shows "Windows a protégé votre ordinateur / Éditeur inconnu" and needs
+  "Informations complémentaires" -> "Exécuter quand même". Removing that needs an Authenticode
+  signature, which is a paid certificate in the general case: since June 2023 every code-signing
+  certificate requires the private key on a hardware token or a cloud HSM, which killed the cheap
+  file-based certificates. Options, best fit first:
+  **SignPath Foundation** -- free signing for open-source projects, certificate plus a signing
+  service that plugs into CI. The right fit here (nova is MIT and already built by GitHub Actions);
+  costs an application and meeting their eligibility rules.
+  **Azure Trusted Signing** -- Microsoft's own, about $10/month, but wants a verifiable legal
+  identity and the bar is higher for an individual than for a company.
+  **A plain OV certificate** (~200-400 EUR/year) does *not* clear the warning on its own:
+  SmartScreen still wants reputation built up over weeks. Only an **EV certificate**
+  (~300-600 EUR/year, hardware token) gets reputation from the first download.
+  Two things that decide the shape of this: a self-signed certificate is useless (the user would
+  have to install the root by hand, worse than the warning), and for an unsigned binary SmartScreen
+  reputation is tied to the file hash, so every new build starts from zero -- signing is the only
+  way reputation carries from one release to the next. Prices and eligibility move; check the sites
+  before committing (figures here date from 2026-09-20).
 
 ### Traps
 - This sandbox's `test/all.sh` will show FAIL on `tiff`/`jpeg`/`webp`/`heif` (missing
