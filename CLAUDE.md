@@ -32,6 +32,18 @@ _Updated 2026-09-18._
   passes, and `*beta*` sets `--prerelease` on its own. The `--notes-file` path had never run before
   this tag (the publish job is gated on a `v2.*` ref, so `workflow_dispatch` skips it) -- confirmed
   correct by the user on the live page: the release body is the hand-written file, not a commit dump.
+- **Windows artifacts now built in CI (`8aa271d`), not yet run.** The beta shipped Linux and macOS
+  binaries only; the README asked a Windows user to run `win/dist.sh`, which means installing MinGW
+  and NSIS on a Linux box first -- and it left the real-Windows re-test with nothing to install. New
+  `windows` job in `release.yml`: it cross-compiles from the `nova.c` the Linux job already writes
+  (uploaded as the `c-source` artifact), so Lisaac Ω is not built twice, and runs in a
+  `fedora:latest` container because `win/dist.sh` reads MinGW's Fedora sysroot and needs
+  `mingw64-zlib`/`mingw64-libwebp`, which Debian and Ubuntu do not package at all. `publish` waits
+  on it and now downloads only `nova-*`, so `c-source` stays an input instead of being attached to
+  the release. **Verify with `workflow_dispatch` before the next tag** (it runs `build` + `windows`
+  and skips `publish`); two things could not be checked from this machine (no network, no Docker):
+  that `fedora:latest` still packages `mingw32-nsis`/`msitools` under those names, and that
+  `actions/checkout` is happy in a Fedora container after the `dnf install` of `git`/`tar`.
 - `win/nova.nsi` rewritten around NSIS's `MultiUser.nsh` + `MUI2.nsh`: a wizard page lets the user
   pick per-machine (HKLM, elevation) or per-user (HKCU) install, license page, `ManifestDPIAware
   true` (was blurry at non-100% Windows scaling). `win/nova.wxs` (MSI) is still per-machine only.
