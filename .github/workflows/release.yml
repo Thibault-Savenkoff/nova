@@ -167,6 +167,17 @@ jobs:
           tag=${GITHUB_REF#refs/tags/}
           # Hand-written notes when release/NOTES-<tag>.md exists, else from the commits.
           notes=release/NOTES-$tag.md
-          if [ -f "$notes" ]; then set -- --notes-file "$notes"; else set -- --generate-notes; fi
+          set --
+          if [ -f "$notes" ]; then set -- --notes-file "$notes"; fi
           case "$tag" in *beta*|*alpha*|*rc*) set -- "$@" --prerelease ;; esac
-          gh release create "$tag" dist/* --title "NOVA $tag" "$@"
+          # The release can exist before this job runs: creating a tag from the web UI (the only way
+          # without a clone) creates one too, and a re-run after a failed publish finds its own.
+          # Fill that one in rather than failing on "release already exists".
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --title "NOVA $tag" "$@"
+            gh release upload "$tag" dist/* --clobber
+          else
+            # --generate-notes has no `edit` equivalent, so it only applies on the create path.
+            if [ ! -f "$notes" ]; then set -- "$@" --generate-notes; fi
+            gh release create "$tag" dist/* --title "NOVA $tag" "$@"
+          fi
