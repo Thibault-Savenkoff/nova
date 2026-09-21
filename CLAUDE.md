@@ -165,8 +165,13 @@ _Updated 2026-09-18._
   `.\nova.exe` does not (it falls back to listing files). Checked here with `TabExpansion2`. It only
   bites when running from an unzipped folder that is not on PATH; the installer puts `nova` on PATH,
   so the normal case is fine. Sourcing `nova.ps1` from `$PROFILE` is still manual either way.
-- **Real-Windows re-test in progress (user's machine, 2026-09-20)**, using the CI-built artifacts.
-  Two findings so far, both about the zip route rather than the codec:
+- **Real-Windows re-test: DONE and green (user's machine, 2026-09-20/21)**, using the CI-built
+  artifacts. Final pass over the installer route: RAW encode of a real CR3, `nova decode` back,
+  tab completion in a fresh terminal (the installer's opt-in component), Explorer thumbnails on the
+  bundled samples, double-click into Windows Photo Viewer, and uninstall (PATH entry and the
+  `$PROFILE` line both gone). `.nova` shows black *inside the Photos app* -- expected and already
+  documented, Photos takes no third-party WIC codec; the Explorer thumbnail is correct.
+  Five real bugs came out of it, all fixed and re-verified on the machine:
   1. `nova-setup.exe` is blocked twice by Windows: SmartScreen ("Éditeur inconnu", unsigned) and
      then Defender itself with `Trojan:Win32/Wacatac.C!ml`. The `!ml` suffix is a machine-learning
      heuristic and this is the classic false positive for an unsigned MinGW-built NSIS installer --
