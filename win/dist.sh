@@ -13,10 +13,19 @@ cp completions/nova.ps1 $D/nova-completion.ps1
 # Camera RAW: nova dlopens libraw_r.so.25, which win/nova_win.h turns into libraw_r-25.dll.
 # The other three are LibRaw's own DLL dependencies inside the MinGW sysroot, from
 # `objdump -p` on it: without them LoadLibrary fails and RAW is silently unavailable.
-cp $M/bin/libraw_r-*.dll $M/bin/{libgcc_s_seh-1,liblcms2-2,libstdc++-6}.dll $D/
+cp $M/bin/libraw_r-*.dll $M/bin/{libgcc_s_seh-1,liblcms2-2,libstdc++-6,libwinpthread-1}.dll $D/
 # Fedora ships its MinGW DLLs unstripped: libstdc++-6.dll alone is 29 MB of debug
 # symbols nobody here can use, five times the rest of the package put together.
 x86_64-w64-mingw32-strip $D/*.dll
+
+# Ship nothing that cannot load: every DLL here is asked what it imports, and any import that is
+# one of ours (it exists in the MinGW sysroot) has to be in the package too. A missing
+# libwinpthread-1.dll -- pulled in by libgcc and libstdc++, so LibRaw failed with a bare
+# ERROR_MOD_NOT_FOUND and no hint of which file was absent -- is what this check is for.
+missing=$(for d in $D/*.dll; do x86_64-w64-mingw32-objdump -p "$d" | sed -n 's/.*DLL Name: //p'; done |
+          tr -d '\r' | sort -u |
+          while read -r n; do [ -f "$M/bin/$n" ] && [ ! -f "$D/$n" ] && echo "$n"; done)
+[ -z "$missing" ] || { echo "win/dist.sh: DLLs imported but not packaged:" $missing >&2; exit 1; }
 cp /usr/share/licenses/mingw64-libwebp/COPYING $D/LICENSE-libwebp.txt
 cat /usr/share/licenses/mingw64-LibRaw/{COPYRIGHT,LICENSE.LGPL} > $D/LICENSE-libraw.txt
 sed -n '1,/madler/p' $M/include/zlib.h > $D/LICENSE-zlib.txt
