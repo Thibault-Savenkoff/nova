@@ -210,6 +210,21 @@ _Updated 2026-09-18._
   keeps the user's own lines, a second run does not double it, `-Remove` restores the original),
   plus `makensis -V3` with no warnings and `wixl` -- both installers now build locally on this
   Debian box (`apt-get install nsis msitools`), no CI round-trip needed for a syntax check.
+- **Trap found the hard way: never ship a `.ps1` named after the command into a PATH directory
+  (47c4666).** On the user's machine every `nova` command printed nothing, wrote nothing and set no
+  exit code -- `(Get-Command nova).Source` was `C:\Program Files (x86)\NOVA\nova.ps1`, the completion
+  script, which only registers an argument completer. PowerShell had picked the script over
+  `nova.exe` in the same directory. Shipped as `nova-completion.ps1` now (zip, NSIS and MSI);
+  `completions/nova.ps1` keeps its name in the repo, where it is never on a PATH. Unexplained: the
+  identical layout ran `nova.exe` correctly on the previous install, so something machine-side
+  (`PATHEXT`, or PATH order) decides it -- the rename removes the ambiguity either way.
+  **Still open at the end of this session**: after that fix `nova.exe` does run, but RAW still fails
+  with "libraw not found" *and is noticeably slow before failing*, although `libraw_r-25.dll` and its
+  whole closure sit next to `nova.exe` in the install directory (verified in the listing). Slowness
+  plus a failed load points at Defender inspecting the DLL, or a `LoadLibrary` sweeping the whole
+  PATH before giving up. The user has been asked for a direct `LoadLibrary` + `GetLastWin32Error`
+  probe on the DLL, which separates the three candidates: 126 = a dependency missing, 5 = blocked by
+  Defender or directory rights, 0 = the DLL is fine and the name nova tries is wrong.
 - **macOS: tested for real (user's MacBook Air M4, ARM64).** `./build.sh` compiles and installs the
   core `nova` CLI cleanly -- confirmed working (`nova encode`/`decode` round-trip). Found and fixed
   a real cross-platform bug (`072f6f7`): `libnova/novadec.c` unconditionally defined
