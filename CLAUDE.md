@@ -53,6 +53,20 @@ _Updated 2026-09-18._
   reads that button off the default branch only; the API does not care, so
   `gh workflow run release.yml --ref v2 -R Thibault-Savenkoff/nova` works. For the same reason runs
   are labelled "Build & Release" (main's `name:`) even though the file executed is v2's.
+- **`v2.0.0-beta.2` is prepared but NOT tagged (as of 2026-09-21).** `nova.li` reads
+  `2.0.0-beta.2` and `release/NOTES-v2.0.0-beta.2.md` is written; the user only has to push the tag
+  (`git pull` first -- the bump is on the remote, and the tag must sit on the commit carrying it or
+  the tag/version guard fails the job). Why a second beta rather than `gh release upload` onto the
+  first: the Windows artifacts are built from HEAD, which by then was 19 commits past
+  `v2.0.0-beta`, so attaching them there would ship Windows binaries that do not match the tag
+  while the Linux/macOS ones do. Nothing changed in the codec or the format between the two.
+- **An `install.ps1` for Windows is worth doing, not started.** Same shape as the Linux one
+  (`irm ... | iex`), and its real value is that a script sidesteps both SmartScreen and the
+  `Wacatac.C!ml` false positive that hits the unsigned NSIS installer -- the only free workaround
+  until the binaries are signed. It also runs in memory, so the execution policy does not block it.
+  Cost: it has to redo what NSIS already does (PATH, the Settings > Apps entry, clean uninstall,
+  `.sha256` check), about 150-200 lines, and it becomes a third Windows install path to keep in
+  step with `nova.nsi` and `nova.wxs`. `regsvr32` still needs elevation whatever happens.
 - `win/nova.nsi` rewritten around NSIS's `MultiUser.nsh` + `MUI2.nsh`: a wizard page lets the user
   pick per-machine (HKLM, elevation) or per-user (HKCU) install, license page, `ManifestDPIAware
   true` (was blurry at non-100% Windows scaling). `win/nova.wxs` (MSI) is still per-machine only.
@@ -200,7 +214,19 @@ _Updated 2026-09-18._
      pins `libraw_r-25.dll` by name, which fails loudly at `wixl` time on a LibRaw major bump --
      acceptable because such a bump needs a `nova_rawin.li` change anyway.
      **HEIC and AVIF stay unavailable on Windows**: Fedora has no MinGW build of libheif or libavif.
-     Said in the zip's README.txt and in README.md now.
+     Said in the zip's README.txt and in README.md now. **Plan agreed with the user, not started**:
+     cross-compile the chain from source in the CI job, cached the way Lisaac Ω already is, rather
+     than lifting MSYS2's prebuilt DLLs (the user chose this directly: MSYS2's `mingw64` repo would
+     work, but its `ucrt64` one links a different C runtime, and mixing runtimes for a dlopen'd
+     library crashes the moment an allocation crosses the boundary). A probe against
+     `fedora:latest` confirmed **no** mingw64 package exists for libheif, libde265, x265, kvazaar,
+     aom, dav1d, rav1e, svt-av1 or libavif -- only jpeg, lcms and openjpeg -- so everything has to
+     be built. Note it is two libraries, not one: nova uses libheif for HEIC and **libavif** for
+     AVIF (`README.md:186`). Phases, each useful on its own: (1) HEIC *reading*, libheif +
+     libde265, ~half a day; (2) AVIF, libavif + aom, needs nasm, ~a day, and this is what the HDR
+     gain-map output needs; (3) HEIC *writing*, kvazaar, ~2 h. **Use kvazaar (LGPL), not x265
+     (GPL)**, for the HEVC encoder: shipping a GPL DLL inside an otherwise-MIT package raises a
+     licence question kvazaar avoids. All of it can be iterated from CI, no Windows machine needed.
   3. `install.bat` did not self-elevate, so a double-click failed with `0x80040201`
      (`SELFREG_E_CLASS`) -- `DllRegisterServer` writes to `HKEY_CLASSES_ROOT` and `HKLM`
      (`plugins/wic/nova_wic.cpp:294`, `:334`) and returns that for any failed write. A `regsvr32`
