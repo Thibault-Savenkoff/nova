@@ -218,13 +218,20 @@ _Updated 2026-09-18._
   `completions/nova.ps1` keeps its name in the repo, where it is never on a PATH. Unexplained: the
   identical layout ran `nova.exe` correctly on the previous install, so something machine-side
   (`PATHEXT`, or PATH order) decides it -- the rename removes the ambiguity either way.
-  **Still open at the end of this session**: after that fix `nova.exe` does run, but RAW still fails
-  with "libraw not found" *and is noticeably slow before failing*, although `libraw_r-25.dll` and its
-  whole closure sit next to `nova.exe` in the install directory (verified in the listing). Slowness
-  plus a failed load points at Defender inspecting the DLL, or a `LoadLibrary` sweeping the whole
-  PATH before giving up. The user has been asked for a direct `LoadLibrary` + `GetLastWin32Error`
-  probe on the DLL, which separates the three candidates: 126 = a dependency missing, 5 = blocked by
-  Defender or directory rights, 0 = the DLL is fine and the name nova tries is wrong.
+- **`libwinpthread-1.dll` was missing, which is why RAW still failed after LibRaw shipped.** After
+  the rename `nova.exe` ran but still said "libraw not found". Loading each DLL by hand on the real
+  machine (`LoadLibraryEx` with `LOAD_WITH_ALTERED_SEARCH_PATH`, 8, so dependencies resolve next to
+  the DLL) named the culprit: `libgcc_s_seh-1.dll` failed with 126 (`ERROR_MOD_NOT_FOUND`), and
+  `libstdc++-6.dll` and `libraw_r-25.dll` failed through it. Both import `libwinpthread-1.dll`,
+  which the earlier `objdump` closure walk had missed and nothing checked. **`win/dist.sh` now asks
+  every staged DLL what it imports and fails the build when an import that exists in the MinGW
+  sysroot is not in the package** -- the check that would have caught this before it reached a real
+  machine; the closure is verified complete on the current build.
+  Two diagnostic traps worth keeping: `LoadLibrary` with a *full path* resolves the DLL's own
+  dependencies against the **calling process's** directory (so a probe from `powershell.exe` looks
+  in System32 and fails for reasons that say nothing about nova) -- pass flag 8 instead. And a
+  PowerShell session that successfully loaded one of these DLLs keeps it locked, so the next
+  install fails with "Error opening file for writing": close that window first.
 - **macOS: tested for real (user's MacBook Air M4, ARM64).** `./build.sh` compiles and installs the
   core `nova` CLI cleanly -- confirmed working (`nova encode`/`decode` round-trip). Found and fixed
   a real cross-platform bug (`072f6f7`): `libnova/novadec.c` unconditionally defined
