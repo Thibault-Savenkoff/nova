@@ -53,4 +53,10 @@ mingw64-cmake -S "$work/libheif-$HEIF" -B "$work/b-heif" \
   -DWITH_UNCOMPRESSED_CODEC=OFF
 cmake --build "$work/b-heif" -j"$(nproc)"
 DESTDIR="$stage" cmake --install "$work/b-heif"
+
+# Both libraries are LGPL: ship their licence with the package. win/dist.sh reads them from here,
+# and its README.txt names the versions and the upstream URLs, which is where the sources are.
+mkdir -p "$stage$M/share/licenses/libde265" "$stage$M/share/licenses/libheif"
+cp "$work/libde265-$DE265/COPYING" "$stage$M/share/licenses/libde265/"
+cp "$work/libheif-$HEIF/COPYING" "$stage$M/share/licenses/libheif/"
 install_stage
