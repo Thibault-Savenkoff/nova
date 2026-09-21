@@ -53,13 +53,20 @@ _Updated 2026-09-18._
   reads that button off the default branch only; the API does not care, so
   `gh workflow run release.yml --ref v2 -R Thibault-Savenkoff/nova` works. For the same reason runs
   are labelled "Build & Release" (main's `name:`) even though the file executed is v2's.
-- **`v2.0.0-beta.2` is prepared but NOT tagged (as of 2026-09-21).** `nova.li` reads
-  `2.0.0-beta.2` and `release/NOTES-v2.0.0-beta.2.md` is written; the user only has to push the tag
-  (`git pull` first -- the bump is on the remote, and the tag must sit on the commit carrying it or
-  the tag/version guard fails the job). Why a second beta rather than `gh release upload` onto the
-  first: the Windows artifacts are built from HEAD, which by then was 19 commits past
+- **`v2.0.0-beta.2` is PUBLISHED (2026-09-21)** -- the first nova release with Windows binaries,
+  and the first where RAW works there. Nine assets: Linux x86_64, macOS arm64 and x86_64 (each with
+  its `.sha256`), plus `nova-setup.exe`, `nova-setup.msi` and `nova-windows.zip`. Why a second beta
+  rather than `gh release upload` onto the first: the Windows artifacts are built from HEAD, which by then was 19 commits past
   `v2.0.0-beta`, so attaching them there would ship Windows binaries that do not match the tag
   while the Linux/macOS ones do. Nothing changed in the codec or the format between the two.
+  **How it was tagged, worth remembering**: the user's Windows machine has no clone of the repo and
+  no `gh`, so the tag was made from the web UI's "Draft a new release" form (Choose a tag -> Create
+  new tag on publish, Target `v2`) -- the only browser-only way to create a tag. That form also
+  creates the release, which used to make the job die on "release already exists", so
+  `release.yml`'s publish step now edits and uploads when the release is there and creates it
+  otherwise (`8adf240`); `--generate-notes` stays on the create path only, `gh release edit` has no
+  equivalent. Verified on this run: the empty title and body the form left were overwritten by the
+  hand-written notes, and all nine assets attached.
 - **An `install.ps1` for Windows is worth doing, not started.** Same shape as the Linux one
   (`irm ... | iex`), and its real value is that a script sidesteps both SmartScreen and the
   `Wacatac.C!ml` false positive that hits the unsigned NSIS installer -- the only free workaround
