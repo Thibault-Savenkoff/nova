@@ -119,13 +119,27 @@ jobs:
         run: |
           dnf install -y --setopt=install_weak_deps=False git tar zip \
             mingw64-gcc mingw64-gcc-c++ mingw64-zlib mingw64-libwebp \
-            mingw64-LibRaw mingw64-winpthreads mingw64-binutils mingw32-nsis msitools
+            mingw64-LibRaw mingw64-winpthreads mingw64-binutils mingw64-pkg-config \
+            cmake mingw32-nsis msitools
 
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
         with:
           name: c-source
+
+      # Fedora packages no mingw64 libheif or libde265, so win/deps.sh cross-compiles them. The
+      # cache key is the script itself: it carries the pinned versions and the cmake options, so
+      # changing either rebuilds, and nothing else does.
+      - name: Restore/build the cross-compiled libraries
+        id: deps-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/windeps
+          key: windeps-${{ hashFiles('win/deps.sh') }}
+
+      - name: Cross-compile libheif and libde265
+        run: bash win/deps.sh "$RUNNER_TEMP/windeps"
 
       - name: Build the Windows files
         run: bash win/dist.sh

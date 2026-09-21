@@ -1,6 +1,7 @@
 #!/bin/bash
 # Builds dist/nova-windows.zip: nova.exe, the WIC codec, zlib and libwebp DLLs (PNG and WebP output), samples.
 # Fedora: sudo dnf install mingw64-gcc-c++ mingw64-zlib mingw64-libwebp mingw64-LibRaw mingw32-nsis msitools
+# libheif/libde265 have no mingw64 package: run win/deps.sh once before this script.
 cd "$(dirname "$0")/.." || exit 1
 M=/usr/x86_64-w64-mingw32/sys-root/mingw
 D=dist/nova-windows
@@ -14,6 +15,9 @@ cp completions/nova.ps1 $D/nova-completion.ps1
 # The other three are LibRaw's own DLL dependencies inside the MinGW sysroot, from
 # `objdump -p` on it: without them LoadLibrary fails and RAW is silently unavailable.
 cp $M/bin/libraw_r-*.dll $M/bin/{libgcc_s_seh-1,liblcms2-2,libstdc++-6,libwinpthread-1}.dll $D/
+# HEIC reading: libheif and its HEVC decoder, cross-compiled by win/deps.sh because Fedora has no
+# mingw64 package for either. Writing .heic and reading/writing AVIF still need more (see deps.sh).
+cp $M/bin/libheif*.dll $M/bin/libde265*.dll $D/
 # Fedora ships its MinGW DLLs unstripped: libstdc++-6.dll alone is 29 MB of debug
 # symbols nobody here can use, five times the rest of the package put together.
 x86_64-w64-mingw32-strip $D/*.dll
@@ -48,8 +52,8 @@ zlib1.dll (zlib) and libwebp-7.dll, libsharpyuv-0.dll (libwebp) write PNG and We
 (LibRaw) with libgcc_s_seh-1.dll, liblcms2-2.dll and libstdc++-6.dll read camera RAW files. Keep them
 all next to nova.exe. Their licenses: LICENSE-zlib.txt, LICENSE-libwebp.txt, LICENSE-libraw.txt.
 
-HEIC and AVIF are not available in this build: nova loads libheif at run time and there is no MinGW
-build of it to ship. Put libheif.dll next to nova.exe yourself and they start working.
+Reading .heic works (libheif.dll with libde265.dll). Writing .heic, and AVIF either way, do not yet:
+they need an HEVC encoder and libavif, which are not in this package.
 
 4. Tab completion, PowerShell only (cmd.exe has no such hook for a third-party program). Run once:
        .\nova-profile.ps1
