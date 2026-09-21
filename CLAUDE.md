@@ -221,7 +221,8 @@ _Updated 2026-09-18._
      pins `libraw_r-25.dll` by name, which fails loudly at `wixl` time on a LibRaw major bump --
      acceptable because such a bump needs a `nova_rawin.li` change anyway.
      **HEIC and AVIF stay unavailable on Windows**: Fedora has no MinGW build of libheif or libavif.
-     Said in the zip's README.txt and in README.md now. **Plan agreed with the user, not started**:
+     Said in the zip's README.txt and in README.md now. **Phase 1 is DONE: Windows reads HEIC**
+     (`win/deps.sh`). Plan:
      cross-compile the chain from source in the CI job, cached the way Lisaac Ω already is, rather
      than lifting MSYS2's prebuilt DLLs (the user chose this directly: MSYS2's `mingw64` repo would
      work, but its `ucrt64` one links a different C runtime, and mixing runtimes for a dlopen'd
@@ -234,6 +235,18 @@ _Updated 2026-09-18._
      gain-map output needs; (3) HEIC *writing*, kvazaar, ~2 h. **Use kvazaar (LGPL), not x265
      (GPL)**, for the HEVC encoder: shipping a GPL DLL inside an otherwise-MIT package raises a
      licence question kvazaar avoids. All of it can be iterated from CI, no Windows machine needed.
+     **Phase 1 shipped**: `win/deps.sh` builds libheif 1.23.4 (the version Fedora ships natively)
+     with libde265 1.1.3, through `mingw64-cmake`, into a staging tree the CI caches on
+     `hashFiles('win/deps.sh')` -- the pinned versions and the cmake flags are the only things that
+     invalidate it, so a rebuild costs ~2 min once and nothing afterwards. `ENABLE_PLUGIN_LOADING=OFF`
+     matters: with it on, libheif looks for its codecs as separate plugin DLLs at run time, which
+     would each have to be found and shipped. Both libraries are LGPL; their `COPYING` is staged and
+     packaged, and the zip's README.txt names the versions and upstream URLs (what relinking needs).
+     Trap this caught: **`nova.wxs` lists its files one by one and `wixl` does not complain about
+     what is missing**, so the MSI silently kept shipping without the new DLLs while the zip had
+     them -- the MSI going 4.2 MB -> 5.7 MB is how it was confirmed fixed. `nova.nsi` globs `*.dll`
+     and was fine. **Not verified on a real machine yet**: from here only that the DLLs load and the
+     closure check passes, not that an actual HEIC opens -- the user has the artifact to try.
   3. `install.bat` did not self-elevate, so a double-click failed with `0x80040201`
      (`SELFREG_E_CLASS`) -- `DllRegisterServer` writes to `HKEY_CLASSES_ROOT` and `HKLM`
      (`plugins/wic/nova_wic.cpp:294`, `:334`) and returns that for any failed write. A `regsvr32`
