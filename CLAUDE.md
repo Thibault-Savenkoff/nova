@@ -116,6 +116,14 @@ _Updated 2026-09-18._
   cache was cleared, so this isn't a nova-side bug or an easy config fix. Closed on nova's side.
   Useful for future TIFF/IFD work: `finish`'s IFD1 code path is shared by `write_image`'s TIFF output
   (mode 1), so it can be exercised locally against `test/corpus/*.png` alone, no CR3/LibRaw needed.
+- **DNG "darker than the .nova": confirmed non-bug (2026-09-21).** The `.nova` preview (`PREV`) is
+  LibRaw's development with `no_auto_bright = 1` and linear gamma, *plus* nova's own tone curve
+  (`nova_look.h`, `nova_rawin.li:182`) -- a finished-looking photo. A DNG carries sensor data and
+  colorimetry only, so whoever opens it decides the brightness: comparing the two is not
+  apples to apples. The test that settles it is the DNG against the **original CR3 in the same
+  viewer**, and the user confirmed they match. So nova's DNG is faithful to its source, which is
+  the target. **Do not add `BaselineExposure` (tag 50730)** for this: nova omits it, real camera
+  DNGs carry it, but adding it would render nova's DNG *brighter than the CR3 it came from*.
 - `nova decode raw.nova out.pgm` "looks black" -- confirmed non-bug. User checked pixel extrema
   (`1943, 16383`): real sensor data, not black; just a naive linear view of unprocessed raw values
   (expected, per MANUAL.md -- the bare sensor frame has no demosaic/white-balance/gamma). Closed.
