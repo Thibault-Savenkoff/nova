@@ -226,7 +226,8 @@ _Updated 2026-09-18._
   which the earlier `objdump` closure walk had missed and nothing checked. **`win/dist.sh` now asks
   every staged DLL what it imports and fails the build when an import that exists in the MinGW
   sysroot is not in the package** -- the check that would have caught this before it reached a real
-  machine; the closure is verified complete on the current build.
+  machine; the closure is verified complete on the current build. **Confirmed working on the user's
+  real Windows machine on 2026-09-21**: `nova encode IMG_2557.CR3 test.nova` writes the file.
   Two diagnostic traps worth keeping: `LoadLibrary` with a *full path* resolves the DLL's own
   dependencies against the **calling process's** directory (so a probe from `powershell.exe` looks
   in System32 and fails for reasons that say nothing about nova) -- pass flag 8 instead. And a
