@@ -19,6 +19,11 @@ ${UnStrRep}
 !include MultiUser.nsh
 !include MUI2.nsh
 
+; win/dist.sh passes nova.li's version (makensis -DVERSION=...), so this cannot drift from it.
+!ifndef VERSION
+  !define VERSION "dev"
+!endif
+
 Name "NOVA"
 OutFile "..\dist\nova-setup.exe"
 SetCompressor /SOLID lzma
@@ -109,7 +114,7 @@ Section "NOVA" SecCore
   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=2000
 
   WriteRegStr ShCtx "${UNINST}" "DisplayName" "NOVA image format"
-  WriteRegStr ShCtx "${UNINST}" "DisplayVersion" "2.0"
+  WriteRegStr ShCtx "${UNINST}" "DisplayVersion" "${VERSION}"
   WriteRegStr ShCtx "${UNINST}" "Publisher" "Thibault SAVENKOFF"
   WriteRegStr ShCtx "${UNINST}" "InstallLocation" "$InstDir"
   WriteRegStr ShCtx "${UNINST}" "DisplayIcon" "$InstDir\nova.exe,0"

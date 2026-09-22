@@ -135,7 +135,10 @@ if (-not $ThisHostOnly) {
 EOF
 sed -i 's/$/\r/' $D/README.txt $D/LICENSE-*.txt $D/nova-completion.ps1 $D/nova-profile.ps1 $D/install.bat $D/uninstall.bat
 (cd dist && zip -qr nova-windows.zip nova-windows) && ls -l dist/nova-windows.zip
+# Both installers show nova.li's version in Settings > Apps. An MSI ProductVersion is numbers only,
+# so the MSI gets 2.0.0 where NSIS shows the whole 2.0.0-beta.2.
+V=$(sed -n 's/.*- version:String := "\(.*\)"/\1/p' nova.li)
 # Installer (sudo dnf install mingw32-nsis): dist/nova-setup.exe
-if command -v makensis >/dev/null; then makensis -V2 win/nova.nsi && ls -l dist/nova-setup.exe; else echo "makensis missing: no nova-setup.exe"; fi
+if command -v makensis >/dev/null; then makensis -V2 -DVERSION="$V" win/nova.nsi && ls -l dist/nova-setup.exe; else echo "makensis missing: no nova-setup.exe"; fi
 # MSI (sudo dnf install msitools): dist/nova-setup.msi
-if command -v wixl >/dev/null; then wixl -a x64 -o dist/nova-setup.msi win/nova.wxs && ls -l dist/nova-setup.msi; else echo "wixl missing: no nova-setup.msi"; fi
+if command -v wixl >/dev/null; then wixl -a x64 -D Version="${V%%-*}" -o dist/nova-setup.msi win/nova.wxs && ls -l dist/nova-setup.msi; else echo "wixl missing: no nova-setup.msi"; fi
