@@ -13,6 +13,9 @@ ${UnStrRep}
 !define MULTIUSER_INSTALLMODE_DEFAULT_REGISTRY_VALUENAME "InstallMode"
 !define MULTIUSER_INSTALLMODE_INSTDIR "NOVA"
 !define MULTIUSER_EXECUTIONLEVEL Highest
+; The installer is 32-bit, so MultiUser.nsh would pick $PROGRAMFILES, i.e. "Program Files (x86)",
+; for a 64-bit nova.exe. The MSI already installs to ProgramFiles64Folder.
+!define MULTIUSER_USE_PROGRAMFILES64
 !define MULTIUSER_MUI
 
 !include LogicLib.nsh
