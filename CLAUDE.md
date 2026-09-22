@@ -205,7 +205,8 @@ _Updated 2026-09-22._
   1. `nova-setup.exe` is blocked twice by Windows: SmartScreen ("Éditeur inconnu", unsigned) and
      then Defender itself with `Trojan:Win32/Wacatac.C!ml`. The `!ml` suffix is a machine-learning
      heuristic and this is the classic false positive for an unsigned MinGW-built NSIS installer --
-     being submitted to Microsoft (microsoft.com/wdsi/filesubmission, as **Software developer**, not
+     **submitted to Microsoft by the user (done, noted 2026-09-22)**; a verdict only covers the
+     file hash it was made on, so each new build (beta.3 included) can be flagged afresh -- (microsoft.com/wdsi/filesubmission, as **Software developer**, not
      Home customer: that path is for the software's own author and is not deprioritised). Until the
      binary is signed this recurs on every build, because SmartScreen reputation for an unsigned
      file is tied to the file hash. See the code-signing note above.
