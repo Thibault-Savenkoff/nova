@@ -287,16 +287,19 @@ _Updated 2026-09-22._
   existing content is untouched, idempotence, `-Remove`, the relaunch's arguments through a shim),
   plus `makensis -V3` and `wixl` -- both installers build locally here, no CI round-trip for a
   syntax check.
-- **Open: an error dialog with code 126 or 127 on uninstall** (user's real Windows machine,
-  2026-09-22), cause not identified. Two theories already ruled out here: `nova_wic.dll` imports
-  only system DLLs (`objdump -p`: KERNEL32, ole32, SHELL32, ADVAPI32, USER32, msvcrt), so the
-  `Refresh` custom action cannot be failing on a missing dependency the way LibRaw did, and
-  `Refresh` *is* exported (`plugins/wic/nova_wic.def`), so 127 is not a missing entry point there
-  either. Best remaining guess, unconfirmed: `uninstall.bat` runs `regsvr32 /u nova_wic.dll`
-  **without `/s`** (`win/dist.sh:83`) so it shows its own dialogs, while both installers use `/s`
-  and stay quiet. Waiting on the exact dialog text and on which path was used (Settings > Apps, or
-  the `.bat` from the zip) before changing anything -- 126/127 can come from three different places
-  and the message says which.
+- **MSI error 2762 on uninstall: found and fixed.** Reported first as "code 126 or 127"; the
+  screenshot said 2762, which is exact -- "cannot write script record, transaction not started",
+  i.e. a *deferred* custom action sequenced outside the install transaction. **`wixl` ignores a
+  `<Custom>`'s `After=` and numbers the actions in document order**, so `RefreshRemove` sat at
+  6603, past `InstallFinalize` (6600), whatever it claimed to follow -- `RemoveRegistryValues` is
+  not even in the emitted table. Made immediate (type 1089 -> 65), which is right there anyway: the
+  keys are gone by then and the action only tells the shell so. Pre-existing, unrelated to the
+  completion work, and only ever visible on an MSI uninstall. Lesson for any future `.wxs` change:
+  **read the sequence table back** (`msiinfo export nova-setup.msi InstallExecuteSequence`) instead
+  of trusting `After=`, the same way the MSI's missing DLLs were only caught by comparing sizes.
+  Worth remembering about the report itself: a remembered error code sent the diagnosis toward two
+  dead ends (a missing DLL dependency, a missing export -- both disproved with `objdump -p`); the
+  screenshot settled it in one step. Ask for the exact text first.
 - **Trap found the hard way: never ship a `.ps1` named after the command into a PATH directory
   (47c4666).** On the user's machine every `nova` command printed nothing, wrote nothing and set no
   exit code -- `(Get-Command nova).Source` was `C:\Program Files (x86)\NOVA\nova.ps1`, the completion
