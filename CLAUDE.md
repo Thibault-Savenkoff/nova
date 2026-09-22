@@ -250,8 +250,16 @@ _Updated 2026-09-22._
      `nova encode IMG_1152.HEIC test.nova` reads a 3024x4032 iPhone HEIC and writes the `.nova`
      (88.6 % of the source, q 90, level 5, 6.3 s). The MSI uninstall is clean too since the 2762
      fix. Phase 1 is done end to end.
-     **Phase 2 (AVIF) builds green in CI, not yet tried on Windows** (run `35754434774`, `windows`
-     job 6m43s including aom from scratch). libheif's own configure summary is the proof that the
+     **Phase 2 (AVIF) builds green in CI** (run `35754434774`, `windows` job 6m43s including aom
+     from scratch). **First real-Windows result (2026-09-22)**: HEIC -> `.nova` -> `.avif` on the
+     user's machine, and the AVIF opens natively on their iPhone as AVIF with full EXIF, 3024x4032,
+     1.3 MB against 1.6 MB for the source HEIC. **HDR not confirmed yet, and that file opening
+     proves nothing about it**: when libavif is missing, `nova.li:527` falls back to a plain AVIF
+     without a word, and that opens just the same (a phone screenshot is SDR anyway). The
+     discriminating check is the ISO 21496-1 `tmap` item in the file --
+     `[Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes("x.avif")).Contains("tmap")` in
+     PowerShell; if False, `nova info x.nova` printing "... HDR gain map" puts it on libavif,
+     otherwise the source simply had no HDR. libheif's own configure summary is the proof that the
      codecs went in rather than being silently skipped -- its `WITH_*` options are wishes, not
      requirements: "libde265 HEVC decoder: + built-in / AOM AV1 decoder: + built-in / AOM AV1
      encoder: + built-in / x265, Kvazaar: - disabled". Read that summary after any change here. One library unlocks all of it: aom
