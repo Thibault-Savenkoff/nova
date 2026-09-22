@@ -136,11 +136,16 @@
     <Property Id="PSEXE" Value="powershell.exe"/>
     <CustomAction Id="RunCompletion" Property="PSEXE" Execute="immediate" Return="ignore"
                   ExeCommand='-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "[INSTALLDIR]nova-profile.ps1" -Script "[INSTALLDIR]nova-completion.ps1"'/>
-    <CustomAction Id="RefreshRemove" BinaryKey="NovaWic" DllEntry="Refresh" Execute="deferred" Impersonate="yes" Return="ignore"/>
+    <!-- Immediate, not deferred: wixl ignores After= and numbers these in document order, so this
+         lands after InstallFinalize whatever it claims to follow, and a deferred action outside
+         the install transaction is error 2762 ("cannot write script record"). That is the dialog
+         an uninstall showed. Immediate is right here anyway: by then the keys are already gone,
+         which is what the shell is being told about. -->
+    <CustomAction Id="RefreshRemove" BinaryKey="NovaWic" DllEntry="Refresh" Return="ignore"/>
     <InstallExecuteSequence>
       <Custom Action="RefreshInstall" After="InstallFinalize">NOT REMOVE</Custom>
       <Custom Action="RunCompletion" After="RefreshInstall">NOT REMOVE</Custom>
-      <Custom Action="RefreshRemove" After="RemoveRegistryValues">REMOVE="ALL"</Custom>
+      <Custom Action="RefreshRemove" After="RunCompletion">REMOVE="ALL"</Custom>
     </InstallExecuteSequence>
 
     <Feature Id="All" Level="1">
