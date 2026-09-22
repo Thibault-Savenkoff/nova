@@ -12,7 +12,7 @@
 # for the ones built after it. One marker file per library means a <staging-dir> the CI restored
 # from an older key only rebuilds what actually changed -- aom alone is ~10 minutes.
 #
-# Fedora: sudo dnf install mingw64-gcc-c++ mingw64-filesystem mingw64-pkg-config cmake nasm perl
+# Fedora: sudo dnf install mingw64-gcc-c++ mingw64-filesystem mingw64-pkg-config cmake yasm perl
 set -eu
 
 AOM=3.13.1
@@ -63,9 +63,12 @@ fi
 # AV1, encoder and decoder: the one library both libheif and libavif need. Shared, so they link
 # one copy instead of embedding two. CONFIG_AV1_HIGHBITDEPTH is on by default and has to stay:
 # 10-bit is what nova's HDR (PQ) output uses. The rest is build products nobody here runs.
+# The assembler is yasm, aom's own default (aom_configure.cmake looks for it first). Not nasm:
+# ENABLE_NASM=ON sends aom through test_nasm(), which greps `nasm -hf` for "-Ox" and rejects the
+# nasm in fedora:latest outright ("multipass optimization not supported").
 if ! built "aom-$AOM"; then
   get "https://storage.googleapis.com/aom-releases/libaom-$AOM.tar.gz"
-  build "aom-$AOM" "libaom-$AOM" -DENABLE_NASM=ON \
+  build "aom-$AOM" "libaom-$AOM" \
     -DENABLE_EXAMPLES=OFF -DENABLE_TESTS=OFF -DENABLE_TESTDATA=OFF -DENABLE_TOOLS=OFF -DENABLE_DOCS=OFF
   license libaom "$work/libaom-$AOM/LICENSE" "$work/libaom-$AOM/PATENTS"
   mark "aom-$AOM"
