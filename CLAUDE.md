@@ -253,8 +253,9 @@ _Updated 2026-09-22._
      **Phase 2 (AVIF) builds green in CI** (run `35754434774`, `windows` job 6m43s including aom
      from scratch). **First real-Windows result (2026-09-22)**: HEIC -> `.nova` -> `.avif` on the
      user's machine, and the AVIF opens natively on their iPhone as AVIF with full EXIF, 3024x4032,
-     1.3 MB against 1.6 MB for the source HEIC. **HDR not confirmed yet, and that file opening
-     proves nothing about it**: when libavif is missing, `nova.li:527` falls back to a plain AVIF
+     1.3 MB against 1.6 MB for the source HEIC. **HDR confirmed too: the `tmap` check came back
+     True, so libavif wrote the gain map. Phase 2 is done end to end.** Why that check and not the
+     file opening: when libavif is missing, `nova.li:527` falls back to a plain AVIF
      without a word, and that opens just the same (a phone screenshot is SDR anyway). The
      discriminating check is the ISO 21496-1 `tmap` item in the file --
      `[Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes("x.avif")).Contains("tmap")` in
