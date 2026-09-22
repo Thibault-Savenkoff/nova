@@ -85,7 +85,7 @@ NOVA stores 8 bits per channel. 10-bit HEIC images (iPhone screenshots) are roun
 curl -fsSL https://raw.githubusercontent.com/Thibault-Savenkoff/nova/v2/install.sh | bash
 ```
 
-Downloads the right binary (Intel or Apple Silicon on macOS), installs `nova` and its shell completion
+Downloads the right binary (x86_64 or arm64, on Linux as on macOS), installs `nova` and its shell completion
 (zsh, bash, fish -- bash needs the `bash-completion` package) into `~/.local`, registers the `.nova` file
 type, and offers to build the viewer plugins below for whichever desktop you have. `--system` installs
 into `/usr/local` instead (needs sudo); `--no-plugins` skips the viewers; `-y`/`--yes` skips every prompt
@@ -102,9 +102,9 @@ Building from source instead (you have the [Lisaac Ω](https://lisaac.org) compi
 There is no package yet. Note that OpenStack's `python3-novaclient` also provides a `nova` command: if you
 have it, whichever comes first in `PATH` wins.
 
-**Windows:** `nova-setup.exe` or `nova-setup.msi` (on the release page, and built by `win/dist.sh`) install
+**Windows:** `nova-<version>-windows-x86_64-setup.exe` or `….msi` (on the release page, and built by `win/dist.sh`) install
 `nova.exe`, put it on the `PATH` and register the codec, so the Explorer shows thumbnails and previews.
-`nova-windows.zip` is the same files without an installer. Uninstall from Settings > Apps. Either
+The `.zip` is the same files without an installer. Uninstall from Settings > Apps. Either
 installer sets up PowerShell tab completion by itself, for Windows PowerShell and PowerShell 7 both; from
 the zip, run `nova-profile.ps1` once (its `README.txt` has the details). The completion script is named
 `nova-completion.ps1`, not `nova.ps1`, because PowerShell resolves a bare `nova` to a `.ps1` on the `PATH`
@@ -140,7 +140,7 @@ cp plugins/mime/nova.xml ~/.local/share/mime/packages/ && update-mime-database ~
 | KDE: Dolphin thumbnails (KDE's image thumbnailer has a fixed list of types, so `.nova` needs its own) | `plugins/kde` | `plugins/qt` installed, then `cmake -S plugins/kde -B build-kde && cmake --build build-kde && sudo cmake --install build-kde` (needs `kf6-kio-devel`) |
 | GNOME: Loupe, Nautilus thumbnails (glycin) | `plugins/glycin` | `cargo build --release --manifest-path plugins/glycin/Cargo.toml`, then the two lines below |
 | GTK apps using gdk-pixbuf: Eye of GNOME, GIMP, older apps | `plugins/gdk-pixbuf` | `make -C plugins/gdk-pixbuf && sudo make -C plugins/gdk-pixbuf install` |
-| Windows: Explorer thumbnails and preview, Paint, XnView MP (WIC) | `plugins/wic` | `dist/nova-setup.exe` from `win/dist.sh` (MinGW, NSIS), or `regsvr32 nova_wic.dll` as administrator |
+| Windows: Explorer thumbnails and preview, Paint, XnView MP (WIC) | `plugins/wic` | the `-setup.exe` from `win/dist.sh` (MinGW, NSIS), or `regsvr32 nova_wic.dll` as administrator |
 
 glycin loader, for your user:
 
@@ -189,7 +189,7 @@ HEIC/AVIF, WebP and RAW support load their libraries at run time, so `nova` buil
 from, for testing one without downloading it); `.github/workflows/release.yml` runs it on a `v2.*` tag.
 
 Windows: `win/build.sh` cross-compiles `nova.c` to `nova.exe` with MinGW-w64 (same output as on Linux; 4 cores by default, `NOVA_THREADS=n` for more).
-`win/dist.sh` packs it with the WIC codec and the zlib and libwebp DLLs into `dist/nova-setup.exe` (NSIS installer: `nova` on the PATH, codec registered, uninstaller in Settings > Apps), the same as `dist/nova-setup.msi` (for deployment tools), and `dist/nova-windows.zip`.
+`win/dist.sh` packs it with the WIC codec and the zlib and libwebp DLLs into `dist/nova-<version>-windows-x86_64-setup.exe` (NSIS installer: `nova` on the PATH, codec registered, uninstaller in Settings > Apps), the same as a `.msi` (for deployment tools), and a `.zip`, each with its `.sha256`.
 
 The web version is built with [Emscripten](https://emscripten.org): `docs/build.sh` compiles `nova.c` and LibRaw to `docs/nova_enc.wasm`.
 

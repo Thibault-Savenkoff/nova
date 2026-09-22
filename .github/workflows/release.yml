@@ -21,6 +21,11 @@ jobs:
           - runner: ubuntu-latest
             os: linux
             arch: x86_64
+          # GitHub's ARM runners are free for public repositories. install.sh already maps
+          # aarch64 to arm64 and looks for this archive; it just never existed before.
+          - runner: ubuntu-24.04-arm
+            os: linux
+            arch: arm64
           - runner: macos-latest
             os: macos
             arch: arm64
@@ -97,8 +102,9 @@ jobs:
           if-no-files-found: error
 
       # The Windows job cross-compiles this instead of building Lisaac Ω again.
+      # One copy is enough, and two linux jobs uploading the same name would fail.
       - uses: actions/upload-artifact@v4
-        if: matrix.os == 'linux'
+        if: matrix.os == 'linux' && matrix.arch == 'x86_64'
         with:
           name: c-source
           path: nova.c
@@ -151,9 +157,7 @@ jobs:
         with:
           name: nova-windows
           path: |
-            dist/nova-windows.zip
-            dist/nova-setup.exe
-            dist/nova-setup.msi
+            dist/nova-*-windows-x86_64*
           if-no-files-found: error
 
   publish:

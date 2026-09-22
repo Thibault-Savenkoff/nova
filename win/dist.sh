@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds dist/nova-windows.zip: nova.exe, the WIC codec, zlib and libwebp DLLs (PNG and WebP output), samples.
+# Builds dist/nova-<version>-windows-x86_64{.zip,-setup.exe,.msi}: nova.exe, the WIC codec, zlib and libwebp DLLs (PNG and WebP output), samples.
 # Fedora: sudo dnf install mingw64-gcc-c++ mingw64-zlib mingw64-libwebp mingw64-LibRaw mingw32-nsis msitools
 # libheif/libde265 have no mingw64 package: run win/deps.sh once before this script.
 cd "$(dirname "$0")/.." || exit 1
@@ -142,3 +142,14 @@ V=$(sed -n 's/.*- version:String := "\(.*\)"/\1/p' nova.li)
 if command -v makensis >/dev/null; then makensis -V2 -DVERSION="$V" win/nova.nsi && ls -l dist/nova-setup.exe; else echo "makensis missing: no nova-setup.exe"; fi
 # MSI (sudo dnf install msitools): dist/nova-setup.msi
 if command -v wixl >/dev/null; then wixl -a x64 -D Version="${V%%-*}" -o dist/nova-setup.msi win/nova.wxs && ls -l dist/nova-setup.msi; else echo "wixl missing: no nova-setup.msi"; fi
+
+# Release names, the shape release/pack.sh gives the Linux and macOS archives
+# (nova-<version>-<os>-<arch>), each with its .sha256 in the same `sha256sum` format.
+n=nova-$V-windows-x86_64
+rm -f dist/$n*
+for f in nova-windows.zip:$n.zip nova-setup.exe:$n-setup.exe nova-setup.msi:$n.msi; do
+  [ -f "dist/${f%%:*}" ] || continue
+  mv "dist/${f%%:*}" "dist/${f#*:}"
+  (cd dist && sha256sum "${f#*:}" > "${f#*:}.sha256")
+done
+ls -l dist/$n*
