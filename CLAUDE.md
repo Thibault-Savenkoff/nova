@@ -312,10 +312,16 @@ _Updated 2026-09-22._
      notarized), `7z` (Windows opens zip natively), a hand-made source tarball (GitHub attaches
      one to every release). **Linux arm64 is new** (`ubuntu-24.04-arm`, free for public repos;
      `install.sh` already mapped aarch64 to arm64 and asked for that archive, which never
-     existed). Its binary really ran there (`nova --version`). Trap: Lisaac Omega's `install.sh`
-     builds the compiler on arm64, then fails linking `elit` (its editor, not needed) against the
-     x86_64-only `libglfw3.a` it ships -- the workflow tolerates that failure, and the next step
-     still fails loudly if no `lisaac` binary exists. `c-source` is uploaded by the x86_64 Linux
+     existed). Its binary really ran there (`nova --version`). **CI builds only the Lisaac compiler now
+     (user's idea, run `35780354280`, green first try on all four builds):** Lisaac Omega's own
+     `install.sh` also builds `elit`, its editor (GL, GLFW, an x86_64-only `libglfw3.a` that fails
+     to link on arm64), and edits `~/.bashrc`. Compiling nova needs `bin/lisaac` (one `gcc -O2` of
+     `bin/lisaac.c`, the installer's own command), `lib/` and `make.lip` -- ~15 MB of the 61 MB
+     zip -- plus, on macOS, the `target := "apple"` the installer writes into `make.lip` (it
+     swaps `-flarge-source-files`, which Apple's clang rejects, for `-w`). Verified locally first:
+     nova built against that trimmed tree is the same 307144 bytes and round-trips an image. The
+     apt/brew dependency steps, the elit-failure workaround and the find-based PATH guess are gone;
+     cache key is `lisaac-compiler-<os>-<arch>-<version>`. `c-source` is uploaded by the x86_64 Linux
      job only (two jobs uploading one name would fail).
      (c) **`win/dist.sh` now fails the build when a DLL it packages is absent from `win/nova.wxs`**
          -- the trap that shipped an MSI without libheif, since `wixl` says nothing about a file
