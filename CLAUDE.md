@@ -110,6 +110,13 @@ _Updated 2026-09-22._
   until actually measured.
 
 ### In flight (not yet committed)
+- **Extensions case-insensitive + decode overwrite prompt (`ed72b7b`)**, found while preparing
+  beta.3: every `has_suffix` check now goes through `as_lower` (an uppercase output like `OUT.PNG`
+  failed with "unsupported output extension"), `decode`/`preview` call `keep_or_rename` like
+  `encode`, and `free_name` keeps the destination's own extension (`OUT.PNG` -> `OUT-1.PNG`; it
+  used to strip 5 chars and append `.nova`). `test/unit.sh` all OK (uv fuzz skipped: no `uv` here).
+  Convention: nova *writes* lowercase `.nova`, accepts any case. `nova.li` already reads
+  `2.0.0-beta.3`; `release/NOTES-v2.0.0-beta.3.md` drafted, **awaiting the user's review**.
 - User ran a full manual test pass (`~/test_nova/Tests.md`, 29 items) on real files outside the
   sandbox. Found two real bugs, both fixed in the working tree here, not yet committed:
   1. **Animation with JPEG sources: every decoded frame was the last frame's image**, not each
