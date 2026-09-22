@@ -250,6 +250,29 @@ _Updated 2026-09-22._
      `nova encode IMG_1152.HEIC test.nova` reads a 3024x4032 iPhone HEIC and writes the `.nova`
      (88.6 % of the source, q 90, level 5, 6.3 s). The MSI uninstall is clean too since the 2762
      fix. Phase 1 is done end to end.
+     **Phase 2 (AVIF) built in CI, not yet tried on Windows.** One library unlocks all of it: aom
+     3.13.1, shared, so libheif and libavif link one copy instead of embedding two. libheif is
+     rebuilt with `WITH_AOM_DECODER/ENCODER` (it is what reads and writes a plain `.avif`);
+     libavif 1.3.0 is only for the HDR gain-map path (`nova_heic.li` dlopens it for that alone, and
+     1.3.0 is the version its struct offsets were checked against -- 1.4.x exists, no reason to
+     move). `win/deps.sh` now builds per library behind a marker file, with `restore-keys` on the
+     CI cache, so editing libheif's flags no longer rebuilds aom (~9 min on its own).
+     **Cost, measured: the zip goes 3.1 -> 8.0 MB and `nova-setup.exe` 2.65 -> 6.3 MB.** That is
+     the AV1 encoder and it is irreducible.
+     Three traps, one per failed run:
+     (a) **Do not pass `-DENABLE_NASM=ON` to aom.** It routes the build through `test_nasm()`,
+         which greps `nasm -hf` for the string `-Ox` and rejects the nasm in `fedora:latest`
+         ("multipass optimization not supported"). aom looks for **yasm** first and only runs that
+         test when the assembler is nasm, so installing yasm and passing no flag skips the whole
+         question. (The nasm here, 2.16.03, does print `-Ox` -- the container's is something else.)
+     (b) In `win/deps.sh`, only `build()` copied the staging tree into the sysroot, and it runs
+         before `license()`. Every library but the last was carried over by the next one's build;
+         libavif's licence never arrived and the MSI failed on the missing file. `license()` syncs
+         too now.
+     (c) **`win/dist.sh` now fails the build when a DLL it packages is absent from `win/nova.wxs`**
+         -- the trap that shipped an MSI without libheif, since `wixl` says nothing about a file
+         missing from its explicit list. Predicting `libaom.dll`/`libavif.dll` correctly was luck;
+         the check is what makes it not matter next time.
   3. `install.bat` did not self-elevate, so a double-click failed with `0x80040201`
      (`SELFREG_E_CLASS`) -- `DllRegisterServer` writes to `HKEY_CLASSES_ROOT` and `HKLM`
      (`plugins/wic/nova_wic.cpp:294`, `:334`) and returns that for any failed write. A `regsvr32`
