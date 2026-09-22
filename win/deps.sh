@@ -47,6 +47,7 @@ license() {   # license <name> <file>...
   local d="$stage$M/share/licenses/$1"
   shift
   mkdir -p "$d" && cp "$@" "$d/"
+  sync   # build() syncs before this runs, so the last library's licence would never reach $M
 }
 
 mkdir -p "$stage"
