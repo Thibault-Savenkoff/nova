@@ -303,16 +303,20 @@ _Updated 2026-09-22._
      32-bit, so `MultiUser.nsh` defaulted to `$PROGRAMFILES` for a 64-bit `nova.exe`. Fixed with
      `MULTIUSER_USE_PROGRAMFILES64` (the MSI already used `ProgramFiles64Folder`); an older
      `(x86)` install is not moved, uninstall it first.
-     **Release asset names: proposed, waiting on the user** (before `v2.0.0-beta.3`). No version in
-     the names, so `releases/latest/download/<name>` links stay permanent (install.sh still pins a
-     version through the tag in the URL): `nova-linux-{x86_64,arm64}.tar.gz`,
-     `nova-macos-{arm64,x86_64}.tar.gz`, `nova-windows-x86_64-setup.exe`, `-x86_64.msi`,
-     `-x86_64.zip`, each with a `.sha256` (Windows has none today). Rejected: `.dmg` (for `.app`
-     bundles, and Gatekeeper blocks one that is not notarized), `7z` (Windows opens zip natively),
-     a source tarball (GitHub attaches one to every release). Linux arm64 is new: GitHub's free ARM
-     runners for public repos, but Lisaac Omega has never been built on ARM. Touches
-     `release/pack.sh`, `install.sh` (builds the archive name at line ~270), `win/dist.sh`, the
-     workflow and the README.
+     **Release assets, decided with the user and built (run `35778801993`, all green):**
+     `nova-<version>-<os>-<arch>` everywhere -- the shape `release/pack.sh` already gave Linux and
+     macOS, so `install.sh` did not change. The user wanted the version in the name (so no
+     permanent `latest/download/` links; the README points at the releases page). Windows now
+     ships `nova-<v>-windows-x86_64-setup.exe`, `.msi` and `.zip`, each with a `.sha256` (it had
+     none). Rejected: `.dmg` (for `.app` bundles, and Gatekeeper blocks one that is not
+     notarized), `7z` (Windows opens zip natively), a hand-made source tarball (GitHub attaches
+     one to every release). **Linux arm64 is new** (`ubuntu-24.04-arm`, free for public repos;
+     `install.sh` already mapped aarch64 to arm64 and asked for that archive, which never
+     existed). Its binary really ran there (`nova --version`). Trap: Lisaac Omega's `install.sh`
+     builds the compiler on arm64, then fails linking `elit` (its editor, not needed) against the
+     x86_64-only `libglfw3.a` it ships -- the workflow tolerates that failure, and the next step
+     still fails loudly if no `lisaac` binary exists. `c-source` is uploaded by the x86_64 Linux
+     job only (two jobs uploading one name would fail).
      (c) **`win/dist.sh` now fails the build when a DLL it packages is absent from `win/nova.wxs`**
          -- the trap that shipped an MSI without libheif, since `wixl` says nothing about a file
          missing from its explicit list. Predicting `libaom.dll`/`libavif.dll` correctly was luck;
