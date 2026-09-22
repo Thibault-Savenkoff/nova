@@ -294,6 +294,20 @@ _Updated 2026-09-22._
      and "2.0.0" for the MSI, each hard-coded separately; `win/dist.sh` now reads `nova.li` and
      passes it (`makensis -DVERSION`, `wixl -D Version`). The MSI can only hold the numeric part
      (ProductVersion is numbers only), so it shows 2.0.0 where NSIS shows 2.0.0-beta.2.
+     Also (user report): NSIS installed per machine into `Program Files (x86)` -- the installer is
+     32-bit, so `MultiUser.nsh` defaulted to `$PROGRAMFILES` for a 64-bit `nova.exe`. Fixed with
+     `MULTIUSER_USE_PROGRAMFILES64` (the MSI already used `ProgramFiles64Folder`); an older
+     `(x86)` install is not moved, uninstall it first.
+     **Release asset names: proposed, waiting on the user** (before `v2.0.0-beta.3`). No version in
+     the names, so `releases/latest/download/<name>` links stay permanent (install.sh still pins a
+     version through the tag in the URL): `nova-linux-{x86_64,arm64}.tar.gz`,
+     `nova-macos-{arm64,x86_64}.tar.gz`, `nova-windows-x86_64-setup.exe`, `-x86_64.msi`,
+     `-x86_64.zip`, each with a `.sha256` (Windows has none today). Rejected: `.dmg` (for `.app`
+     bundles, and Gatekeeper blocks one that is not notarized), `7z` (Windows opens zip natively),
+     a source tarball (GitHub attaches one to every release). Linux arm64 is new: GitHub's free ARM
+     runners for public repos, but Lisaac Omega has never been built on ARM. Touches
+     `release/pack.sh`, `install.sh` (builds the archive name at line ~270), `win/dist.sh`, the
+     workflow and the README.
      (c) **`win/dist.sh` now fails the build when a DLL it packages is absent from `win/nova.wxs`**
          -- the trap that shipped an MSI without libheif, since `wixl` says nothing about a file
          missing from its explicit list. Predicting `libaom.dll`/`libavif.dll` correctly was luck;
