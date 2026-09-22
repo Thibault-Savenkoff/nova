@@ -90,7 +90,7 @@ done
 cat > $D/nova-profile.ps1 <<'EOF'
 # Adds (or, with -Remove, takes out) the line that loads NOVA's tab completion, in your PowerShell
 # profile. Run it once: .\nova-profile.ps1
-param([switch]$Remove, [string]$Script = "$PSScriptRoot\nova-completion.ps1")
+param([switch]$Remove, [string]$Script = "$PSScriptRoot\nova-completion.ps1", [switch]$ThisHostOnly)
 $line = ". `"$Script`""
 if (-not (Test-Path $PROFILE)) {
     if ($Remove) { return }
@@ -110,6 +110,19 @@ if ($Remove) {
     $raw = [IO.File]::ReadAllText($PROFILE)
     if ($raw -and $raw[-1] -notin "`n", "`r") { [IO.File]::AppendAllText($PROFILE, [Environment]::NewLine) }
     Add-Content -LiteralPath $PROFILE -Value $line
+}
+
+# $PROFILE is per host: Windows PowerShell 5.1 and PowerShell 7 read different files, and the
+# installers only ever call 5.1. Hand the script to the other one as well, if it is installed;
+# -ThisHostOnly is what stops that from bouncing back.
+if (-not $ThisHostOnly) {
+    $other = if ($PSVersionTable.PSVersion.Major -ge 6) { 'powershell.exe' } else { 'pwsh.exe' }
+    $exe = Get-Command $other -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($exe) {
+        $a = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-Script', $Script, '-ThisHostOnly')
+        if ($Remove) { $a += '-Remove' }
+        & $exe.Source @a
+    }
 }
 EOF
 sed -i 's/$/\r/' $D/README.txt $D/LICENSE-*.txt $D/nova-completion.ps1 $D/nova-profile.ps1 $D/install.bat $D/uninstall.bat
