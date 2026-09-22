@@ -283,6 +283,17 @@ _Updated 2026-09-22._
          before `license()`. Every library but the last was carried over by the next one's build;
          libavif's licence never arrived and the MSI failed on the missing file. `license()` syncs
          too now.
+     **Phase 3 (writing .heic) builds green in CI, first try, not yet tried on Windows** (runs
+     `35773656438`, `35774134563`): kvazaar 2.3.2 as a DLL, libheif's summary shows "Kvazaar HEVC
+     encoder: + built-in", zip 8.0 -> 8.46 MB. **Correction: kvazaar is BSD-3 since 2.0, not LGPL**
+     as this file used to say -- still the reason to prefer it over x265 (GPL). Trap found before it
+     bit: the per-library cache markers carry the version only, so turning `WITH_KVAZAAR` on would
+     have been ignored by a libheif restored from the phase-2 cache; its marker is now
+     `heif-<ver>+kvazaar`, and `win/deps.sh`'s header says a flag change needs a new marker name.
+     Also fixed in the same round (user report): Settings > Apps showed "2.0" for the NSIS install
+     and "2.0.0" for the MSI, each hard-coded separately; `win/dist.sh` now reads `nova.li` and
+     passes it (`makensis -DVERSION`, `wixl -D Version`). The MSI can only hold the numeric part
+     (ProductVersion is numbers only), so it shows 2.0.0 where NSIS shows 2.0.0-beta.2.
      (c) **`win/dist.sh` now fails the build when a DLL it packages is absent from `win/nova.wxs`**
          -- the trap that shipped an MSI without libheif, since `wixl` says nothing about a file
          missing from its explicit list. Predicting `libaom.dll`/`libavif.dll` correctly was luck;
