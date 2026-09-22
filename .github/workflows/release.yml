@@ -44,49 +44,37 @@ jobs:
           [ -n "$v" ] || { echo "::error::could not read the Lisaac version from README.md" >&2; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
-      # Lisaac Ω has no prebuilt binary: bumping the pinned version above
-      # rebuilds it once (slow: downloads the zip and compiles lisaac+elit
-      # from source) and this cache key changes, so every run after that
-      # restores it instead.
+      # Lisaac Ω has no prebuilt binary, so it is built here once per pinned version (the cache
+      # key changes with it) and restored on every run after that. Only what compiling nova uses:
+      # the compiler, lib/ and make.lip -- a few MB of the 61 MB zip. Lisaac's own install.sh also
+      # builds elit, its editor, which needs GL and GLFW and fails to link on arm64 (it ships an
+      # x86_64-only libglfw3.a), and it edits ~/.bashrc. nova needs none of that.
       - name: Restore/build Lisaac Ω ${{ steps.lisaac.outputs.version }}
         id: lisaac-cache
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/lisaac
-          key: lisaac-${{ matrix.os }}-${{ matrix.arch }}-${{ steps.lisaac.outputs.version }}
+          key: lisaac-compiler-${{ matrix.os }}-${{ matrix.arch }}-${{ steps.lisaac.outputs.version }}
 
-      - name: Install Lisaac Ω build dependencies (Linux)
-        if: steps.lisaac-cache.outputs.cache-hit != 'true' && matrix.os == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential mesa-common-dev libgl1-mesa-dev pulseaudio-utils
-
-      - name: Install Lisaac Ω build dependencies (macOS)
-        if: steps.lisaac-cache.outputs.cache-hit != 'true' && matrix.os == 'macos'
-        run: brew install glfw pkg-config
-
-      - name: Build Lisaac Ω ${{ steps.lisaac.outputs.version }}
+      - name: Build the Lisaac Ω compiler
         if: steps.lisaac-cache.outputs.cache-hit != 'true'
         run: |
           curl -fsSL -o "$RUNNER_TEMP/lisaac.zip" \
             "https://lisaac.org/downloads/lisaac_${{ steps.lisaac.outputs.version }}.zip"
-          unzip -q "$RUNNER_TEMP/lisaac.zip" -d "$RUNNER_TEMP"
+          unzip -q "$RUNNER_TEMP/lisaac.zip" 'lisaac/bin/lisaac.c' 'lisaac/lib/*' 'lisaac/make.lip' -d "$RUNNER_TEMP"
           cd "$RUNNER_TEMP/lisaac"
-          # On arm64 the compiler builds, then install.sh fails linking elit (Lisaac's editor, not
-          # needed here) against the x86_64-only libglfw3.a it ships. Carry on: the next step fails
-          # loudly if there is no lisaac binary, which is the only thing this job uses.
-          ./install.sh || echo "::warning::Lisaac's install.sh failed (elit on arm64 is expected); checking for the compiler next"
+          # The same command Lisaac's installer runs.
+          gcc -Wno-unused bin/lisaac.c -o bin/lisaac -O2
+          rm bin/lisaac.c
+          # And the one setting it writes for the OS: "apple" swaps gcc's -flarge-source-files,
+          # which Apple's clang rejects, for -w.
+          if [ "${{ matrix.os }}" = macos ]; then
+            sed -i.bak 's/+ target:String := "unix"/+ target:String := "apple"/' make.lip
+            grep -q '+ target:String := "apple"' make.lip
+          fi
 
       - name: Add Lisaac Ω to PATH
-        run: |
-          # install.sh's own install location isn't documented anywhere we
-          # could find: locate the binary it produced under the cached tree
-          # instead of guessing a path.
-          # ponytail: find-based discovery: once a real run confirms the
-          # actual install location, this can become a plain PATH export.
-          dir=$(dirname "$(find "$RUNNER_TEMP/lisaac" -maxdepth 6 -type f -name lisaac -perm -u+x 2>/dev/null | head -1)")
-          [ -n "$dir" ] && [ -d "$dir" ] || { echo "::error::lisaac binary not found under $RUNNER_TEMP/lisaac after build" >&2; exit 1; }
-          echo "$dir" >> "$GITHUB_PATH"
+        run: echo "$RUNNER_TEMP/lisaac/bin" >> "$GITHUB_PATH"
 
       - name: Build nova
         run: |
