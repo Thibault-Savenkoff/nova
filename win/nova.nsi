@@ -123,12 +123,14 @@ SectionEnd
 ; a line loads it from the user's profile. PowerShell edits its own file (nova-profile.ps1) rather
 ; than NSIS guessing its encoding; the script is idempotent, so running it twice changes nothing.
 Section -Completion
+  ; Now, for whoever is installing: UAC elevates the same account on a personal machine, so the
+  ; profile written is the right one. Active Setup then covers the case that breaks -- another
+  ; account's credentials at the UAC prompt -- and every other user of a per-machine install.
+  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "$InstDir\nova-profile.ps1" -Script "$InstDir\nova-completion.ps1"'
   ${if} $MultiUser.InstallMode == "AllUsers"
     WriteRegStr HKLM "${ACTIVESETUP}" "" "NOVA tab completion"
     WriteRegStr HKLM "${ACTIVESETUP}" "Version" "1"
     WriteRegStr HKLM "${ACTIVESETUP}" "StubPath" '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "$InstDir\nova-profile.ps1" -Script "$InstDir\nova-completion.ps1"'
-  ${else}
-    ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$InstDir\nova-profile.ps1" -Script "$InstDir\nova-completion.ps1"'
   ${endif}
 SectionEnd
 
