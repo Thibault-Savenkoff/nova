@@ -72,7 +72,10 @@ jobs:
             "https://lisaac.org/downloads/lisaac_${{ steps.lisaac.outputs.version }}.zip"
           unzip -q "$RUNNER_TEMP/lisaac.zip" -d "$RUNNER_TEMP"
           cd "$RUNNER_TEMP/lisaac"
-          ./install.sh
+          # On arm64 the compiler builds, then install.sh fails linking elit (Lisaac's editor, not
+          # needed here) against the x86_64-only libglfw3.a it ships. Carry on: the next step fails
+          # loudly if there is no lisaac binary, which is the only thing this job uses.
+          ./install.sh || echo "::warning::Lisaac's install.sh failed (elit on arm64 is expected); checking for the compiler next"
 
       - name: Add Lisaac Ω to PATH
         run: |
