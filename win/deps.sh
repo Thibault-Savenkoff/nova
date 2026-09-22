@@ -1,16 +1,18 @@
 #!/bin/bash
 # Cross-compiles, for Windows, the image libraries Fedora has no mingw64 package for.
 #
-# Phase 1 was HEIC *reading*: libheif with libde265. Phase 2 adds AV1, and one library covers all
-# of AVIF: libheif needs aom to read and to write .avif, and libavif needs the same aom for the HDR
-# gain map (nova_heic.li loads libavif for that path only). HEVC *encoding* -- writing .heic -- is
-# phase 3 and needs kvazaar, not x265: nova is MIT and x265 is GPL.
+# HEIC: libheif reads it with libde265 and writes it with kvazaar (BSD), not x265, which is GPL
+# inside an otherwise MIT package. AVIF: one library covers all of it -- libheif needs aom to read
+# and to write .avif, and libavif needs the same aom for the HDR gain map (nova_heic.li loads
+# libavif for that path only).
 #
 # Usage: win/deps.sh <staging-dir>
 # Everything is installed into <staging-dir> and copied from there into the MinGW sysroot, where
 # win/dist.sh looks for DLLs like every other one it ships, and where pkg-config finds each library
 # for the ones built after it. One marker file per library means a <staging-dir> the CI restored
-# from an older key only rebuilds what actually changed -- aom alone is ~10 minutes.
+# from an older key only rebuilds what actually changed -- aom alone is ~10 minutes. The marker
+# carries the version and nothing else: **changing a library's cmake flags needs a new marker
+# name too**, or a restored tree keeps the old build.
 #
 # Fedora: sudo dnf install mingw64-gcc-c++ mingw64-filesystem mingw64-pkg-config cmake yasm perl
 set -eu
@@ -19,6 +21,7 @@ AOM=3.13.1
 AVIF=1.3.0
 DE265=1.1.3
 HEIF=1.23.4
+KVAZAAR=2.3.2
 
 stage=${1:?usage: win/deps.sh <staging-dir>}
 M=/usr/x86_64-w64-mingw32/sys-root/mingw
@@ -75,21 +78,30 @@ if ! built "aom-$AOM"; then
   mark "aom-$AOM"
 fi
 
+# HEVC encoding, for writing .heic. Library only: no kvazaar.exe, no tests.
+if ! built "kvazaar-$KVAZAAR"; then
+  get "https://github.com/ultravideo/kvazaar/releases/download/v$KVAZAAR/kvazaar-$KVAZAAR.tar.gz"
+  build "kvazaar-$KVAZAAR" "kvazaar-$KVAZAAR" -DBUILD_TESTS=OFF -DBUILD_KVAZAAR_BINARY=OFF
+  license kvazaar "$work/kvazaar-$KVAZAAR/LICENSE"
+  mark "kvazaar-$KVAZAAR"
+fi
+
 # ENABLE_PLUGIN_LOADING=OFF matters: with it on, libheif looks for its codecs as separate plugin
 # DLLs at run time, which would each have to be found and shipped. The codecs wanted are compiled
-# in: libde265 for HEIC, aom both ways for AVIF. Writing .heic is phase 3 (kvazaar).
-if ! built "heif-$HEIF"; then
+# in: libde265 and kvazaar for HEIC, aom both ways for AVIF. The "+kvazaar" in the marker is the
+# flag change above: without it, a tree restored from the phase-2 cache would keep that build.
+if ! built "heif-$HEIF+kvazaar"; then
   get "https://github.com/strukturag/libheif/releases/download/v$HEIF/libheif-$HEIF.tar.gz"
   build "heif-$HEIF" "libheif-$HEIF" \
     -DENABLE_PLUGIN_LOADING=OFF -DWITH_EXAMPLES=OFF -DWITH_GDK_PIXBUF=OFF \
     -DWITH_LIBDE265=ON -DWITH_AOM_DECODER=ON -DWITH_AOM_ENCODER=ON \
-    -DWITH_X265=OFF -DWITH_KVAZAAR=OFF \
+    -DWITH_X265=OFF -DWITH_KVAZAAR=ON \
     -DWITH_DAV1D=OFF -DWITH_RAV1E=OFF -DWITH_SvtEnc=OFF \
     -DWITH_JPEG_DECODER=OFF -DWITH_JPEG_ENCODER=OFF \
     -DWITH_OpenJPEG_DECODER=OFF -DWITH_OpenJPEG_ENCODER=OFF \
     -DWITH_UNCOMPRESSED_CODEC=OFF
   license libheif "$work/libheif-$HEIF/COPYING"
-  mark "heif-$HEIF"
+  mark "heif-$HEIF+kvazaar"
 fi
 
 # Only nova's HDR gain-map AVIF goes through libavif (nova_heic.li dlopens "libavif.so.16", which

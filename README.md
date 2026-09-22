@@ -110,10 +110,9 @@ the zip, run `nova-profile.ps1` once (its `README.txt` has the details). The com
 `nova-completion.ps1`, not `nova.ps1`, because PowerShell resolves a bare `nova` to a `.ps1` on the `PATH`
 in preference to `nova.exe`. cmd.exe has no such hook for a third-party program's arguments.
 
-Camera RAW works, and so do reading `.heic` and AVIF both ways: the package carries LibRaw, libheif with
-libde265, and aom with libavif, cross-compiled by `win/deps.sh` because Fedora packages none of them for
-MinGW. **Writing `.heic` is the one thing still missing there**, for want of an HEVC encoder. Neither
-installer is signed yet, so SmartScreen shows "unknown publisher".
+Camera RAW works, and HEIC and AVIF both ways: the package carries LibRaw, libheif with libde265 and
+kvazaar, and aom with libavif, cross-compiled by `win/deps.sh` because Fedora packages none of them for
+MinGW. Neither installer is signed yet, so SmartScreen shows "unknown publisher".
 
 **Browser:** nothing to install, the [web page](https://thibault-savenkoff.github.io/nova/) runs NOVA on your device.
 

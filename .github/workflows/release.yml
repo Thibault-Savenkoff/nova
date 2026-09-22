@@ -141,7 +141,7 @@ jobs:
           key: windeps-${{ hashFiles('win/deps.sh') }}
           restore-keys: windeps-
 
-      - name: Cross-compile libheif, libde265, aom and libavif
+      - name: Cross-compile libheif, libde265, kvazaar, aom and libavif
         run: bash win/deps.sh "$RUNNER_TEMP/windeps"
 
       - name: Build the Windows files

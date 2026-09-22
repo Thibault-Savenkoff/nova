@@ -15,9 +15,9 @@ cp completions/nova.ps1 $D/nova-completion.ps1
 # The other three are LibRaw's own DLL dependencies inside the MinGW sysroot, from
 # `objdump -p` on it: without them LoadLibrary fails and RAW is silently unavailable.
 cp $M/bin/libraw_r-*.dll $M/bin/{libgcc_s_seh-1,liblcms2-2,libstdc++-6,libwinpthread-1}.dll $D/
-# HEIC reading (libheif + libde265) and AVIF both ways (aom, plus libavif for the HDR gain map),
-# all cross-compiled by win/deps.sh because Fedora packages none of them for mingw64.
-cp $M/bin/libheif*.dll $M/bin/libde265*.dll $M/bin/libaom*.dll $M/bin/libavif*.dll $D/
+# HEIC both ways (libheif with libde265 and kvazaar) and AVIF both ways (aom, plus libavif for the
+# HDR gain map), all cross-compiled by win/deps.sh because Fedora packages none of them for mingw64.
+cp $M/bin/libheif*.dll $M/bin/libde265*.dll $M/bin/libkvazaar*.dll $M/bin/libaom*.dll $M/bin/libavif*.dll $D/
 # Fedora ships its MinGW DLLs unstripped: libstdc++-6.dll alone is 29 MB of debug
 # symbols nobody here can use, five times the rest of the package put together.
 x86_64-w64-mingw32-strip $D/*.dll
@@ -42,6 +42,7 @@ cp $M/share/licenses/libheif/COPYING $D/LICENSE-libheif.txt
 cp $M/share/licenses/libde265/COPYING $D/LICENSE-libde265.txt
 cat $M/share/licenses/libaom/{LICENSE,PATENTS} > $D/LICENSE-libaom.txt
 cp $M/share/licenses/libavif/LICENSE $D/LICENSE-libavif.txt
+cp $M/share/licenses/kvazaar/LICENSE $D/LICENSE-kvazaar.txt
 sed -n '1,/madler/p' $M/include/zlib.h > $D/LICENSE-zlib.txt
 cp LICENSE $D/LICENSE-nova.txt
 cat > $D/README.txt <<'EOF'
@@ -62,14 +63,13 @@ zlib1.dll (zlib) and libwebp-7.dll, libsharpyuv-0.dll (libwebp) write PNG and We
 (LibRaw) with libgcc_s_seh-1.dll, liblcms2-2.dll and libstdc++-6.dll read camera RAW files. Keep them
 all next to nova.exe. Their licenses: LICENSE-zlib.txt, LICENSE-libwebp.txt, LICENSE-libraw.txt.
 
-Reading .heic works, and AVIF both ways. Those DLLs are built unmodified from:
+HEIC and AVIF work, reading and writing. Those DLLs are built unmodified from:
   https://github.com/strukturag/libheif    v1.23.4    LGPL    LICENSE-libheif.txt
   https://github.com/strukturag/libde265   v1.1.3     LGPL    LICENSE-libde265.txt
   https://aomedia.googlesource.com/aom     v3.13.1    BSD     LICENSE-libaom.txt
   https://github.com/AOMediaCodec/libavif  v1.3.0     BSD     LICENSE-libavif.txt
+  https://github.com/ultravideo/kvazaar    v2.3.2     BSD     LICENSE-kvazaar.txt
 Replacing one with your own build of the same version is all that is needed to relink.
-
-Writing .heic does not work yet: it needs an HEVC encoder, which is not in this package.
 
 4. Tab completion, PowerShell only (cmd.exe has no such hook for a third-party program). Run once:
        .\nova-profile.ps1
