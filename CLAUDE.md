@@ -250,7 +250,11 @@ _Updated 2026-09-22._
      `nova encode IMG_1152.HEIC test.nova` reads a 3024x4032 iPhone HEIC and writes the `.nova`
      (88.6 % of the source, q 90, level 5, 6.3 s). The MSI uninstall is clean too since the 2762
      fix. Phase 1 is done end to end.
-     **Phase 2 (AVIF) built in CI, not yet tried on Windows.** One library unlocks all of it: aom
+     **Phase 2 (AVIF) builds green in CI, not yet tried on Windows** (run `35754434774`, `windows`
+     job 6m43s including aom from scratch). libheif's own configure summary is the proof that the
+     codecs went in rather than being silently skipped -- its `WITH_*` options are wishes, not
+     requirements: "libde265 HEVC decoder: + built-in / AOM AV1 decoder: + built-in / AOM AV1
+     encoder: + built-in / x265, Kvazaar: - disabled". Read that summary after any change here. One library unlocks all of it: aom
      3.13.1, shared, so libheif and libavif link one copy instead of embedding two. libheif is
      rebuilt with `WITH_AOM_DECODER/ENCODER` (it is what reads and writes a plain `.avif`);
      libavif 1.3.0 is only for the HDR gain-map path (`nova_heic.li` dlopens it for that alone, and
