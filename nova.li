@@ -11,7 +11,7 @@ Header
 Public
 
   // Program version (install.sh, build.sh and the update check compare it with the release tags "v" + version).
-  - version:String := "2.0.0-beta.2"
+  - version:String := "2.0.0-beta.3"
 
   - usage <-
   (
@@ -466,36 +466,41 @@ Public
     }
   )
 
-  - heif_ext name:String :Boolean <- (name.has_suffix ".avif") || {name.has_suffix ".heic"} || {name.has_suffix ".heif"}
+  - heif_ext name:String :Boolean <- (name.as_lower.has_suffix ".avif") || {name.as_lower.has_suffix ".heic"} || {name.as_lower.has_suffix ".heif"}
 
   - image_ext name:String :Boolean <-
-    (name.has_suffix ".png") || {name.has_suffix ".pam"} || {name.has_suffix ".tif"} || {name.has_suffix ".tiff"} || {name.has_suffix ".jpg"} || {name.has_suffix ".jpeg"} || {name.has_suffix ".webp"} || {heif_ext name}
+  ( + e:String_buffer
+    + r:Boolean
+    e := name.as_lower
+    r := (e.has_suffix ".png") || {e.has_suffix ".pam"} || {e.has_suffix ".tif"} || {e.has_suffix ".tiff"}
+    r || {e.has_suffix ".jpg"} || {e.has_suffix ".jpeg"} || {e.has_suffix ".webp"} || {heif_ext name}
+  )
 
   - write_image buf:C_array Uint8 planes np:Int to name:String <-
   // Output format from the extension: .tif/.tiff, .jpg/.jpeg (quality opt_q), .webp, .avif/.heic/.heif,
   // .pam (RGBA, for the web viewer), else PNG.
   ( + ok,ll,av:Boolean
     + q,gain:Int
-    (((name.has_suffix ".tif") || {name.has_suffix ".tiff"}) && {opt_hdr} && {hdr_ok np}).if {
+    (((name.as_lower.has_suffix ".tif") || {name.as_lower.has_suffix ".tiff"}) && {opt_hdr} && {hdr_ok np}).if {
       write_tiff_hdr buf to name
-    }.elseif {(name.has_suffix ".tif") || {name.has_suffix ".tiff"}} then {
+    }.elseif {(name.as_lower.has_suffix ".tif") || {name.as_lower.has_suffix ".tiff"}} then {
       collect_meta
       Nova_tiff.write_image name pixels buf bits 8 planes np size (width, height) data data exif (exif_pos, exif_len) icc (iccp, iccp_n) xmp (xmp_pos, xmp_len)
-    }.elseif {((name.has_suffix ".jpg") || {name.has_suffix ".jpeg"}) && {hdr_ok np}} then {
+    }.elseif {((name.as_lower.has_suffix ".jpg") || {name.as_lower.has_suffix ".jpeg"}) && {hdr_ok np}} then {
       write_ultrahdr buf to name
-    }.elseif {opt_hdr && {name.has_suffix ".png"} && {hdr_ok np}} then {
+    }.elseif {opt_hdr && {name.as_lower.has_suffix ".png"} && {hdr_ok np}} then {
       write_png_hdr buf to name
     }.elseif {opt_hdr && {heif_ext name} && {hdr_ok np}} then {
       // HDR AVIF/HEIC: lossy 10 bits (default quality as below).
       collect_meta
-      av := name.has_suffix ".avif"
+      av := name.as_lower.has_suffix ".avif"
       q := opt_q
       (opt_q_set).if { }.elseif {av} then { q := 85 } else { q := 60 }
       Nova_par.status ("Applying the gain map (" + width.to_string + "x" + height.to_string + ")...")
       Nova_hdr.apply buf size (width, height) gain_map gm gain_size (gm_w, gm_h) png False
       ok := Nova_heic.export_hdr name pq (Nova_hdr.data) size (width, height) primaries icc_primaries avif av quality q meta (data, exif_pos, exif_len, data, xmp_pos, xmp_len)
       (ok).if { } else { fail ("HEIF: " + Nova_heic.message) }
-    }.elseif {(name.has_suffix ".jpg") || {name.has_suffix ".jpeg"}} then {
+    }.elseif {(name.as_lower.has_suffix ".jpg") || {name.as_lower.has_suffix ".jpeg"}} then {
       (raw_exif_n > 0).if {
         // Developed RAW: EXIF built from the CMT blocks, no ICC (sRGB) or XMP.
         ok := Nova_jpeg.encode buf size (width, height) quality opt_q exif (raw_exif, 0, raw_exif_n) icc (raw_exif, 0, 0) xmp (raw_exif, 0, 0)
@@ -505,7 +510,7 @@ Public
       }
       (ok).if { } else { fail "JPEG encoding failed (out of memory)" }
       save_buffer (Nova_jpeg.data) size (Nova_jpeg.size) to name
-    }.elseif {name.has_suffix ".webp"} then {
+    }.elseif {name.as_lower.has_suffix ".webp"} then {
       // Default: lossless when the .nova frame is (graphics), lossy for photos and developed RAWs.
       ll := (opt_webp = 2) || {(opt_webp = 0) && {! Nova_codec.lossy_seen} && {raw_exif_n = 0}}
       (raw_exif_n > 0).if {
@@ -518,7 +523,7 @@ Public
       save_buffer (Nova_webp.data) size (Nova_webp.size) to name
     }.elseif {heif_ext name} then {
       // Default quality: about the fidelity of JPEG q 90 (~44 dB on a 24 Mpx photo): AVIF 85, HEIC 60.
-      av := name.has_suffix ".avif"
+      av := name.as_lower.has_suffix ".avif"
       q := opt_q
       (opt_q_set).if { }.elseif {av} then { q := 85 } else { q := 60 }
       ll := (opt_webp = 2) || {(opt_webp = 0) && {! Nova_codec.lossy_seen} && {raw_exif_n = 0}}
@@ -538,9 +543,9 @@ Public
         ok := Nova_heic.export name pixels buf size (width, height) planes np avif av lossless ll quality q meta (data, exif_pos, exif_len, iccp, iccp_n, data, xmp_pos, xmp_len)
       }
       (ok).if { } else { fail ("HEIF: " + Nova_heic.message) }
-    }.elseif {name.has_suffix ".pam"} then {
+    }.elseif {name.as_lower.has_suffix ".pam"} then {
       write_pam buf to name
-    }.elseif {name.has_suffix ".png"} then {
+    }.elseif {name.as_lower.has_suffix ".png"} then {
       write_png buf planes np to name
     } else {
       fail ("unsupported output extension: " + name + " (.png .tif .jpg .webp .avif .heic .heif .pam)")
@@ -780,7 +785,7 @@ Public
     0.to (n - 1) do { i:Int raw_exif.at i put (o.at i) }
     raw_exif_n := n
     Nova_tiff.write_dng NULL data data rawh rh metas (meta_pos, meta_len) size (width, height) thumb (NULL, 0, 0, 0)
-    tif := (name.has_suffix ".tif") || {name.has_suffix ".tiff"}
+    tif := (name.as_lower.has_suffix ".tif") || {name.as_lower.has_suffix ".tiff"}
     bits := 8
     (tif).if { bits := 16 }
     (opt_look = 0).if { look := "camera look" } else { look := "darktable look" }
@@ -1288,15 +1293,15 @@ Public
     (animated).if {
       // "out.png" -> out_000.png (same for .tif, .tiff; other names get .png)
       ext := ".png"
-      (base.has_suffix ".tif").if { ext := ".tif" }
-      (base.has_suffix ".tiff").if { ext := ".tiff" }
-      (base.has_suffix ".jpg").if { ext := ".jpg" }
-      (base.has_suffix ".jpeg").if { ext := ".jpeg" }
-      (base.has_suffix ".webp").if { ext := ".webp" }
-      (base.has_suffix ".avif").if { ext := ".avif" }
-      (base.has_suffix ".heic").if { ext := ".heic" }
-      (base.has_suffix ".heif").if { ext := ".heif" }
-      (base.has_suffix ext).if { result := base.substring 0 to (base.upper - ext.count) }
+      (base.as_lower.has_suffix ".tif").if { ext := ".tif" }
+      (base.as_lower.has_suffix ".tiff").if { ext := ".tiff" }
+      (base.as_lower.has_suffix ".jpg").if { ext := ".jpg" }
+      (base.as_lower.has_suffix ".jpeg").if { ext := ".jpeg" }
+      (base.as_lower.has_suffix ".webp").if { ext := ".webp" }
+      (base.as_lower.has_suffix ".avif").if { ext := ".avif" }
+      (base.as_lower.has_suffix ".heic").if { ext := ".heic" }
+      (base.as_lower.has_suffix ".heif").if { ext := ".heif" }
+      (base.as_lower.has_suffix ext).if { result := base.substring 0 to (base.upper - ext.count) }
       result := result + "_"
       (idx < 100).if { result := result + "0" }
       (idx < 10).if { result := result + "0" }
@@ -1369,14 +1374,14 @@ Public
         (raw && {dst != NULL}).if {
           (t != t_fdat).if { fail "RAW files have one frame" }
           (rawh = 0).if { fail "RAW frame without RAWH" }
-          ((dst.has_suffix ".dng") || {dst.has_suffix ".pgm"} || {image_ext dst}).if { } else { fail "a RAW frame decodes to .dng, .png, .tif, .jpg (or .pgm: bare sensor frame)" }
+          ((dst.as_lower.has_suffix ".dng") || {dst.as_lower.has_suffix ".pgm"} || {image_ext dst}).if { } else { fail "a RAW frame decodes to .dng, .png, .tif, .jpg (or .pgm: bare sensor frame)" }
           Nova_raw.setup (width, height) black (raw_black_at rawh)
           (Nova_raw.decode data from pos size len).if { } else { fail "corrupt frame" }
           // MDAT blocks after FDAT are not seen; the encoder writes them before.
-          (dst.has_suffix ".pgm").if {
+          (dst.as_lower.has_suffix ".pgm").if {
             Nova_par.status ("Writing " + (short_name dst) + "...")
             write_pgm dst
-          }.elseif {dst.has_suffix ".dng"} then {
+          }.elseif {dst.as_lower.has_suffix ".dng"} then {
             tn := 0
             (have_thumb).if {
               (Nova_jpeg.encode next size (tw, th) quality 85 exif (next, 0, 0) icc (next, 0, 0) xmp (next, 0, 0)).if {
@@ -1441,7 +1446,7 @@ Public
           count := 1
           nframes := 0
           done := True
-        }.elseif {raw && {dst.has_suffix ".dng"}} then {
+        }.elseif {raw && {dst.as_lower.has_suffix ".dng"}} then {
           // Kept for write_dng below: an Exif-style JPEG thumbnail, from the RAW's own 512 px
           // preview (already a real LibRaw half-size development, not the bare sensor).
           tw := u16 pos
@@ -1572,7 +1577,7 @@ Public
     {(i < n) && {((Command_args.at i).first) != '-'}}.while_do { i := i + 1 }
     // The last name is the destination when it ends in .nova or is no readable source;
     // with no destination at all, it is made from the first source.
-    ((i > 2) && {((Command_args.at (i - 1)).has_suffix ".nova") || {! (File_utils.file_exists (Command_args.at (i - 1)))}}).if {
+    ((i > 2) && {((Command_args.at (i - 1)).as_lower.has_suffix ".nova") || {! (File_utils.file_exists (Command_args.at (i - 1)))}}).if {
       last_src := i - 2
       dst_name := Command_args.at (i - 1)
     } else {
@@ -1627,20 +1632,29 @@ Public
   )
 
   // "photo.nova" taken -> the first free "photo-1.nova", "photo-2.nova"...
+  // name-1.ext, name-2.ext... the first that does not exist. Any extension: decode uses it too.
   - free_name name:String :String <-
-  ( + base,result:String
-    + i:Int
-    base := name.substring 0 to (name.upper - 5)
+  ( + base,ext,result:String
+    + i,dot:Int
+    dot := name.last_index_of '.'
+    (dot > name.last_path_separator).if {
+      base := name.substring 0 to (dot - 1)
+      ext := name.substring dot to (name.upper)
+    } else {
+      base := name
+      ext := ""
+    }
     i := 1
-    result := base + "-1.nova"
+    result := base + "-1" + ext
     {File_utils.file_exists result}.while_do {
       i := i + 1
-      result := base + "-" + i.to_string + ".nova"
+      result := base + "-" + i.to_string + ext
     }
     result
   )
 
   // Destination that already exists: ask on a terminal, overwrite in a script (as before).
+  // Used by encode, decode and preview alike.
   - keep_or_rename name:String :String <-
   ( + result,answer:String
     + c:Char
@@ -1800,7 +1814,7 @@ Public
       }
     }.elseif {(cmd != NULL) && {cmd == "decode"} && {n >= 4}} then {
       parse_decode_args n
-      read_nova (Command_args.at 2) decode_to (Command_args.at 3)
+      read_nova (Command_args.at 2) decode_to (keep_or_rename (Command_args.at 3))
       // Test hook: NOVA_GAINMAP=file.png writes the decoded gain map (GMAP).
       (((Environment.read_variable "NOVA_GAINMAP") != NULL) && {gm_w > 0}).if {
         width := gm_w
@@ -1809,7 +1823,7 @@ Public
       }
     }.elseif {(cmd != NULL) && {cmd == "preview"} && {n = 4}} then {
       preview_only := True
-      read_nova (Command_args.at 2) decode_to (Command_args.at 3)
+      read_nova (Command_args.at 2) decode_to (keep_or_rename (Command_args.at 3))
     }.elseif {(cmd != NULL) && {cmd == "info"} && {n = 3}} then {
       read_nova (Command_args.at 2) decode_to NULL
     }.elseif {(cmd != NULL) && {(cmd == "--version") || {cmd == "version"}} && {n = 2}} then {
