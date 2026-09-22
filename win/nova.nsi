@@ -32,7 +32,6 @@ ManifestDPIAware true
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MULTIUSER_PAGE_INSTALLMODE
 !insertmacro MUI_PAGE_LICENSE "..\LICENSE"
-!insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
@@ -56,6 +55,12 @@ Function un.onInit
   SetRegView 64
 FunctionEnd
 
+; Active Setup runs a command once per user, in that user's own session, the next time they log
+; on. It is the only way a per-machine install can reach a real user's PowerShell profile: a
+; process elevated to install writes the profile of the account that elevated, and an MSI custom
+; action writes SYSTEM's.
+!define ACTIVESETUP "SOFTWARE\Microsoft\Active Setup\Installed Components\{B7E2A93C-5F14-4A88-9C3D-61D0A7F2E845}"
+
 Section "NOVA" SecCore
   SectionIn RO
   SetOutPath "$InstDir"
@@ -66,6 +71,7 @@ Section "NOVA" SecCore
   File "..\dist\nova-windows\*.dll"
   File "..\dist\nova-windows\nova-completion.ps1"
   File "..\dist\nova-windows\LICENSE-*.txt"
+  File "..\dist\nova-windows\README.txt"
   SetOutPath "$InstDir\samples"
   File "..\dist\nova-windows\*.nova"
   WriteUninstaller "$InstDir\uninstall.exe"
@@ -113,19 +119,18 @@ Section "NOVA" SecCore
   WriteRegStr ShCtx "${UNINST}" "InstallMode" "$MultiUser.InstallMode"
 SectionEnd
 
-; Off by default: it edits a file the user owns. PowerShell does the edit itself (see
-; nova-profile.ps1) rather than NSIS guessing the profile's encoding. On a per-machine install this
-; is the profile of whoever runs the installer, which is what the description says.
-Section /o "PowerShell tab completion" SecPs
-  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$InstDir\nova-profile.ps1" -Script "$InstDir\nova-completion.ps1"' $0
-  StrCmp $0 0 +2
-    MessageBox MB_OK|MB_ICONEXCLAMATION "Could not add the completion line to your PowerShell profile (error $0). Run nova-profile.ps1 in $InstDir yourself."
+; PowerShell has no auto-load directory for argument completers, so the completion only works once
+; a line loads it from the user's profile. PowerShell edits its own file (nova-profile.ps1) rather
+; than NSIS guessing its encoding; the script is idempotent, so running it twice changes nothing.
+Section -Completion
+  ${if} $MultiUser.InstallMode == "AllUsers"
+    WriteRegStr HKLM "${ACTIVESETUP}" "" "NOVA tab completion"
+    WriteRegStr HKLM "${ACTIVESETUP}" "Version" "1"
+    WriteRegStr HKLM "${ACTIVESETUP}" "StubPath" '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "$InstDir\nova-profile.ps1" -Script "$InstDir\nova-completion.ps1"'
+  ${else}
+    ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$InstDir\nova-profile.ps1" -Script "$InstDir\nova-completion.ps1"'
+  ${endif}
 SectionEnd
-
-!insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} "nova.exe on the PATH, and the codec that shows .nova thumbnails and previews in the Explorer."
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecPs} "Adds one line to the PowerShell profile of the account running this installer, so that pressing Tab completes nova's arguments. cmd.exe has no equivalent."
-!insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 ; Pushes "" if the needle (top) is not in the haystack (below it), else the needle.
 Function StrContains
@@ -173,12 +178,15 @@ Section "Uninstall"
   unpathdone:
   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=2000
   DeleteRegKey ShCtx "${UNINST}"
-  ; Harmless when the completion was never installed: the script only drops matching lines.
+  DeleteRegKey HKLM "${ACTIVESETUP}"
+  ; Only this user's profile: Active Setup has no undo, so a line it added for another account
+  ; stays until that user runs nova-profile.ps1 -Remove. It loads nothing once the file is gone.
   ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$InstDir\nova-profile.ps1" -Remove'
   RMDir /r "$InstDir\samples"
   Delete "$InstDir\*.exe"
   Delete /REBOOTOK "$InstDir\*.dll"   ; Explorer may still hold the codec
   Delete "$InstDir\LICENSE-*.txt"
+  Delete "$InstDir\README.txt"
   Delete "$InstDir\nova-completion.ps1"
   Delete "$InstDir\nova-profile.ps1"
   RMDir "$InstDir"

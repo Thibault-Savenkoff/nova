@@ -32,8 +32,20 @@
             <File Id="libheif.dll" Source="dist/nova-windows/libheif.dll"/>
             <File Id="libde265.dll" Source="dist/nova-windows/libde265.dll"/>
             <File Id="nova.completion.ps1" Source="dist/nova-windows/nova-completion.ps1"/>
-            <!-- The MSI has no components page: it ships the script, the user runs it. -->
             <File Id="nova.profile.ps1" Source="dist/nova-windows/nova-profile.ps1"/>
+            <File Id="readme.txt" Source="dist/nova-windows/README.txt"/>
+            <!-- Tab completion needs a line in the user's PowerShell profile, and this MSI installs
+                 per machine: a custom action would run as SYSTEM and write SYSTEM's profile. Active
+                 Setup is Windows' mechanism for exactly that: it runs the command once per user,
+                 in their own session, at their next logon. Same GUID as win/nova.nsi so the two
+                 installers do not both register it. Uninstalling removes the key; a line already
+                 added to a profile goes away with `nova-profile.ps1 -Remove`, and loads nothing
+                 once the file is gone. -->
+            <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Active Setup\Installed Components\{B7E2A93C-5F14-4A88-9C3D-61D0A7F2E845}">
+              <RegistryValue Type="string" Value="NOVA tab completion"/>
+              <RegistryValue Name="Version" Type="string" Value="1"/>
+              <RegistryValue Name="StubPath" Type="expandable" Value='"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "[INSTALLDIR]nova-profile.ps1" -Script "[INSTALLDIR]nova-completion.ps1"'/>
+            </RegistryKey>
             <File Id="lic.nova" Source="dist/nova-windows/LICENSE-nova.txt"/>
             <File Id="lic.zlib" Source="dist/nova-windows/LICENSE-zlib.txt"/>
             <File Id="lic.webp" Source="dist/nova-windows/LICENSE-libwebp.txt"/>
