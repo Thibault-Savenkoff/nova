@@ -94,6 +94,11 @@ _Updated 2026-09-22._
 - Missing system deps (cmake, Qt-devel, libheif...) are never auto-installed by install.sh/build.sh
   -- detected and skipped with a printed command to copy-paste. Deliberate: auto-installing across
   distros needs sudo and can break a system.
+- **`release/pack.sh` works from GitHub's "Source code" archive too (`be83fa2`).** It listed files
+  with `git ls-files`, which fails into an empty pipe without a `.git`, and still exited 0 -- so
+  `build.sh` from that archive installed `bin/nova` alone (no install.sh, completions, plugins,
+  docs) without a word. Outside a clone it now uses `find` on the same paths; checked both ways,
+  27 files each. Found because the user asked what `build.sh` does from the source archive.
 - `install.sh --uninstall` is manifest-only: every file/rc-line it writes is recorded in
   `$prefix/share/nova/installed.txt`; uninstall only `rm -f`s a single path read back from it --
   never a directory, never a computed path. Deliberate (see Traps).
