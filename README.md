@@ -104,15 +104,16 @@ have it, whichever comes first in `PATH` wins.
 
 **Windows:** `nova-setup.exe` or `nova-setup.msi` (on the release page, and built by `win/dist.sh`) install
 `nova.exe`, put it on the `PATH` and register the codec, so the Explorer shows thumbnails and previews.
-`nova-windows.zip` is the same files without an installer. Uninstall from Settings > Apps. PowerShell tab
-completion is an optional component of the installer, or `nova-profile.ps1` next to `nova.exe` run once
-(the zip's `README.txt` has the details). It is named `nova-completion.ps1`, not `nova.ps1`, because
-PowerShell resolves a bare `nova` to a `.ps1` on the `PATH` in preference to `nova.exe`. cmd.exe has no
-such hook for a third-party program's arguments.
+`nova-windows.zip` is the same files without an installer. Uninstall from Settings > Apps. Either
+installer sets up PowerShell tab completion by itself, for Windows PowerShell and PowerShell 7 both; from
+the zip, run `nova-profile.ps1` once (its `README.txt` has the details). The completion script is named
+`nova-completion.ps1`, not `nova.ps1`, because PowerShell resolves a bare `nova` to a `.ps1` on the `PATH`
+in preference to `nova.exe`. cmd.exe has no such hook for a third-party program's arguments.
 
-Camera RAW works: the package carries LibRaw. **HEIC and AVIF do not**, on Windows only -- nova loads
-libheif at run time and there is no MinGW build of it to ship. Put `libheif.dll` next to `nova.exe` and
-they start working. Neither installer is signed yet, so SmartScreen shows "unknown publisher".
+Camera RAW works, and so do reading `.heic` and AVIF both ways: the package carries LibRaw, libheif with
+libde265, and aom with libavif, cross-compiled by `win/deps.sh` because Fedora packages none of them for
+MinGW. **Writing `.heic` is the one thing still missing there**, for want of an HEVC encoder. Neither
+installer is signed yet, so SmartScreen shows "unknown publisher".
 
 **Browser:** nothing to install, the [web page](https://thibault-savenkoff.github.io/nova/) runs NOVA on your device.
 
