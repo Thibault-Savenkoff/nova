@@ -85,19 +85,32 @@ EOF
 done
 # PowerShell has no auto-load directory for argument completers, so the only way to make the
 # completion permanent is a line in the user's $PROFILE. PowerShell edits its own file here:
-# doing it from NSIS would mean guessing the profile's encoding, and getting that wrong corrupts
-# a file the user owns. Idempotent both ways, so a reinstall cannot double the line.
+# doing it from NSIS would mean guessing the profile's encoding. Idempotent both ways, so a
+# reinstall cannot double the line, and it never rewrites the file just to add to it.
 cat > $D/nova-profile.ps1 <<'EOF'
 # Adds (or, with -Remove, takes out) the line that loads NOVA's tab completion, in your PowerShell
 # profile. Run it once: .\nova-profile.ps1
 param([switch]$Remove, [string]$Script = "$PSScriptRoot\nova-completion.ps1")
+$line = ". `"$Script`""
 if (-not (Test-Path $PROFILE)) {
     if ($Remove) { return }
     New-Item -ItemType File -Path $PROFILE -Force | Out-Null
 }
-$kept = @(Get-Content -LiteralPath $PROFILE | Where-Object { $_ -notmatch 'nova-completion\.ps1' })
-if (-not $Remove) { $kept += ". `"$Script`"" }
-Set-Content -LiteralPath $PROFILE -Value $kept
+$lines = @(Get-Content -LiteralPath $PROFILE)
+$ours  = @($lines | Where-Object { $_ -match 'nova-completion\.ps1' })
+# Adding appends instead of rewriting: Set-Content re-encodes the whole file, and Windows
+# PowerShell 5.1 -- the one both installers call -- writes ANSI by default, which would mangle
+# the accented characters of a UTF-8 profile the user owns. Only removing a line we put there
+# before (an uninstall, or a reinstall into another directory) rewrites, and then it has to.
+if ($Remove) {
+    if ($ours) { Set-Content -LiteralPath $PROFILE -Value @($lines | Where-Object { $_ -notmatch 'nova-completion\.ps1' }) }
+} elseif ($lines -notcontains $line) {
+    if ($ours) { Set-Content -LiteralPath $PROFILE -Value @($lines | Where-Object { $_ -notmatch 'nova-completion\.ps1' }) }
+    # A profile whose last line has no newline would otherwise get ours glued onto it.
+    $raw = [IO.File]::ReadAllText($PROFILE)
+    if ($raw -and $raw[-1] -notin "`n", "`r") { [IO.File]::AppendAllText($PROFILE, [Environment]::NewLine) }
+    Add-Content -LiteralPath $PROFILE -Value $line
+}
 EOF
 sed -i 's/$/\r/' $D/README.txt $D/LICENSE-*.txt $D/nova-completion.ps1 $D/nova-profile.ps1 $D/install.bat $D/uninstall.bat
 (cd dist && zip -qr nova-windows.zip nova-windows) && ls -l dist/nova-windows.zip
