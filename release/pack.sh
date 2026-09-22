@@ -23,9 +23,14 @@ dest="$stage/$name"
 mkdir -p "$dest/bin"
 install -m 755 "$bin" "$dest/bin/nova"
 
-# Only tracked files: skips build artifacts (plugins/*/target, *.so, ...).
-git ls-files install.sh completions libnova plugins/qt plugins/kde plugins/glycin \
-  plugins/gdk-pixbuf plugins/mime README.md MANUAL.md FORMAT.md LICENSE |
+# In a clone, only tracked files: that skips build artifacts (plugins/*/target, *.so, ...). GitHub's
+# "Source code" archive has no .git, and there `git ls-files` fails into an empty pipe -- the
+# package then held bin/ alone and build.sh installed that without a word. A fresh extract has no
+# build artifacts to skip, so plain find is right there.
+paths="install.sh completions libnova plugins/qt plugins/kde plugins/glycin plugins/gdk-pixbuf
+       plugins/mime README.md MANUAL.md FORMAT.md LICENSE"
+# shellcheck disable=SC2086
+if [ -e .git ]; then git ls-files $paths; else find $paths -type f; fi |
 while read -r f; do
   mkdir -p "$dest/$(dirname "$f")"
   cp "$f" "$dest/$f"
