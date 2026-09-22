@@ -31,6 +31,10 @@
             <!-- HEIC reading, cross-compiled by win/deps.sh (no mingw64 package exists). -->
             <File Id="libheif.dll" Source="dist/nova-windows/libheif.dll"/>
             <File Id="libde265.dll" Source="dist/nova-windows/libde265.dll"/>
+            <!-- AVIF: aom both ways, libavif for the HDR gain map. win/dist.sh fails the build if
+                 a DLL it packages is missing from this list, since wixl itself would not. -->
+            <File Id="libaom.dll" Source="dist/nova-windows/libaom.dll"/>
+            <File Id="libavif.dll" Source="dist/nova-windows/libavif.dll"/>
             <File Id="nova.completion.ps1" Source="dist/nova-windows/nova-completion.ps1"/>
             <File Id="nova.profile.ps1" Source="dist/nova-windows/nova-profile.ps1"/>
             <File Id="readme.txt" Source="dist/nova-windows/README.txt"/>
@@ -52,6 +56,8 @@
             <File Id="lic.libraw" Source="dist/nova-windows/LICENSE-libraw.txt"/>
             <File Id="lic.libheif" Source="dist/nova-windows/LICENSE-libheif.txt"/>
             <File Id="lic.libde265" Source="dist/nova-windows/LICENSE-libde265.txt"/>
+            <File Id="lic.libaom" Source="dist/nova-windows/LICENSE-libaom.txt"/>
+            <File Id="lic.libavif" Source="dist/nova-windows/LICENSE-libavif.txt"/>
             <Environment Id="Path" Name="PATH" Value="[INSTALLDIR]" Action="set" Part="last" System="yes" Permanent="no"/>
           </Component>
           <Component Id="Codec" Guid="7E8F9A0B-1C2D-4E3F-8A4B-5C6D7E8F9A12" Win64="yes">
