@@ -246,8 +246,10 @@ _Updated 2026-09-22._
      Trap this caught: **`nova.wxs` lists its files one by one and `wixl` does not complain about
      what is missing**, so the MSI silently kept shipping without the new DLLs while the zip had
      them -- the MSI going 4.2 MB -> 5.7 MB is how it was confirmed fixed. `nova.nsi` globs `*.dll`
-     and was fine. **Not verified on a real machine yet**: from here only that the DLLs load and the
-     closure check passes, not that an actual HEIC opens -- the user has the artifact to try.
+     and was fine. **Verified on the user's real Windows machine (2026-09-22)**:
+     `nova encode IMG_1152.HEIC test.nova` reads a 3024x4032 iPhone HEIC and writes the `.nova`
+     (88.6 % of the source, q 90, level 5, 6.3 s). The MSI uninstall is clean too since the 2762
+     fix. Phase 1 is done end to end.
   3. `install.bat` did not self-elevate, so a double-click failed with `0x80040201`
      (`SELFREG_E_CLASS`) -- `DllRegisterServer` writes to `HKEY_CLASSES_ROOT` and `HKLM`
      (`plugins/wic/nova_wic.cpp:294`, `:334`) and returns that for any failed write. A `regsvr32`
