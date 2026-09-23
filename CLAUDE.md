@@ -378,7 +378,11 @@ _Updated 2026-09-22._
      swaps `-flarge-source-files`, which Apple's clang rejects, for `-w`). Verified locally first:
      nova built against that trimmed tree is the same 307144 bytes and round-trips an image. The
      apt/brew dependency steps, the elit-failure workaround and the find-based PATH guess are gone;
-     cache key is `lisaac-compiler-<os>-<arch>-<version>`. `c-source` is uploaded by the x86_64 Linux
+     cache key is `lisaac-compiler-<os>-<arch>-<version>-<etag>` (`3416f88`): lisaac.org
+     **republishes under the same version number** -- 0.6 was replaced in place on 2026-09-22
+     17:02 UTC -- so the version alone would keep a stale compiler silently; the zip's ETag is read
+     with `curl -I` in the version step. The caches then in use dated from 20:27 UTC that day, so
+     beta.3 was already built with the new 0.6; locally too (same sha256 `f76aa4b2...`). `c-source` is uploaded by the x86_64 Linux
      job only (two jobs uploading one name would fail).
      (c) **`win/dist.sh` now fails the build when a DLL it packages is absent from `win/nova.wxs`**
          -- the trap that shipped an MSI without libheif, since `wixl` says nothing about a file
