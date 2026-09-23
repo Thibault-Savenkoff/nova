@@ -37,6 +37,8 @@
             <File Id="libavif.dll" Source="dist/nova-windows/libavif.dll"/>
             <!-- Writing .heic: the HEVC encoder libheif links. -->
             <File Id="libkvazaar.dll" Source="dist/nova-windows/libkvazaar.dll"/>
+            <!-- Writing .heic with an HDR gain map: libheif + its gain-map PR (libheif-gainmap/). -->
+            <File Id="libnova.heif.dll" Source="dist/nova-windows/libnova-heif.dll"/>
             <File Id="nova.completion.ps1" Source="dist/nova-windows/nova-completion.ps1"/>
             <File Id="nova.profile.ps1" Source="dist/nova-windows/nova-profile.ps1"/>
             <File Id="readme.txt" Source="dist/nova-windows/README.txt"/>

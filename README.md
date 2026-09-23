@@ -168,7 +168,7 @@ What a codec cannot reach:
 | **Lossless codec** | Context mixing, as in paq and GraLIC: several models predict each bit and a logistic mixer blends them. Levels 0–4 trade time for size, from palette coding to blended predictors. |
 | **Lossy codec** | A wavelet codec (level 5), picked automatically for photos in adaptive mode. Quality 90 is about 45 dB: it looks identical to the source. |
 | **RAW** | Level 6 codes the camera's sensor frame exactly and keeps what LibRaw needs to develop it, so a `.nova` goes back to DNG or develops with the camera's look. |
-| **HDR** | iPhone photos carry an HDR gain map (ISO 21496-1). NOVA keeps it (1–3 % of the file), writes it back in an Ultra HDR JPEG or an AVIF, or applies it for PQ PNG, AVIF and HEIC (`-hdr`, with the light levels players tone map by). The web page shows it on HDR screens. |
+| **HDR** | iPhone photos carry an HDR gain map (ISO 21496-1). NOVA keeps it (1–3 % of the file), writes it back in an Ultra HDR JPEG, an AVIF or a HEIC, or applies it for PQ PNG, AVIF and HEIC (`-hdr`, with the light levels players tone map by). The web page shows it on HDR screens. |
 | **Animation** | Frames after the first store only the rectangle that changed. |
 | **Speed** | Images are coded in independent stripes and decoded on every core, in the program and in the browser. |
 | **Container** | PNG-like chunks: `IHDR` header, `PREV` thumbnail first so viewers show something at once, `FDAT`/`FDLT` frames, `GMAP` HDR gain map, `MDAT` metadata, `LIVE` Live Photo video. Unknown chunks are skipped. |

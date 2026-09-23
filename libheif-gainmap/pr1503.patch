@@ -1,0 +1,864 @@
+libheif pull request #1503 ("Add support for handling 'tmap' items", github.com/strukturag/libheif),
+from the rebase at github.com/fxthomas/libheif, branch pr/1503-gain-maps-v1.23.1, re-diffed
+against libheif 1.23.4 with one fix: get_unused_item_id() returns a Result<> since 1.23.2, so the
+altr group id is unwrapped (and its error returned). Used by build.sh in this directory.
+
+diff -ruN a/CMakePresets.json b/CMakePresets.json
+--- a/CMakePresets.json	2026-09-06 16:45:17.000000000 +0200
++++ b/CMakePresets.json	2026-09-23 09:28:14.110148182 +0200
+@@ -57,6 +57,7 @@
+         "WITH_VVDEC_PLUGIN" : "OFF",
+         "WITH_VVENC" : "ON",
+         "WITH_VVENC_PLUGIN" : "OFF",
++        "WITH_EXPERIMENTAL_GAIN_MAP" : "OFF",
+ 
+         "WITH_REDUCED_VISIBILITY" : "OFF",
+         "WITH_HEADER_COMPRESSION" : "ON",
+@@ -115,6 +116,7 @@
+         "WITH_VVDEC_PLUGIN" : "ON",
+         "WITH_VVENC" : "ON",
+         "WITH_VVENC_PLUGIN" : "ON",
++        "WITH_EXPERIMENTAL_GAIN_MAP" : "OFF",
+ 
+         "WITH_REDUCED_VISIBILITY" : "ON",
+         "WITH_HEADER_COMPRESSION" : "ON",
+@@ -153,6 +155,7 @@
+         "WITH_UVG266" : "OFF",
+         "WITH_VVDEC" : "OFF",
+         "WITH_VVENC" : "OFF",
++        "WITH_EXPERIMENTAL_GAIN_MAP" : "OFF",
+ 
+         "WITH_REDUCED_VISIBILITY" : "ON",
+         "WITH_HEADER_COMPRESSION" : "OFF",
+diff -ruN a/libheif/api/libheif/heif_brands.h b/libheif/api/libheif/heif_brands.h
+--- a/libheif/api/libheif/heif_brands.h	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/api/libheif/heif_brands.h	2026-09-23 09:28:14.110270043 +0200
+@@ -246,6 +246,13 @@
+ */
+ #define heif_brand2_1pic   heif_fourcc('1','p','i','c')
+ 
++/**
++ * HEIF tone map brand (`tmap`).
++ *
++ * This is a compatible brand indicating the file contains a gainmap image.
++ */
++#define heif_brand2_tmap heif_fourcc('t', 'm', 'a', 'p')
++
+ // H.264
+ #define heif_brand2_avci   heif_fourcc('a','v','c','i')
+ #define heif_brand2_avcs   heif_fourcc('a','v','c','s')
+diff -ruN a/libheif/api/libheif/heif_color.cc b/libheif/api/libheif/heif_color.cc
+--- a/libheif/api/libheif/heif_color.cc	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/api/libheif/heif_color.cc	2026-09-23 09:28:14.110344821 +0200
+@@ -285,6 +285,62 @@
+ }
+ 
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++heif_error heif_image_handle_get_derived_image_nclx_color_profile(const heif_image_handle* handle,
++                                                                  heif_color_profile_nclx** out_data)
++{
++  if (!out_data) {
++    return heif_error_null_pointer_argument;
++  }
++
++  if (!handle->image->has_derived_img_nclx_color_profile()) {
++    Error err(heif_error_Color_profile_does_not_exist,
++              heif_suberror_Unspecified);
++    return err.error_struct(handle->image.get());
++  }
++
++  auto nclx_profile = handle->image->get_derived_img_color_profile_nclx();
++  Error err = nclx_profile.get_nclx_color_profile(out_data);
++
++  return err.error_struct(handle->image.get());
++}
++
++size_t heif_image_handle_get_derived_image_raw_color_profile_size(const heif_image_handle* handle)
++{
++  auto profile_icc = handle->image->get_derived_img_color_profile_icc();
++  if (profile_icc) {
++    return profile_icc->get_data().size();
++  }
++  else {
++    return 0;
++  }
++}
++
++
++heif_error heif_image_handle_get_derived_image_raw_color_profile(const heif_image_handle* handle,
++                                                   void* out_data)
++{
++  if (out_data == nullptr) {
++    return heif_error_null_pointer_argument;
++  }
++
++  auto raw_profile = handle->image->get_derived_img_color_profile_icc();
++  if (raw_profile) {
++    memcpy(out_data,
++           raw_profile->get_data().data(),
++           raw_profile->get_data().size());
++  }
++  else {
++    Error err(heif_error_Color_profile_does_not_exist,
++              heif_suberror_Unspecified);
++    return err.error_struct(handle->image.get());
++  }
++
++  return Error::Ok.error_struct(handle->image.get());
++}
++#endif   // WITH_EXPERIMENTAL_GAIN_MAP
++
++
+ heif_color_profile_nclx* heif_nclx_color_profile_alloc()
+ {
+   auto profile = new heif_color_profile_nclx;
+diff -ruN a/libheif/api/libheif/heif_color.h b/libheif/api/libheif/heif_color.h
+--- a/libheif/api/libheif/heif_color.h	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/api/libheif/heif_color.h	2026-09-23 09:28:14.110418536 +0200
+@@ -227,6 +227,22 @@
+ heif_error heif_image_handle_get_nclx_color_profile(const heif_image_handle* handle,
+                                                     heif_color_profile_nclx** out_data);
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++// Get nclx color profile for derived image
++LIBHEIF_API
++struct heif_error heif_image_handle_get_derived_image_nclx_color_profile(
++    const struct heif_image_handle* handle, struct heif_color_profile_nclx** out_data);
++
++// Get raw color profile for derived image
++LIBHEIF_API
++size_t heif_image_handle_get_derived_image_raw_color_profile_size(
++    const struct heif_image_handle* handle);
++
++LIBHEIF_API
++struct heif_error heif_image_handle_get_derived_image_raw_color_profile(
++    const struct heif_image_handle* handle, void* out_data);
++#endif   // WITH_EXPERIMENTAL_GAIN_MAP
++
+ // Returned color profile has 'version' field set to the maximum allowed.
+ // Do not fill values for higher versions as these might be outside the allocated structure size.
+ // May return NULL.
+diff -ruN a/libheif/api/libheif/heif_image_handle.cc b/libheif/api/libheif/heif_image_handle.cc
+--- a/libheif/api/libheif/heif_image_handle.cc	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/api/libheif/heif_image_handle.cc	2026-09-23 09:28:14.123225929 +0200
+@@ -352,3 +352,201 @@
+   }
+ #endif
+ }
++
++#if WITH_EXPERIMENTAL_GAIN_MAP
++
++heif_error heif_image_handle_get_gain_map_metadata_item_id(
++  const struct heif_image_handle* handle, heif_item_id* item_id) {
++  if (!item_id) {
++    return {heif_error_Usage_error, heif_suberror_Null_pointer_argument,
++            "NULL item_id passed to heif_image_handle_get_gain_map_metadata_id()"};
++  }
++  std::shared_ptr<ImageMetadata> metadata = handle->image->get_gain_map_metadata();
++  if (!metadata) {
++    return {heif_error_Invalid_input, heif_suberror_No_item_data,
++              "base image handle is not associated with a gain map image"};
++  }
++  *item_id = metadata->item_id;
++  return Error::Ok.error_struct(handle->image.get());
++}
++
++heif_error heif_image_handle_get_gain_map_image_handle(
++    const heif_image_handle* handle, heif_image_handle** gain_map_handle) {
++  if (!gain_map_handle) {
++    return {heif_error_Usage_error, heif_suberror_Null_pointer_argument,
++            "NULL gain_map_handle passed to heif_image_handle_get_gain_map_image_handle()"};
++  }
++
++  std::shared_ptr<ImageItem> gain_map_image = handle->image->get_gain_map();
++  if (!gain_map_image) {
++    Error err(heif_error_Usage_error, heif_suberror_Nonexisting_item_referenced,
++              "base image handle is not associated with a gain map image");
++    return err.error_struct(handle->image.get());
++  }
++
++  *gain_map_handle = new heif_image_handle();
++  (*gain_map_handle)->image = gain_map_image;
++  (*gain_map_handle)->context = handle->context;
++
++  return Error::Ok.error_struct(handle->image.get());
++}
++
++size_t heif_image_handle_get_gain_map_metadata_size(const heif_image_handle* handle) {
++  std::shared_ptr<ImageMetadata> metadata = handle->image->get_gain_map_metadata();
++
++  if (metadata) {
++    // Ignore unsigned int(8) version = 0; field of ToneMapImage syntax
++    size_t sz = metadata->m_data.size();
++    return sz > 0 ? (sz - 1) : 0;
++  }
++
++  return 0;
++}
++
++heif_error heif_image_handle_get_gain_map_metadata(const heif_image_handle* handle,
++                                                          void* out_data) {
++  if (!out_data) {
++    return {heif_error_Usage_error, heif_suberror_Null_pointer_argument,
++            "NULL out_data passed to heif_image_handle_get_gain_map_metadata()"};
++  }
++
++  std::shared_ptr<ImageMetadata> metadata = handle->image->get_gain_map_metadata();
++  if (!metadata) {
++    Error err(heif_error_Invalid_input, heif_suberror_No_item_data,
++              "base image handle is not associated with a gain map image");
++    return err.error_struct(handle->image.get());
++  }
++
++  uint8_t version = 0xff;
++  size_t pos = 0;
++  std::vector<uint8_t>& buffer = metadata->m_data;
++
++  if (pos >= buffer.size()) {
++    Error err(heif_error_Invalid_input, heif_suberror_End_of_data);
++    return err.error_struct(handle->image.get());
++  }
++  version = buffer[pos++];
++  if (version != 0) {
++    Error err(heif_error_Invalid_input, heif_suberror_Unsupported_data_version,
++              "Box[tmap] has unsupported version");
++    return err.error_struct(handle->image.get());
++  }
++
++  memcpy(out_data, buffer.data() + pos, buffer.size() - pos);
++
++  return heif_error_success;
++}
++
++struct heif_error heif_context_encode_gain_map_image(
++    struct heif_context* ctx, const struct heif_image_handle* base_image_handle,
++    struct heif_encoder* encoder, const struct heif_image* gain_map_image,
++    const struct heif_encoding_options* input_options, const uint8_t* gain_map_metadata,
++    int gain_map_metadata_len, const struct heif_color_profile_nclx* derived_image_nclx,
++    struct heif_image_handle** out_image_handle) {
++  if (!encoder) {
++    return Error(heif_error_Usage_error, heif_suberror_Null_pointer_argument)
++        .error_struct(ctx->context.get());
++  }
++
++  if (gain_map_metadata_len <= 0) {
++    return Error(heif_error_Invalid_input, heif_suberror_Invalid_parameter_value)
++        .error_struct(ctx->context.get());
++  }
++
++  if (out_image_handle) {
++    *out_image_handle = nullptr;
++  }
++
++  // --- write tmap item
++  std::vector<uint8_t> metadata;
++  metadata.push_back(0);  // version = 0
++  for (int i = 0; i < gain_map_metadata_len; i++) {
++    metadata.push_back(gain_map_metadata[i]);
++  }
++  heif_item_id tmap_item_id = -1;
++  ctx->context->add_tmap_item(metadata, tmap_item_id);
++
++  std::vector<std::shared_ptr<Box>> properties;
++
++  // --- write ISPE property for tmap item
++  std::shared_ptr<Box_ispe> ispe = std::make_shared<Box_ispe>();
++  ispe->set_size(base_image_handle->image->get_ispe_width(),
++                 base_image_handle->image->get_ispe_height());
++
++  properties.push_back(ispe);
++
++  // --- write PIXI property for tmap item
++  // TODO: this assumes the base image is 8 bit and derived image is 10 bit. Have to handle the
++  // other way where the base image is hdr and derived image is sdr
++  std::shared_ptr<Box_pixi> pixi = std::make_shared<Box_pixi>();
++  pixi->add_channel_bits(10);
++  pixi->add_channel_bits(10);
++  pixi->add_channel_bits(10);
++
++  properties.push_back(pixi);
++
++  // --- write COLR property for tmap item
++  if (derived_image_nclx != nullptr) {
++    std::shared_ptr<Box_colr> colr = std::make_shared<Box_colr>();
++    auto derived_img_nclx_profile = std::make_shared<color_profile_nclx>();
++    derived_img_nclx_profile->set_from_heif_color_profile_nclx(derived_image_nclx);
++    colr->set_color_profile(derived_img_nclx_profile);
++
++    properties.push_back(colr);
++  }
++  // set tmap item properties
++  for (auto& propertyBox : properties) {
++    int index =
++        ctx->context->get_heif_file()->get_ipco_box()->find_or_append_child_box(propertyBox);
++    ctx->context->get_heif_file()->get_ipma_box()->add_property_for_item_ID(
++        tmap_item_id,
++        Box_ipma::PropertyAssociation{propertyBox->is_essential(), uint16_t(index + 1)});
++  }
++
++  heif_encoding_options *options = heif_encoding_options_alloc();
++  if (input_options != nullptr) {
++    heif_encoding_options_copy(options, input_options);
++  }
++
++  auto gainmap_encoding_result = ctx->context->encode_image(gain_map_image->image, encoder, *options,
++                                                            heif_image_input_class_gain_map);
++
++  heif_encoding_options_free(options);
++
++  if (gainmap_encoding_result.error()) {
++    return gainmap_encoding_result.error().error_struct(ctx->context.get());
++  }
++
++  std::shared_ptr<ImageItem> gain_map_image_item = *gainmap_encoding_result;
++  Error error =
++      ctx->context->link_gain_map(base_image_handle->image, gain_map_image_item, tmap_item_id);
++  if (error != Error::Ok) {
++    return error.error_struct(ctx->context.get());
++  }
++
++  if (out_image_handle) {
++    *out_image_handle = new heif_image_handle;
++    (*out_image_handle)->image = std::move(gain_map_image_item);
++    (*out_image_handle)->context = ctx->context;
++  }
++
++  // --- generate altr box
++  auto altr_box = std::make_shared<Box_EntityToGroup>();
++  altr_box->set_short_type(fourcc("altr"));
++  auto group_id = ctx->context->get_heif_file()->get_unused_item_id();
++  if (!group_id) {
++    return group_id.error().error_struct(ctx->context.get());
++  }
++  altr_box->set_group_id(*group_id);
++
++  std::vector<heif_item_id> ids;
++  ids.push_back(tmap_item_id);
++  ids.push_back(base_image_handle->image->get_id());
++
++  altr_box->set_item_ids(ids);
++  ctx->context->get_heif_file()->add_entity_group_box(altr_box);
++
++  return heif_error_success;
++}
++
++#endif  // WITH_EXPERIMENTAL_GAIN_MAP
+diff -ruN a/libheif/api/libheif/heif_image_handle.h b/libheif/api/libheif/heif_image_handle.h
+--- a/libheif/api/libheif/heif_image_handle.h	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/api/libheif/heif_image_handle.h	2026-09-23 09:28:14.110575810 +0200
+@@ -189,6 +189,45 @@
+                                                      uint32_t component_idx,
+                                                      const char* content_id);
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++#define HAS_GAIN_MAPS
++
++// ------------------------- gain map images -------------------------
++
++// Get the gain map image associated with the main image. If no gain map image is available, this
++// method will return error.
++LIBHEIF_API
++struct heif_error heif_image_handle_get_gain_map_image_handle(
++    const struct heif_image_handle* handle, struct heif_image_handle** gain_map_handle);
++
++// Get the gain map metadata size associated with the main image. If no gain map image is available,
++// this method will return 0
++LIBHEIF_API
++struct heif_error heif_image_handle_get_gain_map_metadata_item_id(const struct heif_image_handle* handle, heif_item_id* item_id);
++
++// Get the gain map metadata size associated with the main image. If no gain map image is available,
++// this method will return 0
++LIBHEIF_API
++size_t heif_image_handle_get_gain_map_metadata_size(const struct heif_image_handle* handle);
++
++// Get the gain map metadata associated with the main image. if no gain map image is available, this
++// method will return error
++LIBHEIF_API
++struct heif_error heif_image_handle_get_gain_map_metadata(const struct heif_image_handle* handle,
++                                                          void* out_data);
++
++// Compress the gain map image and write metadata.
++// Returns a handle to the coded image in 'out_image_handle' unless out_image_handle = NULL.
++LIBHEIF_API
++struct heif_error heif_context_encode_gain_map_image(
++    struct heif_context* ctx, const struct heif_image_handle* base_image_handle,
++    struct heif_encoder* encoder, const struct heif_image* gain_map_image,
++    const struct heif_encoding_options* input_options, const uint8_t* gain_map_metadata,
++    int gain_map_metadata_len, const struct heif_color_profile_nclx* derived_image_nclx,
++    struct heif_image_handle** out_image_handle);
++
++#endif  // WITH_EXPERIMENTAL_GAIN_MAP
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff -ruN a/libheif/api/libheif/heif_plugin.h b/libheif/api/libheif/heif_plugin.h
+--- a/libheif/api/libheif/heif_plugin.h	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/api/libheif/heif_plugin.h	2026-09-23 09:28:14.110627734 +0200
+@@ -186,6 +186,9 @@
+   heif_image_input_class_alpha = 2,
+   heif_image_input_class_depth = 3,
+   heif_image_input_class_thumbnail = 4
++#if WITH_EXPERIMENTAL_GAIN_MAP
++  , heif_image_input_class_gain_map = 5
++#endif
+ } heif_image_input_class;
+ 
+ 
+diff -ruN a/libheif/brands.cc b/libheif/brands.cc
+--- a/libheif/brands.cc	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/brands.cc	2026-09-23 09:28:14.110676068 +0200
+@@ -169,6 +169,13 @@
+     compatible_brands.push_back(heif_brand2_unif);
+   }
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++  // --- --- ISO 21496 HDR gain maps (tmap)
++  if (ctx->has_tmap()) {
++    compatible_brands.push_back(heif_brand2_tmap);
++  }
++#endif   // WITH_EXPERIMENTAL_GAIN_MAP
++
+   // --- remove duplicate brands
+ 
+   std::vector<heif_brand2> unique_brands;
+diff -ruN a/libheif/CMakeLists.txt b/libheif/CMakeLists.txt
+--- a/libheif/CMakeLists.txt	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/CMakeLists.txt	2026-09-23 09:28:14.110212275 +0200
+@@ -343,6 +343,10 @@
+         omaf_boxes.h
+         omaf_boxes.cc)
+ 
++if (WITH_EXPERIMENTAL_GAIN_MAP)
++    target_compile_definitions(heif PUBLIC WITH_EXPERIMENTAL_GAIN_MAP=1)
++endif ()
++
+ write_basic_package_version_file(${PROJECT_NAME}-config-version.cmake COMPATIBILITY ExactVersion)
+ 
+ install(TARGETS heif EXPORT ${PROJECT_NAME}-config
+diff -ruN a/libheif/context.cc b/libheif/context.cc
+--- a/libheif/context.cc	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/context.cc	2026-09-23 09:28:14.110818194 +0200
+@@ -615,10 +615,12 @@
+   m_top_level_images.clear();
+   m_primary_image.reset();
+ 
+-
+   // --- reference all non-hidden images
+ 
+   std::vector<heif_item_id> image_IDs = m_heif_file->get_item_IDs();
++#if WITH_EXPERIMENTAL_GAIN_MAP
++  bool check_tmap_item = m_heif_file->get_ftyp_box()->has_compatible_brand(heif_brand2_tmap);
++#endif
+ 
+   for (heif_item_id id : image_IDs) {
+     auto infe_box = m_heif_file->get_infe_box(id);
+@@ -1140,6 +1142,12 @@
+         // these item types should have data
+         return metadataResult.error();
+       }
++#if WITH_EXPERIMENTAL_GAIN_MAP
++      else if (check_tmap_item && item_type == fourcc("tmap")) {
++        // this also should have data
++        return metadataResult.error();
++      }
++#endif
+       else {
+         // anything else is probably something that we don't understand yet
+         continue;
+@@ -1175,6 +1183,41 @@
+         }
+         img_iter->second->add_metadata(metadata);
+       }
++#if WITH_EXPERIMENTAL_GAIN_MAP
++      if (check_tmap_item && item_type == fourcc("tmap")) {
++        std::vector<heif_item_id> image_references = iref_box->get_references(id, fourcc("dimg"));
++        // "'tmap' item MUST be associated with 2 references to images"
++        // "'tmap' item first entry is expected to be referencing primary image"
++        // "'tmap' item reference entries MUST not be duplicate"
++        // "'tmap' item references MUST be pointing to valid image items"
++        if ((int)image_references.size() == 2 &&
++            image_references[0] == m_heif_file->get_primary_image_ID() &&
++            image_references[1] != image_references[0] &&
++            m_all_images.find(image_references[0]) != m_all_images.end() &&
++            m_all_images.find(image_references[1]) != m_all_images.end()) {
++          std::shared_ptr<ImageItem> baseItem = m_all_images.find(image_references[0])->second;
++          std::shared_ptr<ImageItem> gainmapItem = m_all_images.find(image_references[1])->second;
++
++          baseItem->set_gain_map(gainmapItem);
++
++          baseItem->add_metadata(metadata);  // gain map metadata
++
++          auto ipma = m_heif_file->get_ipma_box();
++          auto ipco = m_heif_file->get_ipco_box();
++          auto derived_image_colr = ipco->get_property_for_item_ID(id, ipma, fourcc("colr"));
++          auto colr = std::dynamic_pointer_cast<Box_colr>(derived_image_colr);
++          auto nclx =
++              std::dynamic_pointer_cast<const color_profile_nclx>(colr->get_color_profile());
++          if (nclx) {
++            baseItem->set_derived_img_color_profile(nclx);
++          }
++          auto raw = std::dynamic_pointer_cast<const color_profile_raw>(colr->get_color_profile());
++          if (raw) {
++            baseItem->set_derived_img_color_profile(raw);
++          }
++        }
++      }
++#endif
+     }
+   }
+ 
+@@ -1676,6 +1719,38 @@
+ }
+ 
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++
++bool HeifContext::has_tmap() const {
++  return m_heif_file->has_tmap();
++}
++
++Error HeifContext::add_tmap_item(const std::vector<uint8_t>& data, heif_item_id& item_id) {
++  auto result = m_heif_file->add_new_infe_box(fourcc("tmap"));  // gain map metadata
++  if (!result) {
++    return result.error();
++  }
++
++  auto tmap_infe = *result;
++  tmap_infe->set_item_name("GMap");
++  item_id = tmap_infe->get_item_ID();
++  m_heif_file->append_iloc_data(item_id, data, 0);
++
++  return Error::Ok;
++}
++
++
++Error HeifContext::link_gain_map(const std::shared_ptr<ImageItem>& primary_image,
++                                 const std::shared_ptr<ImageItem>& gain_map_image,
++                                 const heif_item_id tmap_id) {
++  m_heif_file->add_iref_reference(tmap_id, fourcc("dimg"),
++                                  {primary_image->get_id(), gain_map_image->get_id()});
++
++  return Error::Ok;
++}
++#endif
++
++
+ Result<std::shared_ptr<ImageItem>> HeifContext::encode_image(const std::shared_ptr<HeifPixelImage>& pixel_image,
+                                 heif_encoder* encoder,
+                                 const heif_encoding_options& in_options,
+diff -ruN a/libheif/context.h b/libheif/context.h
+--- a/libheif/context.h	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/context.h	2026-09-23 09:28:14.110964722 +0200
+@@ -52,6 +52,8 @@
+ 
+ class Track;
+ 
++class ImageMetadata;
++
+ struct TrackOptions;
+ 
+ 
+@@ -179,6 +181,16 @@
+ 
+   Result<heif_item_id> add_pyramid_group(const std::vector<heif_item_id>& layers);
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++  bool has_tmap() const;
++
++  Error add_tmap_item(const std::vector<uint8_t>& metadata, heif_item_id& item_id);
++
++  Error link_gain_map(const std::shared_ptr<ImageItem>& primary_image,
++                      const std::shared_ptr<ImageItem>& gain_map_image, const heif_item_id tmap_id);
++#endif
++
++
+   Result<heif_property_id> add_text_property(heif_item_id, const std::string& language);
+ 
+ 
+diff -ruN a/libheif/file.cc b/libheif/file.cc
+--- a/libheif/file.cc	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/file.cc	2026-09-23 09:28:14.111044791 +0200
+@@ -244,6 +244,12 @@
+   if (m_moov_box) {
+     return;
+   }
++#if WITH_EXPERIMENTAL_GAIN_MAP
++      m_ftyp_box->add_compatible_brand(heif_brand2_tmap);
++#endif
++#if WITH_EXPERIMENTAL_GAIN_MAP
++      m_ftyp_box->add_compatible_brand(heif_brand2_tmap);
++#endif
+ 
+   m_moov_box = std::make_shared<Box_moov>();
+   m_top_level_boxes.push_back(m_moov_box);
+@@ -488,6 +494,9 @@
+       !m_ftyp_box->has_compatible_brand(heif_brand2_avif) &&
+       !m_ftyp_box->has_compatible_brand(heif_brand2_1pic) &&
+       !(m_ftyp_box->get_major_brand() == heif_brand2_mif3) &&
++#if WITH_EXPERIMENTAL_GAIN_MAP
++      !(m_ftyp_box->get_major_brand() == heif_brand2_tmap) &&
++#endif
+       !m_ftyp_box->has_compatible_brand(heif_brand2_jpeg) &&
+       !m_ftyp_box->has_compatible_brand(heif_brand2_isom) &&
+       !m_ftyp_box->has_compatible_brand(heif_brand2_mp42) &&
+@@ -663,6 +672,20 @@
+   return infe_box != nullptr;
+ }
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++bool HeifFile::has_tmap() const
++{
++  for (const auto& box : this->m_infe_boxes)
++  {
++    if (box.second->get_item_type_4cc() == heif_brand2_tmap)
++    {
++      return true;
++    }
++  }
++  return false;
++}
++#endif   // WITH_EXPERIMENTAL_GAIN_MAP
++
+ 
+ uint32_t HeifFile::get_item_type_4cc(heif_item_id ID) const
+ {
+diff -ruN a/libheif/file.h b/libheif/file.h
+--- a/libheif/file.h	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/file.h	2026-09-23 09:28:14.111140274 +0200
+@@ -117,6 +117,10 @@
+ 
+   bool has_item_with_id(heif_item_id ID) const;
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++  bool has_tmap() const;
++#endif   // WITH_EXPERIMENTAL_GAIN_MAP
++
+   uint32_t get_item_type_4cc(heif_item_id ID) const;
+ 
+   std::string get_content_type(heif_item_id ID) const;
+diff -ruN a/libheif/image/image_description.cc b/libheif/image/image_description.cc
+--- a/libheif/image/image_description.cc	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/image/image_description.cc	2026-09-23 09:28:14.111414381 +0200
+@@ -161,6 +161,14 @@
+ }
+ 
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++bool ImageDescription::has_derived_img_nclx_color_profile() const
++{
++  return m_derived_img_color_profile_nclx != nclx_profile::undefined();
++}
++#endif    // WITH_EXPERIMENTAL_GAIN_MAP
++
++
+ nclx_profile ImageDescription::get_color_profile_nclx_with_fallback() const
+ {
+   if (has_nclx_color_profile()) {
+diff -ruN a/libheif/image/image_description.h b/libheif/image/image_description.h
+--- a/libheif/image/image_description.h	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/image/image_description.h	2026-09-23 09:28:14.111470714 +0200
+@@ -194,6 +194,35 @@
+     }
+   }
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++  // --- color profile of derived image
++
++  bool has_derived_img_nclx_color_profile() const;
++
++  nclx_profile get_derived_img_color_profile_nclx() const { return m_derived_img_color_profile_nclx; }
++
++  const std::shared_ptr<const color_profile_raw>& get_derived_img_color_profile_icc() const {
++    return m_derived_img_color_profile_icc;
++  }
++
++  virtual void set_derived_img_color_profile_icc(const std::shared_ptr<const color_profile_raw>& profile) { m_derived_img_color_profile_icc = profile; }
++
++  virtual void set_derived_img_color_profile_nclx(const nclx_profile& profile) { m_derived_img_color_profile_nclx = profile; }
++
++  void set_derived_img_color_profile(const std::shared_ptr<const color_profile>& profile)
++  {
++    auto icc = std::dynamic_pointer_cast<const color_profile_raw>(profile);
++    if (icc) {
++      set_derived_img_color_profile_icc(icc);
++    }
++
++    auto nclx = std::dynamic_pointer_cast<const color_profile_nclx>(profile);
++    if (nclx) {
++      set_derived_img_color_profile_nclx(nclx->get_nclx_color_profile());
++    }
++  }
++
++#endif   // WITH_EXPERIMENTAL_GAIN_MAP
+ 
+   // --- premultiplied alpha
+ 
+@@ -463,6 +492,11 @@
+   nclx_profile m_color_profile_nclx = nclx_profile::undefined();
+   std::shared_ptr<const color_profile_raw> m_color_profile_icc;
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++  nclx_profile m_derived_img_color_profile_nclx = nclx_profile::undefined();
++  std::shared_ptr<const color_profile_raw> m_derived_img_color_profile_icc;
++#endif
++
+   uint32_t m_PixelAspectRatio_h = 1;
+   uint32_t m_PixelAspectRatio_v = 1;
+   heif_content_light_level m_clli{};
+diff -ruN a/libheif/image-items/image_item.cc b/libheif/image-items/image_item.cc
+--- a/libheif/image-items/image_item.cc	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/image-items/image_item.cc	2026-09-23 09:28:14.111233753 +0200
+@@ -410,6 +410,17 @@
+   auto infe_box = *infe_result;
+   heif_item_id image_id = infe_box->get_item_ID();
+   set_id(image_id);
++#if WITH_EXPERIMENTAL_GAIN_MAP
++  if (input_class == heif_image_input_class_gain_map) {
++    if (encoder->plugin->compression_format != heif_compression_HEVC &&
++        encoder->plugin->compression_format != heif_compression_AV1) {
++      return Error(heif_error_Encoder_plugin_error, heif_suberror_Unsupported_codec);
++    }
++    infe_box->set_item_name("GMap");
++    infe_box->set_hidden_item(true);
++  }
++#endif
++
+ 
+   ctx->get_heif_file()->append_iloc_data(image_id, codedImage.bitstream, 0);
+ 
+@@ -709,7 +720,13 @@
+ {
+   std::vector<std::shared_ptr<Box_colr> > colr_boxes;
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++  if (input_class == heif_image_input_class_normal ||
++      input_class == heif_image_input_class_thumbnail ||
++      input_class == heif_image_input_class_gain_map) {
++#else
+   if (input_class == heif_image_input_class_normal || input_class == heif_image_input_class_thumbnail) {
++#endif
+     // No color profile for non-visual images (e.g. elevation data)
+     if (image->get_colorspace() == heif_colorspace_custom) {
+       return colr_boxes;
+diff -ruN a/libheif/image-items/image_item.h b/libheif/image-items/image_item.h
+--- a/libheif/image-items/image_item.h	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/image-items/image_item.h	2026-09-23 09:28:14.111348124 +0200
+@@ -97,12 +97,14 @@
+ 
+   virtual Result<std::vector<uint8_t>> read_bitstream_configuration_data() const { return std::vector<uint8_t>{}; }
+ 
+-  void clear()
+-  {
++  void clear() {
+     m_thumbnails.clear();
+     m_alpha_channel.reset();
+     m_depth_channel.reset();
+     m_aux_images.clear();
++#if WITH_EXPERIMENTAL_GAIN_MAP
++    m_gain_map_image.reset();
++#endif
+   }
+ 
+   HeifContext* get_context() { return m_heif_context; }
+@@ -321,6 +323,24 @@
+     }
+   }
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++  // --- gain map
++
++  const std::shared_ptr<ImageItem>& get_gain_map() const { return m_gain_map_image; }
++
++  std::shared_ptr<ImageMetadata> get_gain_map_metadata() {
++    if (m_gain_map_image != nullptr) {
++      for (auto it : m_metadata) {
++        if (it->item_type == "tmap") {
++          return it;
++        }
++      }
++    }
++    return nullptr;
++  }
++
++  void set_gain_map(std::shared_ptr<ImageItem> img) { m_gain_map_image = std::move(img); }
++#endif
+ 
+   // --- metadata
+ 
+@@ -502,6 +522,10 @@
+   std::string m_aux_image_type;
+   std::vector<std::shared_ptr<ImageItem>> m_aux_images;
+ 
++#if WITH_EXPERIMENTAL_GAIN_MAP
++  std::shared_ptr<ImageItem> m_gain_map_image;
++#endif
++
+   std::vector<std::shared_ptr<ImageMetadata>> m_metadata;
+ 
+   bool m_miaf_compatible = true;
+diff -ruN a/libheif/plugins/encoder_aom.cc b/libheif/plugins/encoder_aom.cc
+--- a/libheif/plugins/encoder_aom.cc	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/plugins/encoder_aom.cc	2026-09-23 09:28:14.111564744 +0200
+@@ -1202,7 +1202,12 @@
+ 
+   if (nclx &&
+       (input_class == heif_image_input_class_normal ||
++#if WITH_EXPERIMENTAL_GAIN_MAP
++       input_class == heif_image_input_class_thumbnail ||
++       input_class == heif_image_input_class_gain_map)) {
++#else
+        input_class == heif_image_input_class_thumbnail)) {
++#endif
+     aom_error = aom_codec_control(&codec, AV1E_SET_COLOR_PRIMARIES, nclx->color_primaries); CHECK_ERROR
+     aom_error = aom_codec_control(&codec, AV1E_SET_MATRIX_COEFFICIENTS, nclx->matrix_coefficients); CHECK_ERROR;
+     aom_error = aom_codec_control(&codec, AV1E_SET_TRANSFER_CHARACTERISTICS, nclx->transfer_characteristics); CHECK_ERROR;
+diff -ruN a/libheif/plugins/encoder_kvazaar.cc b/libheif/plugins/encoder_kvazaar.cc
+--- a/libheif/plugins/encoder_kvazaar.cc	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/plugins/encoder_kvazaar.cc	2026-09-23 09:28:14.111668618 +0200
+@@ -564,7 +564,12 @@
+ 
+   if (nclx &&
+       (input_class == heif_image_input_class_normal ||
++#if WITH_EXPERIMENTAL_GAIN_MAP
++       input_class == heif_image_input_class_thumbnail ||
++       input_class == heif_image_input_class_gain_map)) {
++#else
+        input_class == heif_image_input_class_thumbnail)) {
++#endif
+     config->vui.colorprim = nclx->color_primaries;
+     config->vui.transfer = nclx->transfer_characteristics;
+     config->vui.colormatrix = nclx->matrix_coefficients;
+diff -ruN a/libheif/plugins/encoder_rav1e.cc b/libheif/plugins/encoder_rav1e.cc
+--- a/libheif/plugins/encoder_rav1e.cc	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/plugins/encoder_rav1e.cc	2026-09-23 09:28:14.111758209 +0200
+@@ -615,7 +615,12 @@
+ 
+   if (nclx &&
+       (input_class == heif_image_input_class_normal ||
++#if WITH_EXPERIMENTAL_GAIN_MAP
++       input_class == heif_image_input_class_thumbnail ||
++       input_class == heif_image_input_class_gain_map)) {
++#else
+        input_class == heif_image_input_class_thumbnail)) {
++#endif
+     if (rav1e_config_set_color_description(rav1eConfig.get(),
+                                            (RaMatrixCoefficients) nclx->matrix_coefficients,
+                                            (RaColorPrimaries) nclx->color_primaries,
+diff -ruN a/libheif/plugins/encoder_x265.cc b/libheif/plugins/encoder_x265.cc
+--- a/libheif/plugins/encoder_x265.cc	2026-09-06 16:45:17.000000000 +0200
++++ b/libheif/plugins/encoder_x265.cc	2026-09-23 09:28:14.111901240 +0200
+@@ -950,7 +950,12 @@
+ 
+   if (nclx &&
+       (input_class == heif_image_input_class_normal ||
++#if WITH_EXPERIMENTAL_GAIN_MAP
++       input_class == heif_image_input_class_thumbnail ||
++       input_class == heif_image_input_class_gain_map)) {
++#else
+        input_class == heif_image_input_class_thumbnail)) {
++#endif
+ 
+     {
+       std::stringstream sstr;

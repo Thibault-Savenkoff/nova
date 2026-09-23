@@ -19,6 +19,7 @@ repo=Thibault-Savenkoff/nova
 prefix=$HOME/.local
 system=0
 plugins=1
+heic_hdr=1
 deps=1
 yes=0
 from=
@@ -50,6 +51,7 @@ Options:
   --from FILE     install from a local .tar.gz instead of downloading
   --no-plugins    skip the Qt/KDE/GNOME/GTK viewer plugins
   --no-deps       skip checking for the HEIC/AVIF/WebP/RAW libraries
+  --no-heic-hdr   don't build libnova-heif (then .heic output has no HDR gain map)
   -y, --yes       don't ask before touching ~/.zshrc or building plugins
   --verbose       print every command this script runs (always shown on failure)
   --uninstall     remove everything a previous run installed
@@ -65,6 +67,7 @@ while [ $# -gt 0 ]; do
     --from) [ $# -ge 2 ] || { echo "install.sh: --from needs a value" >&2; exit 1; }; from=$2; shift ;;
     --no-plugins) plugins=0 ;;
     --no-deps) deps=0 ;;
+    --no-heic-hdr) heic_hdr=0 ;;
     -y|--yes) yes=1 ;;
     --verbose) verbose=1 ;;
     --uninstall) uninstall=1 ;;
@@ -352,12 +355,56 @@ check_libs() {
   check_lib libraw_r.so.25 libraw_r.25.dylib "LibRaw: camera RAW"
 }
 
+# libnova-heif: libheif with its gain-map pull request (libheif-gainmap/build.sh), which nova loads
+# only to write a .heic that keeps the photo's HDR. Built here, like the plugins: no released libheif
+# can do it. Skipped (with the command to get the tools) when cmake or a compiler is missing, and
+# not rebuilt when the recipe has not changed since the last install.
+install_heic_hdr() {
+  local lib=libnova-heif.so miss="" t stamp dir
+  [ $os = macos ] && lib=libnova-heif.dylib
+  if [ $heic_hdr = 0 ]; then
+    step "HEIC with HDR skipped (--no-heic-hdr)"
+    return 0
+  fi
+  step "HEIC with HDR (libnova-heif)"
+  stamp=$(cat "$src/libheif-gainmap/build.sh" "$src/libheif-gainmap/pr1503.patch" | cksum | awk '{print $1}')
+  dir=$prefix/lib/nova
+  [ $owner = root ] && dir=$TEST_ROOT$dir
+  if [ -f "$dir/$lib" ] && [ "$(cat "$dir/libnova-heif.stamp" 2>/dev/null)" = "$stamp" ]; then
+    ok "already built, unchanged"
+    return 0
+  fi
+  for t in cmake cc c++ patch; do command -v $t >/dev/null 2>&1 || miss="$miss $t"; done
+  if [ -n "$miss" ]; then
+    warn "not built, missing:$miss -- .heic output will be SDR only (.avif and .jpg keep the HDR)"
+    if [ $os = macos ]; then info "Get them:  xcode-select --install && brew install cmake"
+    elif command -v apt-get >/dev/null 2>&1; then info "Get them:  sudo apt install cmake g++ patch"
+    elif command -v dnf >/dev/null 2>&1; then info "Get them:  sudo dnf install cmake gcc-c++ patch"
+    elif command -v pacman >/dev/null 2>&1; then info "Get them:  sudo pacman -S cmake gcc patch"
+    fi
+    info "then run this installer again."
+    return 0
+  fi
+  info "No released libheif can write HDR into a HEIC: building one that can (1-3 min)..."
+  if ! run user sh "$src/libheif-gainmap/build.sh" "$tmp/heif" "$tmp/$lib" > "$tmp/heif.log" 2>&1; then
+    tail -20 "$tmp/heif.log" >&2
+    warn "libnova-heif: build failed (log above) -- .heic output will be SDR only"
+    return 0
+  fi
+  command -v strip >/dev/null 2>&1 && strip -x "$tmp/$lib" 2>/dev/null || true
+  printf '%s\n' "$stamp" > "$tmp/libnova-heif.stamp"
+  install_file "$owner" "$tmp/$lib" "$prefix/lib/nova/$lib" 644
+  install_file "$owner" "$tmp/libnova-heif.stamp" "$prefix/lib/nova/libnova-heif.stamp" 644
+  ok "nova decode photo.nova photo.heic now keeps the HDR gain map"
+}
+
 # cmake_plugin <dir> <label>: builds plugins/<dir>, installs it (Qt's own system plugin dir), records the files.
 cmake_plugin() {
   local b="$tmp/build-$1" f
   run user cmake -S "$src/plugins/$1" -B "$b" -DCMAKE_BUILD_TYPE=Release > "$tmp/$1.log" 2>&1 ||
     { tail -20 "$tmp/$1.log" >&2; warn "$2: configuration failed (log above)"; return 1; }
-  run user cmake --build "$b" --parallel > "$tmp/$1.log" 2>&1 ||
+  # A bare --parallel is an unbounded make -j (all files at once, out of memory): one job per core.
+  run user cmake --build "$b" --parallel "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" > "$tmp/$1.log" 2>&1 ||
     { tail -20 "$tmp/$1.log" >&2; warn "$2: build failed (log above)"; return 1; }
   DESTDIR=$TEST_ROOT run root cmake --install "$b" > "$tmp/$1.log" 2>&1 ||
     { tail -20 "$tmp/$1.log" >&2; warn "$2: install failed (log above)"; return 1; }
@@ -510,6 +557,7 @@ install_bin
 install_completion
 install_mime
 check_libs
+install_heic_hdr
 install_plugins
 
 step "Done"

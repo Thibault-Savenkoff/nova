@@ -21,6 +21,9 @@ Header
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 `;
   - external := `
 struct nh_err { int code; int subcode; const char *message; };
@@ -438,6 +441,162 @@ end:
   return ok;
 }
 
+/* HEIC with an HDR gain map (ISO 21496-1 tmap): no released libheif writes one, so this loads
+   libnova-heif (libheif-gainmap/build.sh: libheif + its gain-map pull request #1503, kvazaar only),
+   next to nova.exe on Windows, else <nova's directory>/../lib/nova/. Writing only: every read stays
+   on the system's libheif above, which gets the distribution's security fixes. Its own pointers,
+   never mixed with nh_*: the two libraries' objects are not interchangeable. */
+static void *ng_lib;
+static void *(*ng_ctx_alloc)(void);
+static void (*ng_ctx_free)(void *);
+static struct nh_err (*ng_get_encoder)(void *, int, void **);
+static struct nh_err (*ng_set_quality)(void *, int);
+static struct nh_err (*ng_set_param)(void *, const char *, const char *);
+static void (*ng_enc_release)(void *);
+static struct nh_err (*ng_img_create)(int, int, int, int, void **);
+static struct nh_err (*ng_add_plane)(void *, int, int, int, int);
+static unsigned char *(*ng_plane)(void *, int, int *);
+static void (*ng_img_release)(void *);
+static struct nh_err (*ng_set_icc)(void *, const char *, const void *, size_t);
+static void *(*ng_nclx_alloc)(void);
+static void (*ng_nclx_free)(void *);
+static struct nh_err (*ng_nclx_prim)(void *, int);
+static struct nh_err (*ng_nclx_trc)(void *, int);
+static struct nh_err (*ng_nclx_matrix)(void *, int);
+static struct nh_err (*ng_set_nclx)(void *, const void *);
+static struct nh_opts *(*ng_opts_alloc)(void);
+static void (*ng_opts_free)(void *);
+static struct nh_err (*ng_encode)(void *, const void *, void *, const void *, void **);
+static void (*ng_handle_release)(void *);
+static struct nh_err (*ng_add_exif)(void *, const void *, const void *, int);
+static struct nh_err (*ng_add_xmp)(void *, const void *, const void *, int);
+static struct nh_err (*ng_write)(void *, const char *);
+static struct nh_err (*ng_encode_gm)(void *, const void *, void *, const void *, const void *, const unsigned char *,
+                                     int, const void *, void **);
+
+static int ng_open(void) {
+  static int done;
+  if (done) return done > 0;
+  done = -1;
+#ifdef _WIN32
+  ng_lib = dlopen("libnova-heif.so", RTLD_NOW);
+#else
+  {
+    char p[4200], *s;
+#ifdef __APPLE__
+    char r[4200];
+    uint32_t n = sizeof r;
+    if (_NSGetExecutablePath(r, &n) || !realpath(r, p)) return 0;
+#else
+    ssize_t n = readlink("/proc/self/exe", p, sizeof p - 64);
+    if (n <= 0) return 0;
+    p[n] = 0;
+#endif
+    if (!(s = strrchr(p, '/'))) return 0;
+#ifdef __APPLE__
+    strcpy(s, "/../lib/nova/libnova-heif.dylib");
+#else
+    strcpy(s, "/../lib/nova/libnova-heif.so");
+#endif
+    ng_lib = dlopen(p, RTLD_NOW | RTLD_LOCAL);
+  }
+#endif
+  if (!ng_lib) return 0;
+#define NG(v, s) if (!(*(void **)&v = dlsym(ng_lib, s))) return 0;
+  NG(ng_ctx_alloc, "heif_context_alloc") NG(ng_ctx_free, "heif_context_free")
+  NG(ng_get_encoder, "heif_context_get_encoder_for_format") NG(ng_set_quality, "heif_encoder_set_lossy_quality")
+  NG(ng_set_param, "heif_encoder_set_parameter_string") NG(ng_enc_release, "heif_encoder_release")
+  NG(ng_img_create, "heif_image_create") NG(ng_add_plane, "heif_image_add_plane")
+  NG(ng_plane, "heif_image_get_plane") NG(ng_img_release, "heif_image_release")
+  NG(ng_set_icc, "heif_image_set_raw_color_profile") NG(ng_nclx_alloc, "heif_nclx_color_profile_alloc")
+  NG(ng_nclx_free, "heif_nclx_color_profile_free") NG(ng_nclx_prim, "heif_nclx_color_profile_set_color_primaries")
+  NG(ng_nclx_trc, "heif_nclx_color_profile_set_transfer_characteristics")
+  NG(ng_nclx_matrix, "heif_nclx_color_profile_set_matrix_coefficients")
+  NG(ng_set_nclx, "heif_image_set_nclx_color_profile") NG(ng_opts_alloc, "heif_encoding_options_alloc")
+  NG(ng_opts_free, "heif_encoding_options_free") NG(ng_encode, "heif_context_encode_image")
+  NG(ng_handle_release, "heif_image_handle_release") NG(ng_add_exif, "heif_context_add_exif_metadata")
+  NG(ng_add_xmp, "heif_context_add_XMP_metadata") NG(ng_write, "heif_context_write_to_file")
+  NG(ng_encode_gm, "heif_context_encode_gain_map_image")
+#undef NG
+  done = 1;
+  return 1;
+}
+
+/* rgba (w x h, SDR, alpha ignored) + gain map rgba (gw x gh) + ISO 21496-1 metadata iso[0, isn) (the
+   tmap item: version byte first) -> name, HEIC 8 bits, primaries prim (sRGB transfer). As na_export:
+   1 on success; 0 with nh_msg; -1 when libnova-heif is not installed (write a plain HEIC instead).
+   Grey gain map: coded monochrome, as the metadata then holds one channel. */
+static int ng_export(const char *name, const unsigned char *rgba, int w, int h, const unsigned char *gm, int gw, int gh,
+                     const unsigned char *iso, int isn, int prim, int q,
+                     const unsigned char *exif, long en, const unsigned char *icc, long icn, const unsigned char *xmp, long xn) {
+  void *ctx = 0, *enc = 0, *img = 0, *gimg = 0, *hdl = 0, *nclx = 0, *alt = 0;
+  struct nh_opts *opt = 0;
+  unsigned char *d;
+  long i, n = (long)gw * gh;
+  int stride, y, x, grey = 1, ok = 0;
+  struct nh_err e;
+  if (!ng_open()) return -1;
+  if (isn < 2) { nh_msg = "gain map metadata too short"; return 0; }
+  ctx = ng_ctx_alloc();
+  e = ng_get_encoder(ctx, 1, &enc);
+  if (!e.code) e = ng_set_quality(enc, q);
+  if (!e.code) e = ng_img_create(w, h, 1, 10, &img);   /* RGB, interleaved RGB */
+  if (!e.code) e = ng_add_plane(img, 10, w, h, 8);
+  if (e.code) goto fail;
+  d = ng_plane(img, 10, &stride);
+  for (y = 0; y < h; y++)
+    for (x = 0; x < w; x++) memcpy(d + (long)y * stride + x * 3, rgba + ((long)y * w + x) * 4, 3);
+  nclx = ng_nclx_alloc();
+  ng_nclx_prim(nclx, prim);
+  ng_nclx_trc(nclx, 13);
+  ng_nclx_matrix(nclx, 6);
+  ng_set_nclx(img, nclx);
+  /* Display P3 is said by the nclx: its ICC left out, as in na_export. */
+  if (icn && prim != 12) ng_set_icc(img, "prof", icc, icn);
+  if ((opt = ng_opts_alloc()) && opt->version >= 4) { opt->nclx = nclx; opt->no_nclx = 0; opt->two_colr = 1; }
+  if ((e = ng_encode(ctx, img, enc, opt, &hdl)).code) goto fail;
+  if (en) ng_add_exif(ctx, hdl, exif, en);
+  if (xn) ng_add_xmp(ctx, hdl, xmp, xn);
+  for (i = 0; i < n && grey; i++) grey = gm[i * 4] == gm[i * 4 + 1] && gm[i * 4] == gm[i * 4 + 2];
+  e = grey ? ng_img_create(gw, gh, 2, 0, &gimg) : ng_img_create(gw, gh, 1, 10, &gimg);   /* monochrome / RGB */
+  if (!e.code) e = ng_add_plane(gimg, grey ? 0 : 10, gw, gh, 8);
+  if (e.code) goto fail;
+  d = ng_plane(gimg, grey ? 0 : 10, &stride);
+  for (y = 0; y < gh; y++)
+    for (x = 0; x < gw; x++) {
+      const unsigned char *s = gm + ((long)y * gw + x) * 4;
+      if (grey) d[(long)y * stride + x] = s[0];
+      else memcpy(d + (long)y * stride + x * 3, s, 3);
+    }
+  ng_set_param(enc, "chroma", "420");
+  /* The tmap's colr: the HDR rendition, same primaries, linear (as libultrahdr writes it). Not
+     optional in practice -- #1503's own reader dereferences it unchecked. The API writes the
+     metadata's version byte itself. */
+  alt = ng_nclx_alloc();
+  ng_nclx_prim(alt, prim);
+  ng_nclx_trc(alt, 8);
+  ng_nclx_matrix(alt, 0);
+  if ((e = ng_encode_gm(ctx, hdl, enc, gimg, 0, iso + 1, isn - 1, alt, 0)).code) goto fail;
+#ifdef _WIN32
+  if (nova_replica()) name = "NUL";   /* libheif writes the file itself: see nova_fopen in win/nova_win.h */
+#endif
+  if ((e = ng_write(ctx, name)).code) goto fail;
+  ok = 1;
+  goto end;
+fail:
+  nh_msg = e.message;
+end:
+  if (opt) ng_opts_free(opt);
+  if (nclx) ng_nclx_free(nclx);
+  if (alt) ng_nclx_free(alt);
+  if (hdl) ng_handle_release(hdl);
+  if (gimg) ng_img_release(gimg);
+  if (img) ng_img_release(img);
+  if (enc) ng_enc_release(enc);
+  if (ctx) ng_ctx_free(ctx);
+  return ok;
+}
+
 /* AVIF with an HDR gain map (ISO 21496-1 tmap, what libheif cannot write): libavif, loaded at run
    time like libheif. The structures below mirror avif.h 1.2+ up to the fields used (checked with
    offsetof against the real header of libavif 1.3.0); avifImageCreate / avifGainMapCreate /
@@ -672,6 +831,13 @@ Public
   ( + pe:C_array Char
     pe := name.to_external
     `na_export((char *)@pe, @rgba, @w, @h, @gm, @gw, @gh, @m + @mp, @mn, @prim, @q, @e + @ep, @en, @c, @cn, @x + @xp, @xn)`:Int
+  )
+
+  // The same as a HEIC, through libnova-heif (-1: not installed, write a plain HEIC instead).
+  - export_heic_gain_map name:String px rgba:C_array Uint8 size (w,h:Int) gain (gm:C_array Uint8, gw,gh:Int) iso (m:C_array Uint8, mp,mn:Int) prim prim:Int q q:Int meta (e:C_array Uint8, ep,en:Int, c:C_array Uint8, cn:Int, x:C_array Uint8, xp,xn:Int) :Int <-
+  ( + pe:C_array Char
+    pe := name.to_external
+    `ng_export((char *)@pe, @rgba, @w, @h, @gm, @gw, @gh, @m + @mp, @mn, @prim, @q, @e + @ep, @en, @c, @cn, @x + @xp, @xn)`:Int
   )
 
   // HDR gain map of the last pixel load (gain_width 0: none): RGBA, and its ISO 21496-1 metadata.

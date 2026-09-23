@@ -17,7 +17,7 @@ cp completions/nova.ps1 $D/nova-completion.ps1
 cp $M/bin/libraw_r-*.dll $M/bin/{libgcc_s_seh-1,liblcms2-2,libstdc++-6,libwinpthread-1}.dll $D/
 # HEIC both ways (libheif with libde265 and kvazaar) and AVIF both ways (aom, plus libavif for the
 # HDR gain map), all cross-compiled by win/deps.sh because Fedora packages none of them for mingw64.
-cp $M/bin/libheif*.dll $M/bin/libde265*.dll $M/bin/libkvazaar*.dll $M/bin/libaom*.dll $M/bin/libavif*.dll $D/
+cp $M/bin/libheif*.dll $M/bin/libde265*.dll $M/bin/libkvazaar*.dll $M/bin/libaom*.dll $M/bin/libavif*.dll $M/bin/libnova-heif.dll $D/
 # Fedora ships its MinGW DLLs unstripped: libstdc++-6.dll alone is 29 MB of debug
 # symbols nobody here can use, five times the rest of the package put together.
 x86_64-w64-mingw32-strip $D/*.dll
@@ -70,6 +70,10 @@ HEIC and AVIF work, reading and writing. Those DLLs are built unmodified from:
   https://github.com/AOMediaCodec/libavif  v1.3.0     BSD     LICENSE-libavif.txt
   https://github.com/ultravideo/kvazaar    v2.3.2     BSD     LICENSE-kvazaar.txt
 Replacing one with your own build of the same version is all that is needed to relink.
+libnova-heif.dll is libheif v1.23.4 with a change of its own: its gain-map pull request (#1503),
+which no libheif release has yet, and kvazaar built in. nova uses it only to write a .heic that keeps
+a photo's HDR. The change and the build recipe: libheif-gainmap/ in nova's source,
+https://github.com/Thibault-Savenkoff/nova/tree/v2/libheif-gainmap
 
 4. Tab completion, PowerShell only (cmd.exe has no such hook for a third-party program). Run once:
        .\nova-profile.ps1

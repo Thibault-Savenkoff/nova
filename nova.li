@@ -528,11 +528,16 @@ Public
       (opt_q_set).if { }.elseif {av} then { q := 85 } else { q := 60 }
       ll := (opt_webp = 2) || {(opt_webp = 0) && {! Nova_codec.lossy_seen} && {raw_exif_n = 0}}
       gain := -1
-      (av && {! ll} && {hdr_ok np}).if {
-        // Lossy: SDR + HDR gain map (libavif), as the Ultra HDR JPEG; a plain AVIF when libavif cannot.
+      ((! ll) && {hdr_ok np}).if {
+        // Lossy: SDR + HDR gain map, as the Ultra HDR JPEG -- AVIF through libavif, HEIC through
+        // libnova-heif; a plain AVIF/HEIC when that library is missing.
         collect_meta
         Nova_par.status ("Writing " + (short_name name) + " with its gain map...")
-        gain := Nova_heic.export_gain_map name px buf size (width, height) gain (gm, gm_w, gm_h) iso (data, gm_meta_pos, gm_meta_n) prim icc_primaries q q meta (data, exif_pos, exif_len, iccp, iccp_n, data, xmp_pos, xmp_len)
+        (av).if {
+          gain := Nova_heic.export_gain_map name px buf size (width, height) gain (gm, gm_w, gm_h) iso (data, gm_meta_pos, gm_meta_n) prim icc_primaries q q meta (data, exif_pos, exif_len, iccp, iccp_n, data, xmp_pos, xmp_len)
+        } else {
+          gain := Nova_heic.export_heic_gain_map name px buf size (width, height) gain (gm, gm_w, gm_h) iso (data, gm_meta_pos, gm_meta_n) prim icc_primaries q q meta (data, exif_pos, exif_len, iccp, iccp_n, data, xmp_pos, xmp_len)
+        }
         ok := gain = 1
       }
       (gain >= 0).if {

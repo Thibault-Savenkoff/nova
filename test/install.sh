@@ -32,11 +32,10 @@ check() {  # check <name> <condition...>
 }
 
 # ---- a fake release: a stub binary (no Lisaac compiler needed here) + a real archive ----
+# pack.sh names the archive after nova.li's version, so the fake release has to use the same one.
+v=$(sed -n 's/.*- version:String := "\(.*\)"/\1/p' nova.li)
 mkdir -p "$T/bin"
-cat > "$T/bin/nova" <<'EOF'
-#!/bin/sh
-echo "nova 2.0.0-beta"
-EOF
+printf '#!/bin/sh\necho "nova %s"\n' "$v" > "$T/bin/nova"
 chmod +x "$T/bin/nova"
 
 os=linux
@@ -47,9 +46,9 @@ archive_path=$(release/pack.sh "$T/bin/nova" "$os" "$arch" "$T/srv/out")
 archive=$(basename "$archive_path")
 
 # GitHub-shaped layout: /download/<tag>/<file> and a releases-list stand-in for the API.
-mkdir -p "$T/srv/download/v2.0.0-beta"
-cp "$archive_path" "$archive_path.sha256" "$T/srv/download/v2.0.0-beta/"
-printf '[{"tag_name": "v2.0.0-beta"}]' > "$T/srv/api.json"
+mkdir -p "$T/srv/download/v$v"
+cp "$archive_path" "$archive_path.sha256" "$T/srv/download/v$v/"
+printf '[{"tag_name": "v%s"}]' "$v" > "$T/srv/api.json"
 
 port=8765
 ( cd "$T/srv" && exec python3 -m http.server "$port" --bind 127.0.0.1 >/dev/null 2>&1 ) &
@@ -87,7 +86,7 @@ plugins=(git)
 source $ZSH/oh-my-zsh.sh
 alias ll=ls
 EOF
-run_install "$h1" --yes --no-plugins > "$T/1.log" 2>&1
+run_install "$h1" --yes --no-plugins --no-heic-hdr > "$T/1.log" 2>&1
 check "install: binary"    test -x "$h1/.local/bin/nova"
 check "install: manifest"  test -f "$h1/.local/share/nova/installed.txt"
 check "install: mime type" test -f "$h1/.local/share/mime/packages/nova.xml"
@@ -97,7 +96,7 @@ omz_line=$(grep -n 'oh-my-zsh\.sh' "$h1/.zshrc" | head -1 | cut -d: -f1)
 check "install: fpath line before compinit" [ "${fpath_line:-99}" -lt "${omz_line:-0}" ]
 
 # --- 2: re-running doesn't duplicate what it wrote ---
-run_install "$h1" --yes --no-plugins > "$T/2.log" 2>&1
+run_install "$h1" --yes --no-plugins --no-heic-hdr > "$T/2.log" 2>&1
 check "re-run: no duplicate zshrc lines" [ "$(nova_lines "$h1/.zshrc")" = 2 ]
 
 # --- 3: uninstall removes everything it installed, nothing else ---
@@ -110,11 +109,11 @@ check "uninstall: zshrc otherwise untouched" grep -qF 'alias ll=ls' "$h1/.zshrc"
 
 # --- 4: corrupt archive: refuses to install, nothing left behind ---
 h4="$T/home4"
-sha=$T/srv/download/v2.0.0-beta/$archive.sha256
+sha=$T/srv/download/v$v/$archive.sha256
 cp "$sha" "$sha.bak"
 printf '0000000000000000000000000000000000000000000000000000000000000000  %s\n' "$archive" > "$sha"
 ok4=1
-run_install "$h4" --yes --no-plugins > "$T/4.log" 2>&1 || ok4=0
+run_install "$h4" --yes --no-plugins --no-heic-hdr > "$T/4.log" 2>&1 || ok4=0
 mv "$sha.bak" "$sha"
 check "corrupt archive: install refused" [ "$ok4" = 0 ]
 check "corrupt archive: nothing installed" [ ! -e "$h4/.local/bin/nova" ]
@@ -123,13 +122,13 @@ check "corrupt archive: nothing installed" [ ! -e "$h4/.local/bin/nova" ]
 h5="$T/home5"
 mkdir -p "$h5"
 env -i HOME="$h5" PATH=/usr/bin:/bin SHELL=/bin/zsh NOVA_TEST_ROOT="$T/root" \
-  bash "$PWD/install.sh" --from "$archive_path" --yes --no-plugins --no-deps > "$T/5.log" 2>&1
+  bash "$PWD/install.sh" --from "$archive_path" --yes --no-plugins --no-heic-hdr --no-deps > "$T/5.log" 2>&1
 check "--from: installs offline" test -x "$h5/.local/bin/nova"
 
 # --- 6: unknown version fails cleanly, nothing left behind ---
 h6="$T/home6"
 ok6=1
-run_install "$h6" --yes --no-plugins --version 9.9.9 > "$T/6.log" 2>&1 || ok6=0
+run_install "$h6" --yes --no-plugins --no-heic-hdr --version 9.9.9 > "$T/6.log" 2>&1 || ok6=0
 check "unknown version: install refused" [ "$ok6" = 0 ]
 check "unknown version: nothing installed" [ ! -e "$h6/.local/bin/nova" ]
 

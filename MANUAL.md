@@ -223,15 +223,22 @@ An iPhone HEIC carries an HDR gain map (ISO 21496-1). NOVA keeps it, for 1–3 %
 ```sh
 nova decode photo.nova photo.jpg            # Ultra HDR JPEG (the gain map travels with it)
 nova decode photo.nova photo.avif           # AVIF with the gain map (needs libavif 1.2+)
+nova decode photo.nova photo.heic           # HEIC with the gain map (needs libnova-heif, below)
 nova decode photo.nova photo.avif -hdr      # AVIF 10 bits, PQ
 nova decode photo.nova photo.png -hdr       # PNG 16 bits, PQ
 nova decode photo.nova photo.tif -hdr       # 16-bit float TIFF, linear, 1.0 = SDR white (for editors)
 ```
 
-**To look at or share the photo, keep the gain map: `.jpg` or `.avif`, without `-hdr`.** They hold the SDR
-image, which every viewer shows as the iPhone does, and the gain map, which HDR screens apply. A lossless
-`.nova` (a screenshot) still gives a lossless AVIF, without the gain map; `.heic` has none either (libheif
-cannot write it).
+**To look at or share the photo, keep the gain map: `.jpg`, `.avif` or `.heic`, without `-hdr`.** They hold
+the SDR image, which every viewer shows as the iPhone does, and the gain map, which HDR screens apply. A
+lossless `.nova` (a screenshot) still gives a lossless AVIF or HEIC, without the gain map.
+
+No released libheif can write a HEIC gain map yet, so `install.sh` builds **libnova-heif**: libheif with its
+gain-map pull request (#1503) and kvazaar, 1–3 minutes, into `lib/nova/` next to `bin/nova`
+(`libheif-gainmap/` in the source; the Windows installers ship it built). It needs cmake and a C/C++
+compiler; the installer says what to install when they are missing, and `--no-heic-hdr` skips it. nova
+loads it only to write a HEIC with a gain map: reading HEIC stays on your system's libheif, which gets its
+security updates. Without it, `.heic` output is SDR only.
 
 `-hdr` writes the HDR rendition itself, in absolute brightness (PQ, SDR white = 203 nits). It is for HDR
 editors and players: a viewer that does not tone map PQ to its screen, such as Gwenview on an SDR screen,

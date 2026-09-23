@@ -115,4 +115,16 @@ if ! built "avif-$AVIF"; then
   mark "avif-$AVIF"
 fi
 
+# libnova-heif: libheif with its gain-map pull request, for writing a .heic that keeps the HDR --
+# the same recipe install.sh runs on Linux and macOS (libheif-gainmap/build.sh). Only nova's HEIC
+# gain-map export loads it; every read goes through the libheif above. Its marker is the recipe's
+# checksum, so any change to build.sh or the patch rebuilds it.
+novaheif="novaheif-$(cat "$(dirname "$0")/../libheif-gainmap/build.sh" "$(dirname "$0")/../libheif-gainmap/pr1503.patch" | cksum | awk '{print $1}')"
+if ! built "$novaheif"; then
+  mkdir -p "$stage$M/bin"
+  CMAKE=mingw64-cmake sh "$(dirname "$0")/../libheif-gainmap/build.sh" "$work/novaheif" "$stage$M/bin/libnova-heif.dll"
+  sync
+  mark "$novaheif"
+fi
+
 echo "win/deps.sh: installed into $M"
