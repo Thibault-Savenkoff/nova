@@ -136,6 +136,16 @@ _Updated 2026-09-22._
   natively -- macOS only. Decision: **wait for #1503 to land in a libheif release**, then wire it
   (the Linux build uses the distro's libheif, so a privately patched one would only help Windows).
   Re-check the PR before any HEIC work.
+  Follow-ups checked the same day: **libultrahdr v2 is not a way around it** -- its HEIC path calls
+  `heif_context_encode_gain_map_image`, which exists only in a PR-#1503 libheif; its CMake pins a
+  libheif commit and applies `cmake/patches/libheif_pr1503.patch` (that patch fails 21 hunks on
+  1.23.4). **The fork's rebase (`fxthomas/libheif` branch `pr/1503-gain-maps-v1.23.1`, diff via
+  GitHub compare against `v1.23.1`) dry-runs clean on 1.23.4.** So the viable option is Windows
+  only: patch libheif in `win/deps.sh` + `WITH_EXPERIMENTAL_GAIN_MAP`, and have `nova_heic.li` dlsym
+  the encode call with a plain-HEIC fallback (~3 h) -- the same code then lights up on Linux/macOS
+  once a distro libheif ships the merged API (if names survive the merge). Patching at install time
+  on Linux/macOS rejected: builds C++ on the user's machine and breaks the no-auto-deps decision.
+  **Proposed to the user, awaiting their go ("Windows").**
 - **Windows on ARM: not planned, decided 2026-09-23.** x64 `nova.exe` already runs there under
   Windows 11's emulation; only Explorer thumbnails would fail (ARM64 Explorer won't load an x64
   `nova_wic.dll`). Cost ~1-2 days: Fedora has no aarch64 MinGW (needs llvm-mingw), its mingw64
