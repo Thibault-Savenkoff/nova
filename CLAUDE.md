@@ -117,6 +117,15 @@ _Updated 2026-09-22._
   used to strip 5 chars and append `.nova`). `test/unit.sh` all OK (uv fuzz skipped: no `uv` here).
   Convention: nova *writes* lowercase `.nova`, accepts any case. `nova.li` already reads
   `2.0.0-beta.3`; `release/NOTES-v2.0.0-beta.3.md` drafted, **awaiting the user's review**.
+  Windows re-test for beta.3 done (2026-09-23): HEIC writing opens on the iPhone, TAB completes.
+  The `.heic` has no HDR -- documented limit (`MANUAL.md:233`, "libheif cannot write it"); `.avif`
+  and `.jpg` carry the gain map. That note predates libheif 1.23.4: **check whether 1.23 can write
+  a `tmap` gain map now** (~15 min), wire it if so (~2 h), after beta.3.
+- **Windows on ARM: not planned, decided 2026-09-23.** x64 `nova.exe` already runs there under
+  Windows 11's emulation; only Explorer thumbnails would fail (ARM64 Explorer won't load an x64
+  `nova_wic.dll`). Cost ~1-2 days: Fedora has no aarch64 MinGW (needs llvm-mingw), its mingw64
+  packages (zlib, libwebp, LibRaw, lcms) are x86_64 only so everything is rebuilt, wixl likely has
+  no ARM64 MSI, and no ARM Windows machine to test on. Revisit only if someone asks.
 - User ran a full manual test pass (`~/test_nova/Tests.md`, 29 items) on real files outside the
   sandbox. Found two real bugs, both fixed in the working tree here, not yet committed:
   1. **Animation with JPEG sources: every decoded frame was the last frame's image**, not each
