@@ -136,16 +136,32 @@ _Updated 2026-09-22._
   natively -- macOS only. Decision: **wait for #1503 to land in a libheif release**, then wire it
   (the Linux build uses the distro's libheif, so a privately patched one would only help Windows).
   Re-check the PR before any HEIC work.
-  Follow-ups checked the same day: **libultrahdr v2 is not a way around it** -- its HEIC path calls
-  `heif_context_encode_gain_map_image`, which exists only in a PR-#1503 libheif; its CMake pins a
-  libheif commit and applies `cmake/patches/libheif_pr1503.patch` (that patch fails 21 hunks on
-  1.23.4). **The fork's rebase (`fxthomas/libheif` branch `pr/1503-gain-maps-v1.23.1`, diff via
-  GitHub compare against `v1.23.1`) dry-runs clean on 1.23.4.** So the viable option is Windows
-  only: patch libheif in `win/deps.sh` + `WITH_EXPERIMENTAL_GAIN_MAP`, and have `nova_heic.li` dlsym
-  the encode call with a plain-HEIC fallback (~3 h) -- the same code then lights up on Linux/macOS
-  once a distro libheif ships the merged API (if names survive the merge). Patching at install time
-  on Linux/macOS rejected: builds C++ on the user's machine and breaks the no-auto-deps decision.
-  **Proposed to the user, awaiting their go ("Windows").**
+  Follow-ups the same day: libultrahdr v2 is no way around it (it embeds the same PR, pinned to an
+  old libheif commit). **User's call: build the patched libheif ourselves, on every platform, at
+  install time, with an opt-out -- and (my adjustment, user agreed) used for WRITING HEIC ONLY**:
+  reads stay on the system libheif, which gets distro security fixes; our copy would not.
+  **Built (`e8540bd`), Linux verified here, CI run `35832817235` pending, iPhone test pending:**
+  `libheif-gainmap/build.sh` = libheif 1.23.4 + `pr1503.patch` (fxthomas rebase re-diffed for 1.23.4,
+  one fix: `get_unused_item_id()` returns `Result<>` since 1.23.2) + kvazaar static, all other
+  codecs off, tarballs SHA-256-pinned, output renamed **libnova-heif** (distinct file name *and*
+  soname, so glibc/dyld/Windows can never hand it out for the system libheif or vice versa).
+  `install.sh` step `install_heic_hdr` (after `check_libs`): installs `$prefix/lib/nova/libnova-heif.
+  {so,dylib}` + a `.stamp` (cksum of recipe; unchanged recipe = no rebuild), skips with the distro
+  command when cmake/cc/c++/patch are missing, `--no-heic-hdr` opts out; test/install.sh passes it.
+  `win/deps.sh` runs the same recipe with `CMAKE=mingw64-cmake` -> `libnova-heif.dll` (marker =
+  recipe cksum; CI cache key now hashes `libheif-gainmap/*`); in `dist.sh`, `nova.wxs`, README.txt
+  (LGPL: modified libheif, source = `libheif-gainmap/`). nova side: `ng_export` in `nova_heic.li`
+  (own `ng_*` pointers, never mixed with the `nh_*` system ones), looked up at
+  `<exe dir>/../lib/nova/` (Linux `/proc/self/exe`, macOS `_NSGetExecutablePath`), next to
+  `nova.exe` on Windows; returns -1 when absent -> plain HEIC as before. Lossy + `hdr_ok` only.
+  Traps: (1) **`cmake --build --parallel` with no count = unbounded `make -j`**: it OOM'd the whole
+  8 GB host (killed the session and most containers) -- always pass a count; `install.sh`'s Qt/KDE
+  plugin build had the same bug, fixed. Locally, build under `ulimit -v 2500000` and `JOBS=2`.
+  (2) #1503's *reader* derefs the tmap's `colr` unchecked, so nova always writes one (same
+  primaries, linear transfer). (3) kvazaar static on Windows needs `KVZ_STATIC_LIB` (else
+  dllimport); set on the heif target -- untested until the CI run. (4) `pack.sh` packs only
+  git-tracked files: new dirs must be `git add`ed before `build.sh` can ship them.
+  Also fixed: `test/install.sh` hard-coded `v2.0.0-beta` and had failed since the beta.3 bump.
 - **Windows on ARM: not planned, decided 2026-09-23.** x64 `nova.exe` already runs there under
   Windows 11's emulation; only Explorer thumbnails would fail (ARM64 Explorer won't load an x64
   `nova_wic.dll`). Cost ~1-2 days: Fedora has no aarch64 MinGW (needs llvm-mingw), its mingw64
