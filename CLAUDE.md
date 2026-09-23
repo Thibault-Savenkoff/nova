@@ -133,9 +133,9 @@ _Updated 2026-09-22._
   items", behind `-DWITH_EXPERIMENTAL_GAIN_MAP=1`) -- **still OPEN, unmerged** since 2025-04;
   a fork keeps it rebased on 1.23.1, and **libultrahdr v2.0.0 already builds on it** (so it does
   write HEIC gain maps, from a patched libheif). Apple's own ImageIO (macOS 15/iOS 18) writes them
-  natively -- macOS only. Decision: **wait for #1503 to land in a libheif release**, then wire it
-  (the Linux build uses the distro's libheif, so a privately patched one would only help Windows).
-  Re-check the PR before any HEIC work.
+  natively -- macOS only. (First decision "wait for #1503" superseded below.) **When #1503 lands in
+  a libheif release, drop `libheif-gainmap/` and load the system libheif instead** -- re-check the PR
+  before any HEIC work.
   Follow-ups the same day: libultrahdr v2 is no way around it (it embeds the same PR, pinned to an
   old libheif commit). **User's call: build the patched libheif ourselves, on every platform, at
   install time, with an opt-out -- and (my adjustment, user agreed) used for WRITING HEIC ONLY**:
