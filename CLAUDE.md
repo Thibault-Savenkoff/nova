@@ -121,8 +121,14 @@ _Updated 2026-09-22._
   `release/NOTES-v2.0.0-beta.3.md`.
   Windows re-test for beta.3 done (2026-09-23): HEIC writing opens on the iPhone, TAB completes.
   The `.heic` has no HDR -- documented limit (`MANUAL.md:233`, "libheif cannot write it"); `.avif`
-  and `.jpg` carry the gain map. That note predates libheif 1.23.4: **check whether 1.23 can write
-  a `tmap` gain map now** (~15 min), wire it if so (~2 h), after beta.3.
+  and `.jpg` carry the gain map. **Checked against libheif 1.23.4's public headers (2026-09-23):
+  still no way to write one.** No gain-map/tmap call at all; the generic item API
+  (`heif_context_add_item`, `add_item_references`) could create the `tmap` item and its `dimg`
+  refs, but there is no call to create the `altr` entity group (tmap + primary) the spec needs,
+  none to mark the encoded gain-map image hidden (it would show as a second picture), and none to
+  attach properties to a raw item. Only way left: rewrite the HEIF `meta` boxes by hand after
+  libheif writes the file (~1 day, fragile). Not worth it: `.avif`/`.jpg` already do this.
+  `MANUAL.md:233` stays correct as written.
 - **Windows on ARM: not planned, decided 2026-09-23.** x64 `nova.exe` already runs there under
   Windows 11's emulation; only Explorer thumbnails would fail (ARM64 Explorer won't load an x64
   `nova_wic.dll`). Cost ~1-2 days: Fedora has no aarch64 MinGW (needs llvm-mingw), its mingw64
