@@ -129,6 +129,13 @@ _Updated 2026-09-22._
   attach properties to a raw item. Only way left: rewrite the HEIF `meta` boxes by hand after
   libheif writes the file (~1 day, fragile). Not worth it: `.avif`/`.jpg` already do this.
   `MANUAL.md:233` stays correct as written.
+  Who does write one (searched 2026-09-23): **libheif PR #1503** ("Add support for handling 'tmap'
+  items", behind `-DWITH_EXPERIMENTAL_GAIN_MAP=1`) -- **still OPEN, unmerged** since 2025-04;
+  a fork keeps it rebased on 1.23.1, and **libultrahdr v2.0.0 already builds on it** (so it does
+  write HEIC gain maps, from a patched libheif). Apple's own ImageIO (macOS 15/iOS 18) writes them
+  natively -- macOS only. Decision: **wait for #1503 to land in a libheif release**, then wire it
+  (the Linux build uses the distro's libheif, so a privately patched one would only help Windows).
+  Re-check the PR before any HEIC work.
 - **Windows on ARM: not planned, decided 2026-09-23.** x64 `nova.exe` already runs there under
   Windows 11's emulation; only Explorer thumbnails would fail (ARM64 Explorer won't load an x64
   `nova_wic.dll`). Cost ~1-2 days: Fedora has no aarch64 MinGW (needs llvm-mingw), its mingw64
