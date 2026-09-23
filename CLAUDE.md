@@ -116,7 +116,9 @@ _Updated 2026-09-22._
   `encode`, and `free_name` keeps the destination's own extension (`OUT.PNG` -> `OUT-1.PNG`; it
   used to strip 5 chars and append `.nova`). `test/unit.sh` all OK (uv fuzz skipped: no `uv` here).
   Convention: nova *writes* lowercase `.nova`, accepts any case. `nova.li` already reads
-  `2.0.0-beta.3`; `release/NOTES-v2.0.0-beta.3.md` drafted, **awaiting the user's review**.
+  `2.0.0-beta.3`. **`v2.0.0-beta.3` PUBLISHED 2026-09-23** (tag on `1c5c425`, run `35821106467`):
+  14 assets (4 Linux/macOS tarballs + 3 Windows, each with `.sha256`), pre-release, notes from
+  `release/NOTES-v2.0.0-beta.3.md`.
   Windows re-test for beta.3 done (2026-09-23): HEIC writing opens on the iPhone, TAB completes.
   The `.heic` has no HDR -- documented limit (`MANUAL.md:233`, "libheif cannot write it"); `.avif`
   and `.jpg` carry the gain map. That note predates libheif 1.23.4: **check whether 1.23 can write
