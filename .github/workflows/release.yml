@@ -43,6 +43,12 @@ jobs:
               grep -oE '\([0-9][^)]*\)$' | tr -d '()')
           [ -n "$v" ] || { echo "::error::could not read the Lisaac version from README.md" >&2; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
+          # Lisaac republishes under the same number (0.6 was replaced on 2026-09-22): the zip's
+          # ETag goes into the cache key too, so a new upload rebuilds the compiler.
+          etag=$(curl -fsSI "https://lisaac.org/downloads/lisaac_$v.zip" | tr -d '\r' |
+                 awk -F': ' 'tolower($1) == "etag" {print $2}' | tr -cd 'A-Za-z0-9-')
+          [ -n "$etag" ] || { echo "::error::no ETag for lisaac_$v.zip" >&2; exit 1; }
+          echo "etag=$etag" >> "$GITHUB_OUTPUT"
 
       # Lisaac Ω has no prebuilt binary, so it is built here once per pinned version (the cache
       # key changes with it) and restored on every run after that. Only what compiling nova uses:
@@ -54,7 +60,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/lisaac
-          key: lisaac-compiler-${{ matrix.os }}-${{ matrix.arch }}-${{ steps.lisaac.outputs.version }}
+          key: lisaac-compiler-${{ matrix.os }}-${{ matrix.arch }}-${{ steps.lisaac.outputs.version }}-${{ steps.lisaac.outputs.etag }}
 
       - name: Build the Lisaac Ω compiler
         if: steps.lisaac-cache.outputs.cache-hit != 'true'
