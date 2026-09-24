@@ -49,12 +49,12 @@ archive=$(basename "$archive_path")
 mkdir -p "$T/srv/download/v$v"
 cp "$archive_path" "$T/srv/download/v$v/"
 (cd "$T/srv/download/v$v" && sha256sum "$archive" > SHA256SUMS)
-printf '[{"tag_name": "v%s"}]' "$v" > "$T/srv/api.json"
+printf '<feed><link href="https://github.com/o/r/releases/tag/v%s"/></feed>\n' "$v" > "$T/srv/releases.atom"
 
 port=8765
 ( cd "$T/srv" && exec python3 -m http.server "$port" --bind 127.0.0.1 >/dev/null 2>&1 ) &
 srv_pid=$!
-for _ in $(seq 1 50); do curl -fsS "http://127.0.0.1:$port/api.json" >/dev/null 2>&1 && break; sleep 0.1; done
+for _ in $(seq 1 50); do curl -fsS "http://127.0.0.1:$port/releases.atom" >/dev/null 2>&1 && break; sleep 0.1; done
 
 run_install() {  # run_install <home> <install.sh args...>
   local home=$1; shift
@@ -65,7 +65,7 @@ run_install() {  # run_install <home> <install.sh args...>
     SHELL=/bin/zsh \
     NOVA_TEST_ROOT="$T/root" \
     NOVA_RELEASE_BASE="http://127.0.0.1:$port/download" \
-    NOVA_API_BASE="http://127.0.0.1:$port/api.json" \
+    NOVA_FEED="http://127.0.0.1:$port/releases.atom" \
     bash "$PWD/install.sh" "$@"
 }
 
@@ -133,7 +133,7 @@ h5b="$T/home5b"
 mkdir -p "$h5b" "$T/unpacked"
 tar -xzf "$archive_path" -C "$T/unpacked"
 env -i HOME="$h5b" PATH=/usr/bin:/bin SHELL=/bin/zsh NOVA_TEST_ROOT="$T/root" \
-  NOVA_RELEASE_BASE=http://127.0.0.1:1/download NOVA_API_BASE=http://127.0.0.1:1/api.json \
+  NOVA_RELEASE_BASE=http://127.0.0.1:1/download NOVA_FEED=http://127.0.0.1:1/releases.atom \
   bash "$T/unpacked/${archive%.tar.gz}/install.sh" --yes --no-plugins --no-heic-hdr --no-deps > "$T/5b.log" 2>&1
 check "unpacked archive: installs without downloading" test -x "$h5b/.local/bin/nova"
 

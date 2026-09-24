@@ -133,6 +133,11 @@ Not planned: Windows on ARM, `lisaac -split`, PowerShell completion filtered by 
   `install.sh` itself to `$prefix/share/nova/install.sh` (in the manifest), and the hint is
   `bash <that> --uninstall [--system | --prefix DIR]` -- offline, and right for the prefix. The script
   deletes itself during uninstall; bash keeps reading from the open fd, verified to finish.
+- **`install.sh` finds the latest v2 release through `releases.atom`, not the REST API** (user hit
+  `403` + "no v2 release found", 2026-09-24): the API allows 60 unauthenticated requests an hour per
+  IP, shared with everything on that network. The feed is plain web, newest first, v1 and v2 mixed
+  (filtered on `releases/tag/v2.`). `NOVA_FEED` overrides it for `test/install.sh`. nova's own daily
+  update check (`nova_update.li`) still uses the API -- one call a day, fails silently; left alone.
 - **`curl | bash` never asked anything** (user report, 2026-09-24): `ask()` tested `[ -t 0 ]`, and
   piped, stdin is the script -- so every prompt (zshrc lines, all viewer plugins) answered "no"
   even in a real terminal. It now reads the answer from `/dev/tty` when stdin is not one (the

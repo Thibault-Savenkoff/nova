@@ -35,7 +35,9 @@ TEST_ROOT=${NOVA_TEST_ROOT:-}
 # Test-only: overrides the GitHub URLs with a local server. Empty in a
 # normal install.
 RELEASE_BASE=${NOVA_RELEASE_BASE:-https://github.com/$repo/releases/download}
-API_BASE=${NOVA_API_BASE:-https://api.github.com/repos/$repo/releases}
+# The releases' Atom feed, not the REST API: the API allows 60 requests an hour per IP address
+# without a token, and a few installs plus other tools on the same network used them up (403).
+FEED=${NOVA_FEED:-https://github.com/$repo/releases.atom}
 
 usage() {
   cat <<'EOF'
@@ -271,7 +273,7 @@ find_release() {
   else
     # v1 ("NOVA Viewer") releases are also published, and one of them is the repo's "latest":
     # filter to v2.* tags instead of trusting "latest".
-    tag=$(curl -fsSL "$API_BASE" | grep -o '"tag_name": *"v2\.[^"]*"' | head -1 | sed -E 's/.*"(v2\.[^"]*)"/\1/') || tag=
+    tag=$(curl -fsSL "$FEED" | grep -o 'releases/tag/v2\.[^"<]*' | head -1 | sed 's#.*/##') || tag=
     [ -n "$tag" ] || die "no v2 release found on github.com/$repo"
     info "Latest v2 release on github.com/$repo"
   fi
