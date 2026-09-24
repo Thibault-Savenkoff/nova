@@ -2,6 +2,29 @@
 
 _Updated 2026-09-24._
 
+### NOVA is now YAIF (2026-09-24)
+**Renamed NOVA -> YAIF ("Yet Another Image Format", user's pick for its self-deprecation).** Every
+entry BELOW this one predates the rename and uses the old names: read `nova` as `yaif`, `nova.li` as
+`yaif.li`, `nova_*.li`/`Nova_*` as `yaif_*.li`/`Yaif_*`, `libnova/novadec` as `libyaif/yaifdec`,
+`NOVA_*` env vars as `YAIF_*`, `.nova` as `.yaif`, `libnova-heif` as `libyaif-heif`,
+`image/x-nova` as `image/x-yaif`, `~/photos-nova` as `~/photos-yaif`. Local checkout stays `/root/nova`
+(Claude's memory and settings are keyed on that path).
+- **Clean break (user's call):** signature `89 59 41 49 46 0D 0A 1A 0A`; YAIF does not read `.nova`.
+  Bitstream otherwise identical (checked: same bytes after the signature on the whole corpus).
+- Done in `fb57bd6` (mechanical: git mv + sed NOVA/Nova/nova, CLAUDE.md and old release notes
+  excluded), new WIC CLSIDs and Active Setup GUID. **Old installs are removed**: install.sh runs
+  `share/nova/install.sh --uninstall` with the same prefix (test case 5c); NSIS runs
+  `Uninstall\NOVA`'s uninstaller silently (HKLM+HKCU); the MSI got `<MajorUpgrade
+  AllowSameVersionUpgrades="yes">` on the unchanged UpgradeCode (it had none: two betas' MSIs would
+  have sat side by side). wixl 0.106 emits the Upgrade table + RemoveExistingProducts (checked).
+- Wasm rebuilt (`27f4927`) with emsdk now installed at `~/emsdk`; uv at `~/.local/bin/uv`,
+  zlib1g-dev and librsvg2-bin installed here too.
+- New logo (Y A I F, same 20-unit geometry and dot) + favicon/`win/yaif.ico` ("Y" instead of "N",
+  PNG-in-ICO 256..16).
+- Plan: `/root/.claude/plans/reflective-popping-dahl.md` (steps 1-10; 9-10 = codec optimisation +
+  website audit, requested by the user alongside the rename).
+- Local-only trap: Debian's MinGW needs `-lpthread` for `clock_gettime` (Fedora's in CI does not).
+
 ### To do (details in the entries below)
 Next up, in order:
 1. **Mac test on real hardware** (user has no Mac access right now): `install.sh`, `nova convert`

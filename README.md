@@ -21,8 +21,13 @@ Half the size of PNG and usually smaller than WebP when every pixel must stay ex
 
 ## Status
 
+YAIF stands for **Yet Another Image Format**, which it is. It was called NOVA up to `v2.0.0-beta.6`: the
+name could not be found in a search and `.nova` was already taken. YAIF does not read `.nova` files; convert
+them with the old `nova` first (`nova decode x.nova x.png`, then `yaif encode x.png`). Installing YAIF removes
+an old NOVA install.
+
 This is the `v2` branch: YAIF rewritten from scratch in [Lisaac Ω](https://lisaac.org), with its own codec.
-YAIF v1, on `main`, is a Python container around PNG and JPEG data. v2 replaces it on `main` once it is finished.
+v1 (NOVA), on `main`, is a Python container around PNG and JPEG data. v2 replaces it on `main` once it is finished.
 v1 and v2 files are not compatible. The web page linked here is still v1 until v2 reaches `main`.
 
 ## Numbers
