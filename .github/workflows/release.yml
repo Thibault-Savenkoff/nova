@@ -2,15 +2,25 @@ name: Release
 
 # v2.* tags publish a GitHub Release with Linux and macOS binaries (install.sh
 # downloads these) and the Windows zip, NSIS installer and MSI (win/dist.sh).
-# workflow_dispatch builds the same artifacts without publishing, to try the
-# pipeline out.
+# Every push to the v2 branch (and workflow_dispatch) builds and tests the same
+# artifacts without publishing. Markdown-only pushes skip it (paths filters do
+# not apply to tags, so a release always runs).
 on:
   push:
+    branches: [v2]
     tags: ["v2.*"]
+    paths-ignore: ["**.md"]
   workflow_dispatch:
 
+# A newer push to the branch makes the running check pointless; a tag run is never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+# Read-only by default: the build jobs run code downloaded from third parties (the Lisaac zip,
+# libheif, kvazaar, aom...). Only publish gets to write, and it runs none of that.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -50,8 +60,8 @@ jobs:
           [ -n "$etag" ] || { echo "::error::no ETag for lisaac_$v.zip" >&2; exit 1; }
           echo "etag=$etag" >> "$GITHUB_OUTPUT"
 
-      # Lisaac Ω has no prebuilt binary, so it is built here once per pinned version (the cache
-      # key changes with it) and restored on every run after that. Only what compiling nova uses:
+      # Lisaac Ω has no prebuilt binary, so it is built here once per pinned version and zip
+      # upload (the cache key has both: version and ETag) and restored on every run after that. Only what compiling nova uses:
       # the compiler, lib/ and make.lip -- a few MB of the 61 MB zip. Lisaac's own install.sh also
       # builds elit, its editor, which needs GL and GLFW and fails to link on arm64 (it ships an
       # x86_64-only libglfw3.a), and it edits ~/.bashrc. nova needs none of that.
@@ -87,6 +97,17 @@ jobs:
           lisaac nova.li -boost
           ./nova --version
 
+      # The unit tests (with the corrupt-file fuzz, which needs uv) and the install.sh test, once:
+      # they test nova's code and the installer, not the platform.
+      - uses: astral-sh/setup-uv@v6
+        if: matrix.os == 'linux' && matrix.arch == 'x86_64'
+
+      - name: Tests
+        if: matrix.os == 'linux' && matrix.arch == 'x86_64'
+        run: |
+          test/unit.sh
+          test/install.sh
+
       - name: Pack the release archive
         run: |
           mkdir -p dist
@@ -94,7 +115,11 @@ jobs:
 
       # What a user gets: install.sh from this archive, which builds libnova-heif, then a HEIC
       # written from the sample photo must carry its HDR gain map (the ISO 21496-1 tmap item).
+      # On the Intel Mac for releases only: it takes 5 of that job's 6 minutes, and Windows waits
+      # for every build. Still run before a release because it is the only build of kvazaar's x86
+      # assembly by Apple's clang.
       - name: Install from the archive, write a HEIC with its gain map
+        if: matrix.runner != 'macos-15-intel' || startsWith(github.ref, 'refs/tags/')
         run: |
           ./install.sh --from dist/nova-*.tar.gz --prefix "$RUNNER_TEMP/p" -y --no-plugins
           "$RUNNER_TEMP/p/bin/nova" decode docs/samples/photo.nova "$RUNNER_TEMP/hdr.heic"
@@ -122,7 +147,9 @@ jobs:
     # package at all.
     needs: build
     runs-on: ubuntu-latest
-    container: fedora:latest
+    # Pinned: the cached cross-compiled libraries (key below) were built by this Fedora's MinGW.
+    # Bump both together.
+    container: fedora:44
     steps:
       # git and tar are what checkout and the artifact actions need; the rest
       # is the list win/dist.sh documents.
@@ -140,8 +167,9 @@ jobs:
           name: c-source
 
       # Fedora packages no mingw64 libheif, libde265, aom or libavif, so win/deps.sh cross-compiles
-      # them. The cache key is the script itself: it carries the pinned versions and the cmake
-      # options, so changing either rebuilds, and nothing else does. restore-keys brings back the
+      # them, and libnova-heif (libheif-gainmap/). The cache key is those scripts and the Fedora
+      # release: they carry the pinned versions and the cmake options, so changing any rebuilds,
+      # and nothing else does. restore-keys brings back the
       # previous tree on any edit, and deps.sh skips per library from its own markers -- editing
       # one library's flags then does not pay for aom again (~10 min on its own).
       - name: Restore/build the cross-compiled libraries
@@ -149,10 +177,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/windeps
-          key: windeps-${{ hashFiles('win/deps.sh', 'libheif-gainmap/*') }}
-          restore-keys: windeps-
+          key: windeps-fedora44-${{ hashFiles('win/deps.sh', 'libheif-gainmap/*') }}
+          restore-keys: windeps-fedora44-
 
-      - name: Cross-compile libheif, libde265, kvazaar, aom and libavif
+      - name: Cross-compile libheif, libde265, kvazaar, aom, libavif and libnova-heif
         run: bash win/deps.sh "$RUNNER_TEMP/windeps"
 
       - name: Build the Windows files
@@ -169,6 +197,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v2.')
     needs: [build, windows]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 

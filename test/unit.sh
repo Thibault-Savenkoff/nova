@@ -24,7 +24,8 @@ enc alpha.png alpha3 -m lossless -l 3
 enc alpha.png alpha5 -m lossy
 enc photo_like.jpg l5 -m lossy -q 70
 enc photo_like.jpg eps -m lossy -l 2 -e 3
-UV_OFFLINE=1 uv run -q python - "$T" docs/samples/*.nova "$T"/src_*.nova <<'EOF'
+# Not generating them is a failure, not "fuzzed 1 file" (the unexpanded glob below).
+UV_OFFLINE=1 uv run -q python - "$T" docs/samples/*.nova "$T"/src_*.nova <<'EOF' || { echo "FAIL corrupt files not generated (uv)"; fail=1; }
 import random, struct, sys, zlib
 t, files = sys.argv[1], sys.argv[2:]
 
