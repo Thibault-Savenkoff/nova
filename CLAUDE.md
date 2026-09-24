@@ -147,7 +147,18 @@ _Updated 2026-09-22._
   (so it builds libnova-heif), writes `docs/samples/photo.nova` to `.heic` and fails without a
   `tmap` -- green on all four, macOS arm64 and x86_64 included (Apple clang, the
   `_NSGetExecutablePath` lookup). It even works where the system has no libheif at all (the macOS
-  runners have none): libnova-heif does the whole write. Not yet in a release:
+  runners have none): libnova-heif does the whole write. **Release: `v2.0.0-beta.4` prepared
+  (`nova.li` bumped, `release/NOTES-v2.0.0-beta.4.md`, `dd71ad6`/`bdd9f27`), waiting for the user
+  to create the tag from the web UI.** Trap: a bare `#1503` in release notes is autolinked by
+  GitHub to *this* repo's issue #1503 -- always write `owner/repo#N` with an explicit URL.
+  **Next after the release: direct conversion (user's call, 2026-09-24).**
+  **Workflow review proposed, awaiting the user's pick** (none done yet): (1) run on every push
+  to `v2` + run `test/unit.sh`/`test/install.sh` in the Linux x86_64 job -- the tests never ran in
+  CI, which is how `test/install.sh` stayed broken since beta.3; (2) `permissions: contents: read`
+  by default, `write` on `publish` only (build jobs download third-party code); (3) pin
+  `fedora:44` and put it in the windeps cache key; (4) drop the HEIC install test on
+  `macos-15-intel` only (319 s of its 382 s job, and Windows waits on every build; ~55-70 s
+  elsewhere); (5) refresh stale step names/comments (libnova-heif, ETag). Previously:
   `libheif-gainmap/build.sh` = libheif 1.23.4 + `pr1503.patch` (fxthomas rebase re-diffed for 1.23.4,
   one fix: `get_unused_item_id()` returns `Result<>` since 1.23.2) + kvazaar static, all other
   codecs off, tarballs SHA-256-pinned, output renamed **libnova-heif** (distinct file name *and*
