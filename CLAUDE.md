@@ -35,6 +35,12 @@ Open, no date:
   en acronyme" (bare initials + "Image Format"). Round 4, word-acronyms, all rejected ("Nan"): OKAPI
   (Keeps All Pixels Intact), OPAL (Packs All Light), KIWI (Is Wavelet Imaging), KOI, TINT. YAIF
   still the favourite; stop proposing names unless asked.
+  Round 5 (acronym need not be recursive; real word + every letter true, FLARE-style): user liked
+  **SOLAR** (Small, Open, Lossless, Adaptive, RAW) and **LOAF** (Lossless Open Adaptive Format,
+  self-mocking like YAIF); rejected silently ALOHA, GLOW, FOAL. Checked: `.solar` unused, no
+  SOLAR format -- but "solar image" searches return Sun astrophotography. `.loaf` IS taken by LoaF
+  (Linear Object Archive Format, small GitHub archive format, `defcron/loaf`) + a LOAF fisheye image
+  dataset; name otherwise small iOS/Lua libs.
 - macOS Finder/Quick Look: an ImageIO plugin, deferred past v2.
 - GNOME: re-verify the glycin install fix on the VM; Nautilus thumbnails still fail (not chased);
   `plugins/gdk-pixbuf` untested.
