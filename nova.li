@@ -717,12 +717,14 @@ Public
       end_chunk
       pos := pos + 8 + len
     }
-    raw_preview name
+    // convert: the preview only serves as a DNG's thumbnail.
+    ((convert_to = NULL) || {convert_to.as_lower.has_suffix ".dng"}).if { raw_preview name }
     0.to (width * height - 1) do { i:Int
       Nova_raw.put (Nova_rawin.sample i) at i
     }
     begin_chunk t_fdat
-    Nova_raw.encode
+    // convert: an empty FDAT, the samples stay in Nova_raw for read_nova.
+    (convert_to = NULL).if { Nova_raw.encode }
     end_chunk
     mode_name := "lossless, level 6 RAW"
   )
@@ -1281,8 +1283,12 @@ Public
 
   - data_size:Int
 
-  // Set by convert: data already holds the .nova, encoded in memory.
+  // Set by convert: data already holds the .nova, encoded in memory (a RAW's FDAT is then empty:
+  // Nova_raw already holds the sensor frame).
   - in_memory:Boolean
+
+  // Set by convert before encode_raw: the destination.
+  - convert_to:String
 
   - load_file name:String <-
   ( + f:Pointer
@@ -1368,7 +1374,7 @@ Public
           ((np != 3) && {np != 4}).if { fail "bad plane count" }
         }
         ((width = 0) || {height = 0} || {width > 65535} || {height > 65535}).if { fail "bad size" }
-        (dst != NULL).if {
+        ((dst != NULL) && {! in_memory}).if {
           Nova_par.clear
           ((short_name name) + ": " + width.to_string + "x" + height.to_string).print
           (raw).if { " RAW sensor frame\n".print }.elseif {np = 4} then { " RGBA\n".print } else { " RGB\n".print }
@@ -1389,7 +1395,7 @@ Public
           (rawh = 0).if { fail "RAW frame without RAWH" }
           ((dst.as_lower.has_suffix ".dng") || {dst.as_lower.has_suffix ".pgm"} || {image_ext dst}).if { } else { fail "a RAW frame decodes to .dng, .png, .tif, .jpg (or .pgm: bare sensor frame)" }
           Nova_raw.setup (width, height) black (raw_black_at rawh)
-          (Nova_raw.decode data from pos size len).if { } else { fail "corrupt frame" }
+          ((in_memory && {len = 0}) || {Nova_raw.decode data from pos size len}).if { } else { fail "corrupt frame" }
           // MDAT blocks after FDAT are not seen; the encoder writes them before.
           (dst.as_lower.has_suffix ".pgm").if {
             Nova_par.status ("Writing " + (short_name dst) + "...")
@@ -1795,8 +1801,8 @@ Public
   // nova convert src dst [decode options]: the source's pixels, metadata (as the MDAT chunks encode
   // would write) and HDR gain map go straight to write_image, with no .nova codec in between (about
   // 2 s of the 3.3 s a 7.7 Mpx JPEG -> PNG took through a lossless .nova). The output is the same.
-  // A RAW still goes through a .nova held in memory: developing it reads the RAWH and sensor frame
-  // from there. In memory, not a temporary file: on Windows the replicas of nova_par would read
+  // A RAW still goes through a .nova held in memory, without its sensor frame coded (it stays in
+  // Nova_raw): read_nova then writes the DNG or develops it as decode does. In memory, not a temporary file: on Windows the replicas of nova_par would read
   // that file before replica 0 has written it.
   // A lossy source stays lossy (a JPEG photo does not become a lossless WebP), a PNG or TIFF stays
   // lossless; -m decides otherwise, as for decode.
@@ -1815,6 +1821,7 @@ Public
     dst := keep_or_rename (Command_args.at 3)
     (is_raw src).if {
       Nova_par.status ("Reading " + (short_name src) + " with LibRaw...")
+      convert_to := dst
       encode_raw src
       data := copy_bytes (Nova_codec.out) size (Nova_codec.out_count)
       data_size := Nova_codec.out_count

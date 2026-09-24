@@ -192,15 +192,21 @@ _Updated 2026-09-22._
   to `encode -m lossless -l 1` + `decode`** for jpg/png(alpha)/png(text)/avif+tmap/heic+tmap sources
   x png/jpg/tif/webp/avif/heic outputs (lossy ones compared with `decode -m lossy`); tmap kept in
   AVIF/HEIC, hdrgm in JPEG. RAW sources still go through a `.nova` **held in memory** (`in_memory`
-  slot, `read_nova` skips `load_file`): developing reads RAWH + sensor frame from it; in memory, not a
-  temp file, because on Windows only nova_par's replica 0 writes files. Lisaac trap met: a one-line
+  slot, `read_nova` skips `load_file`) for its dispatch (DNG/PGM/develop) -- but **without coding the
+  sensor frame** (user report: `convert X.CR3 X.dng` still printed both steps, 14.9 s): `convert_to`
+  set -> `encode_raw` writes an empty FDAT and skips the LibRaw half-size preview unless the output
+  is `.dng` (it is only the DNG thumbnail); `read_nova` accepts an empty FDAT only when `in_memory`
+  (samples already in `Nova_raw`) and skips its IHDR line. 250D CR3 (raw.pixls.us sample): DNG
+  14.5 -> 1.4 s, PNG 20.1 -> 6.3, TIFF 19.1 -> 5.5, PGM 18.4 -> 0.6, all byte-identical to the old
+  path; `nova encode` of the CR3 unchanged. In memory, not a temp file, because on Windows only
+  nova_par's replica 0 writes files. Local RAW testing: LibRaw 0.22.1 built into scratchpad `lr/`
+  (`LD_LIBRARY_PATH`), Debian only has 0.21 (so.23). Lisaac trap met: a one-line
   block `{ i:Int Nova_codec.put_byte ... }` is a SYNTAX error ("Added '}'" warning, error at a later
   `}`) -- an uppercase prototype right after `i:Int` is read as part of the type; newline after it.
   Local test libs: `apt-get install libwebp7 libheif1 libheif-plugin-{libde265,kvazaar,aomdec,aomenc}
   libavif16` (Debian trixie); libnova-heif found via a copy of nova in scratchpad `pfx/bin/`. Without `-m`, WebP/AVIF/HEIC output is
   lossless for PNG/TIFF/PAM sources, lossy otherwise. Refuses a `.nova` on either side (points to
-  encode/decode). Completions (4 shells) + MANUAL "Converting" + README updated. **RAW source
-  (`convert X.CR3 X.dng`) untested -- no RAW file here; ask the user to try it.**
+  encode/decode). Completions (4 shells) + MANUAL "Converting" + README updated.
   Previously:
   `libheif-gainmap/build.sh` = libheif 1.23.4 + `pr1503.patch` (fxthomas rebase re-diffed for 1.23.4,
   one fix: `get_unused_item_id()` returns `Result<>` since 1.23.2) + kvazaar static, all other
