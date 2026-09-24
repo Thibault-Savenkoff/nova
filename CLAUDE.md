@@ -19,8 +19,15 @@ entry BELOW this one predates the rename and uses the old names: read `nova` as 
   have sat side by side). wixl 0.106 emits the Upgrade table + RemoveExistingProducts (checked).
 - Wasm rebuilt (`27f4927`) with emsdk now installed at `~/emsdk`; uv at `~/.local/bin/uv`,
   zlib1g-dev and librsvg2-bin installed here too.
-- New logo (Y A I F, same 20-unit geometry and dot) + favicon/`win/yaif.ico` ("Y" instead of "N",
-  PNG-in-ICO 256..16).
+- **Repo renamed to `Thibault-Savenkoff/yaif` by the user (2026-09-24)**, remote updated, pushed.
+  First CI run under the new name green on all 6 jobs (run `36060393113`, Windows included: the NSIS
+  `RemoveNova` section and the MSI `MajorUpgrade` build); artifacts `yaif-*`.
+- **Logo (`988c593`), picked by the user after ~20 variants**: the Y's right arm fades from the
+  letter's colour at the fork to the accent blue at the tip (stem stays plain); same in the wordmark
+  (README light/dark SVGs, web page inline SVG via `currentColor` -> `var(--acc)`), the favicon and
+  `win/yaif.ico` (PNG-in-ICO 256..16). Rejected: plain Y, dot-as-stem, pixelated right half (the
+  user disliked every pixel layout), pile of cards, funnel, outline, file, halo/flare/sunset/bands.
+  `.github/images/site.jpg` still shows NOVA: retake once v2 is live (no browser here).
 - Plan: `/root/.claude/plans/reflective-popping-dahl.md` (steps 1-10; 9-10 = codec optimisation +
   website audit, requested by the user alongside the rename).
 - Local-only trap: Debian's MinGW needs `-lpthread` for `clock_gettime` (Fedora's in CI does not).
