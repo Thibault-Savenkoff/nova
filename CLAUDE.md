@@ -140,7 +140,10 @@ _Updated 2026-09-22._
   old libheif commit). **User's call: build the patched libheif ourselves, on every platform, at
   install time, with an opt-out -- and (my adjustment, user agreed) used for WRITING HEIC ONLY**:
   reads stay on the system libheif, which gets distro security fixes; our copy would not.
-  **Built (`e8540bd`), Linux verified here, CI run `35832817235` pending, iPhone test pending:**
+  **Built (`e8540bd`), CI green (runs `35832817235`, `35871161177`). CONFIRMED ON REAL HARDWARE
+  (2026-09-24): Windows installer -> `nova decode test.nova hdr.heic` -> `tmap` check True, and the
+  iPhone shows the HDR exactly as it does the AVIF.** Still untested: the macOS build of the recipe
+  (Apple clang, `_NSGetExecutablePath` lookup) -- needs the user's Mac. Not yet in a release:
   `libheif-gainmap/build.sh` = libheif 1.23.4 + `pr1503.patch` (fxthomas rebase re-diffed for 1.23.4,
   one fix: `get_unused_item_id()` returns `Result<>` since 1.23.2) + kvazaar static, all other
   codecs off, tarballs SHA-256-pinned, output renamed **libnova-heif** (distinct file name *and*
