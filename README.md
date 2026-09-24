@@ -240,6 +240,33 @@ Animations and Live Photos are created with the program only, and export is limi
 - [libwebp](https://chromium.googlesource.com/webm/libwebp) (BSD) writes WebP. Its headers are in `third_party/libwebp/`.
 - The site uses [Bricolage Grotesque](https://github.com/ateliertriay/bricolage) and [Atkinson Hyperlegible](https://www.brailleinstitute.org/freefont/) (SIL Open Font License, in `docs/fonts/`).
 
+## Code signing policy
+
+The Windows files are not signed yet: nova has applied to [SignPath Foundation](https://signpath.org) for free
+code signing. Once accepted: free code signing provided by [SignPath.io](https://signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+
+- **What is signed:** only files built from this repository by its GitHub Actions workflow
+  (`.github/workflows/release.yml`): `nova.exe`, `nova_wic.dll`, the `-setup.exe` installer and the `.msi`.
+  The open-source libraries shipped next to them (zlib, libwebp, LibRaw, libheif, libde265, kvazaar, aom,
+  libavif, the MinGW runtime, and `libnova-heif.dll`, libheif with a pull request applied) are not signed by
+  this project.
+- **Roles:** author, reviewer and approver of every release:
+  [Thibault Savenkoff](https://github.com/Thibault-Savenkoff). Each signed release is approved by hand.
+- **Privacy:** nova sends nothing about you or your files anywhere. Its only network access is the update
+  check: at most once a day, only in an interactive terminal, one HTTPS request to GitHub for the list of
+  releases (GitHub sees your IP address, as for any page; see
+  [GitHub's privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)).
+  `NOVA_NO_UPDATE_CHECK=1` turns it off. The installers change nothing else over the network; `install.sh`
+  downloads the release (and, to build libnova-heif, libheif and kvazaar) from GitHub. The
+  [web page](https://thibault-savenkoff.github.io/nova/) runs on your device and uploads nothing.
+- **What the installers change**, all undone by uninstalling: nova on the `PATH`, the `.nova` file type
+  and its codec (Explorer thumbnails), and one line in your PowerShell profile for Tab completion (Windows);
+  on Linux and macOS, the lines `install.sh` offers to add to `~/.zshrc`, which it asks about first.
+- **Uninstalling:** Windows, Settings > Apps > NOVA (or, from the zip, `uninstall.bat`, then delete the
+  folder); Linux and macOS, `bash ~/.local/share/nova/install.sh --uninstall` (add `--system` or
+  `--prefix DIR` if you installed with one), which removes only what the install recorded.
+
 ## License
 
 [MIT](LICENSE). Third-party code keeps its own license, see [Credits](#credits).

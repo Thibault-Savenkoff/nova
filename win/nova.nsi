@@ -37,6 +37,13 @@ ManifestDPIAware true
 !define ENV_ALLUSERS "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
 !define ENV_CURRENTUSER "Environment"
 
+; What the install changes on the system, said before it happens (SignPath Foundation's terms ask
+; for it; it is also the honest thing). Keep in step with the sections below and with README.md.
+!define MUI_WELCOMEPAGE_TEXT "This installs NOVA ${VERSION} and changes, for this computer or for your account:$\r$\n$\r$\n\
+  - adds nova to the PATH;$\r$\n\
+  - registers the .nova file type and its codec, so Explorer shows thumbnails;$\r$\n\
+  - adds one line to your PowerShell profile (Windows PowerShell and PowerShell 7), for Tab completion.$\r$\n$\r$\n\
+  Uninstalling it from Settings > Apps undoes all of it.$\r$\n$\r$\nClick Next to continue."
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MULTIUSER_PAGE_INSTALLMODE
 !insertmacro MUI_PAGE_LICENSE "..\LICENSE"

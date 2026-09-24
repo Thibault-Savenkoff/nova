@@ -13,7 +13,8 @@ Next up, in order:
    (`sha256sum -c SHA256SUMS --ignore-missing`), not per-file `.sha256`.
 Open, no date:
 - `install.ps1` for Windows (`irm | iex`): sidesteps SmartScreen/Defender; ~150-200 lines.
-- Code signing on Windows: SignPath Foundation first (free for open source).
+- Code signing on Windows: SignPath Foundation -- user applies (2FA on GitHub first); then wire
+  signing into `release.yml` (nova.exe, nova_wic.dll, setup.exe, .msi; not the third-party DLLs).
 - macOS Finder/Quick Look: an ImageIO plugin, deferred past v2.
 - GNOME: re-verify the glycin install fix on the VM; Nautilus thumbnails still fail (not chased);
   `plugins/gdk-pixbuf` untested.
@@ -656,6 +657,20 @@ Not planned: Windows on ARM, `lisaac -split`, PowerShell completion filtered by 
   `win/dist.sh`'s own bundled README.txt wrongly said "Photos" -- fixed to name Photo Viewer and
   say Photos won't open it. `plugins/gdk-pixbuf` and `plugins/glycin` (GNOME) have no test
   environment available (user's other machine is Windows, not GNOME) -- untested, no plan yet.
+- **SignPath Foundation: prepared to apply (2026-09-24), user applies.** Their terms (signpath.org/terms,
+  read that day): OSI licence, released, documented, built from source in CI, sign ONLY own binaries
+  (unsigned OSS DLLs may ship alongside -- so `libnova-heif.dll` stays unsigned, it is a libheif fork
+  and libheif publishes no signed builds), product name + version metadata on every signed file, MFA
+  on GitHub and SignPath for every member, manual approval per release, a "Code signing policy" on the
+  project page (attribution sentence, roles, privacy statement), no system change without warning,
+  uninstall instructions. Done for it: README `## Code signing policy` (says "applied, not signed yet"
+  -- switch to the plain attribution once accepted); `win/nova.rc` has a `VERSIONINFO`
+  (`nova_version.h` written from nova.li by `win/build.sh` / `plugins/wic/build.sh`, `-DNOVA_DLL` for
+  the codec; FILEVERSION = x,y,z,<pre-release n or 0>), checked by linking the .rc into a test exe/dll;
+  NSIS welcome page lists what the install changes (PATH, file type + codec, PowerShell profile line).
+  The MSI (wixl) has no UI to warn in -- covered by the README. User still has to enable GitHub 2FA.
+  Trap met: a test command's `[ ! -e dist ] && ...; rm -rf dist` deleted the existing (gitignored,
+  regenerable) `dist/` -- guard the cleanup too, or work in a scratch copy.
 - **Code signing on Windows: open, worth doing eventually.** `nova-setup.exe` is unsigned, so
   SmartScreen shows "Windows a protégé votre ordinateur / Éditeur inconnu" and needs
   "Informations complémentaires" -> "Exécuter quand même". Removing that needs an Authenticode
