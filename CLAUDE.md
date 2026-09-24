@@ -187,6 +187,11 @@ _Updated 2026-09-22._
   the archive's own name, `--from` accepts `-universal`. (3) **`.msi` kept**: the user installs
   nearly everything with MSIs. **CI green (run `36003142179`)**: universal archive 612 KB (arm64 315 +
   x86_64 370), installed with `--from` on the arm runner. First release to show it: beta.6.
+  **beta.5 on real Windows (2026-09-24)**: `nova convert IMG_1152.HEIC test.jpg` (12 Mpx iPhone HEIC)
+  said 11.3 s the first time, then 0.6 s on every run, with or without `NOVA_THREADS=1` -- the first
+  launch of a freshly installed unsigned `nova.exe` + DLLs is scanned by Defender. Not a nova bug;
+  if a user reports a slow first run, that is why. HEIC -> PNG: 3.9 s (lossless deflate of 12 Mpx),
+  not chased.
   **Workflow review: done (`f479a0c`).** `release.yml` now runs on every push to `v2` (not
   `**.md`-only pushes; `paths-ignore` is ignored for tags, so a release always runs), with
   `concurrency` cancelling a superseded branch run (never a tag run); `test/unit.sh` (uv via
