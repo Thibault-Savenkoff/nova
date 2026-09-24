@@ -11,8 +11,6 @@ Next up, in order:
    and that `install.sh` on a Mac downloads the universal archive. Write
    `release/NOTES-v2.0.0-beta.6.md` first; its "Verify" line must point at `SHA256SUMS`
    (`sha256sum -c SHA256SUMS --ignore-missing`), not per-file `.sha256`.
-3. **Dolphin duplicate fix** (`d7a015c`, redone after a failed real try): only stub-tested -- confirm on the user's KDE machine
-   after a reinstall that one "NOVA" entry is left.
 Open, no date:
 - `install.ps1` for Windows (`irm | iex`): sidesteps SmartScreen/Defender; ~150-200 lines.
 - Code signing on Windows: SignPath Foundation first (free for open source).
@@ -160,6 +158,8 @@ Not planned: Windows on ARM, `lisaac -split`, PowerShell completion filtered by 
   CMake package files, no `.pc` -- so install.sh had NEVER built the Dolphin thumbnailer; the user's
   `libnovathumb.so` came from the manual cmake build. `has_kf6kio` now looks for
   `KF6KIO/KF6KIOConfig.cmake` under the usual `lib*/cmake` dirs (checked both ways here).
+  **Confirmed on the user's Fedora KDE (2026-09-24): Dolphin thumbnailer installed by install.sh,
+  duplicate removed, one NOVA entry left.** Closed.
 - `install.sh --uninstall` is manifest-only: every file/rc-line it writes is recorded in
   `$prefix/share/nova/installed.txt`; uninstall only `rm -f`s a single path read back from it --
   never a directory, never a computed path. Deliberate (see Traps).
