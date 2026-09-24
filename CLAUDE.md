@@ -201,7 +201,8 @@ _Updated 2026-09-22._
   path; `nova encode` of the CR3 unchanged. In memory, not a temp file, because on Windows only
   nova_par's replica 0 writes files. User's real run then said "6.0 s": the replace prompt's
   wait was counted (t0 set in main) -- `keep_or_rename` now resets `t0` after the answer (all its
-  call sites run before any work). Local RAW testing: LibRaw 0.22.1 built into scratchpad `lr/`
+  call sites run before any work). **Confirmed on the user's machine: `convert IMG_1398.CR3 test.dng`
+  "in 1.2 s" (was 14.9 s).** Local RAW testing: LibRaw 0.22.1 built into scratchpad `lr/`
   (`LD_LIBRARY_PATH`), Debian only has 0.21 (so.23). Lisaac trap met: a one-line
   block `{ i:Int Nova_codec.put_byte ... }` is a SYNTAX error ("Added '}'" warning, error at a later
   `}`) -- an uppercase prototype right after `i:Int` is read as part of the type; newline after it.
