@@ -160,6 +160,8 @@ _Updated 2026-09-22._
   packaging the mingw64 zlib/libwebp/LibRaw/lcms nova ships); the HEIC install test skipped on
   `macos-15-intel` except on tags (it alone builds kvazaar's x86 asm with Apple clang). Run
   `35961072361`: tests green (unit all OK, 720 corrupt files, install ALL OK), Intel Mac 382 -> 32 s.
+  Run `35961563294` (the convert commit): all green, first Windows job on `fedora:44` (520 s: new
+  cache key, deps rebuilt once; later runs hit the cache).
   `test/unit.sh` now FAILs when `uv` is missing instead of silently skipping the fuzz -- expected
   locally here (no uv), not a regression.
   **`nova convert <src> <dst> [decode options]` (`1c53d31`)**, user's request after beta.4: any
