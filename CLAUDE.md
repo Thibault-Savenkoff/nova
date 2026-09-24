@@ -185,7 +185,8 @@ _Updated 2026-09-22._
   `nova-<v>-macos-universal.tar.gz` and installs it with `--from`. `install.sh` on macOS asks for the
   universal archive (1-byte range GET) and falls back to per-arch for older releases; `unpack` uses
   the archive's own name, `--from` accepts `-universal`. (3) **`.msi` kept**: the user installs
-  nearly everything with MSIs. Not yet run in CI at the time of writing.
+  nearly everything with MSIs. **CI green (run `36003142179`)**: universal archive 612 KB (arm64 315 +
+  x86_64 370), installed with `--from` on the arm runner. First release to show it: beta.6.
   **Workflow review: done (`f479a0c`).** `release.yml` now runs on every push to `v2` (not
   `**.md`-only pushes; `paths-ignore` is ignored for tags, so a release always runs), with
   `concurrency` cancelling a superseded branch run (never a tag run); `test/unit.sh` (uv via
