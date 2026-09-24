@@ -142,8 +142,12 @@ _Updated 2026-09-22._
   reads stay on the system libheif, which gets distro security fixes; our copy would not.
   **Built (`e8540bd`), CI green (runs `35832817235`, `35871161177`). CONFIRMED ON REAL HARDWARE
   (2026-09-24): Windows installer -> `nova decode test.nova hdr.heic` -> `tmap` check True, and the
-  iPhone shows the HDR exactly as it does the AVIF.** Still untested: the macOS build of the recipe
-  (Apple clang, `_NSGetExecutablePath` lookup) -- needs the user's Mac. Not yet in a release:
+  iPhone shows the HDR exactly as it does the AVIF.** macOS covered by CI instead of the user's Mac
+  (run `35957900338`): every Linux/macOS build job now runs `install.sh --from` the packed archive
+  (so it builds libnova-heif), writes `docs/samples/photo.nova` to `.heic` and fails without a
+  `tmap` -- green on all four, macOS arm64 and x86_64 included (Apple clang, the
+  `_NSGetExecutablePath` lookup). It even works where the system has no libheif at all (the macOS
+  runners have none): libnova-heif does the whole write. Not yet in a release:
   `libheif-gainmap/build.sh` = libheif 1.23.4 + `pr1503.patch` (fxthomas rebase re-diffed for 1.23.4,
   one fix: `get_unused_item_id()` returns `Result<>` since 1.23.2) + kvazaar static, all other
   codecs off, tarballs SHA-256-pinned, output renamed **libnova-heif** (distinct file name *and*
