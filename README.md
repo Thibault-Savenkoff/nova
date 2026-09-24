@@ -94,7 +94,7 @@ into `/usr/local` instead (needs sudo); `--no-plugins` skips the viewers; `-y`/`
 lists the rest. To remove everything it installed, and nothing else:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Thibault-Savenkoff/nova/v2/install.sh | bash -s -- --uninstall
+bash ~/.local/share/nova/install.sh --uninstall     # add --system or --prefix DIR if you installed with it
 ```
 
 Building from source instead (you have the [Lisaac Ω](https://lisaac.org) compiler)? See [Build](#build):

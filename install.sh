@@ -303,6 +303,8 @@ unpack() {
 install_bin() {
   step "Installing the nova command"
   install_file "$owner" "$src/bin/nova" "$prefix/bin/nova" 755
+  # A copy of this script, so uninstalling needs neither the network nor the archive.
+  install_file "$owner" "$src/install.sh" "$prefix/share/nova/install.sh" 755
   ok "nova $version -> $(pretty "$prefix/bin/nova")"
   case ":$PATH:" in
     *":$prefix/bin:"*) ;;
@@ -577,4 +579,7 @@ ok "nova $version is installed."
 info "Try:  nova encode photo.jpg          (writes photo.nova)"
 info "      nova decode photo.nova photo.png"
 info "Manual: https://github.com/$repo/blob/v2/MANUAL.md"
-info "Uninstall: curl -fsSL https://raw.githubusercontent.com/$repo/v2/install.sh | bash -s -- --uninstall"
+if [ $system = 1 ]; then flag=" --system"
+elif [ "$prefix" != "$HOME/.local" ]; then flag=" --prefix $(pretty "$prefix")"
+else flag=; fi
+info "Uninstall: bash $(pretty "$prefix/share/nova/install.sh") --uninstall$flag"

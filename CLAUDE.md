@@ -106,6 +106,11 @@ _Updated 2026-09-22._
   `bin/nova --version` (which also fails cleanly for the wrong OS/arch). The glycin `cargo build`
   now uses `--target-dir "$tmp/glycin"` so nothing is written into the user's unpacked folder.
   `test/install.sh` case 5b checks it with the release URLs pointed at a dead port.
+  Same report: the closing "Uninstall:" hint was always `curl ... | bash -s -- --uninstall`, and
+  without `--prefix`/`--system` even when installed with one. `install_bin` now also installs
+  `install.sh` itself to `$prefix/share/nova/install.sh` (in the manifest), and the hint is
+  `bash <that> --uninstall [--system | --prefix DIR]` -- offline, and right for the prefix. The script
+  deletes itself during uninstall; bash keeps reading from the open fd, verified to finish.
 - `install.sh --uninstall` is manifest-only: every file/rc-line it writes is recorded in
   `$prefix/share/nova/installed.txt`; uninstall only `rm -f`s a single path read back from it --
   never a directory, never a computed path. Deliberate (see Traps).

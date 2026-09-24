@@ -99,9 +99,11 @@ check "install: fpath line before compinit" [ "${fpath_line:-99}" -lt "${omz_lin
 run_install "$h1" --yes --no-plugins --no-heic-hdr > "$T/2.log" 2>&1
 check "re-run: no duplicate zshrc lines" [ "$(nova_lines "$h1/.zshrc")" = 2 ]
 
-# --- 3: uninstall removes everything it installed, nothing else ---
+# --- 3: uninstall, with the copy of install.sh the install left, removes everything it installed ---
+check "install: prints the local uninstall command" grep -qF 'bash ~/.local/share/nova/install.sh --uninstall' "$T/1.log"
 env -i HOME="$h1" PATH=/usr/bin:/bin SHELL=/bin/zsh NOVA_TEST_ROOT="$T/root" \
-  bash "$PWD/install.sh" --uninstall > "$T/3.log" 2>&1
+  bash "$h1/.local/share/nova/install.sh" --uninstall > "$T/3.log" 2>&1
+check "uninstall: its own script gone" [ ! -e "$h1/.local/share/nova/install.sh" ]
 check "uninstall: binary gone"   [ ! -e "$h1/.local/bin/nova" ]
 check "uninstall: manifest gone" [ ! -e "$h1/.local/share/nova/installed.txt" ]
 check "uninstall: rc lines gone" [ "$(nova_lines "$h1/.zshrc")" = 0 ]
