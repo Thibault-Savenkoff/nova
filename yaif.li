@@ -11,7 +11,7 @@ Header
 Public
 
   // Program version (install.sh, build.sh and the update check compare it with the release tags "v" + version).
-  - version:String := "2.0.0-beta.6"
+  - version:String := "2.0.0-beta.7"
 
   - usage <-
   (

@@ -32,6 +32,10 @@ entry BELOW this one predates the rename and uses the old names: read `nova` as 
   website audit, requested by the user alongside the rename).
 - Local-only trap: Debian's MinGW needs `-lpthread` for `clock_gettime` (Fedora's in CI does not).
 
+- **beta.7 prepared** (version bump + `release/NOTES-v2.0.0-beta.7.md`: the rename, `.nova` no
+  longer read -> convert first with the old `nova`, old installs removed -- same-kind only on
+  Windows: NSIS removes an NSIS NOVA, MSI an MSI NOVA; env vars renamed). Waiting for the user's tag.
+
 ### To do (details in the entries below)
 Next up, in order:
 1. **Mac test on real hardware** (user has no Mac access right now): `install.sh`, `nova convert`
