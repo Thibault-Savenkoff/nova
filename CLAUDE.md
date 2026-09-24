@@ -31,7 +31,10 @@ Open, no date:
   ingestion framework on GitHub (`malcolndandaro/yaif`), unrelated field; no image format, no `.yaif`.
   Round 3 checked free (no format/software, no extension): HAIF (HDR Adaptive), HARIF (HDR Adaptive
   Raw), OWIF (Open Wavelet), AHIF (Adaptive HDR); WHIF only a US radio station. Caveat: search
-  engines bend HAIF/AHIF toward HEIF/HIF, so they would drown like NOVA does.
+  engines bend HAIF/AHIF toward HEIF/HIF, so they would drown like NOVA does. User: those are "nuls
+  en acronyme" (bare initials + "Image Format"). Round 4, word-acronyms, all rejected ("Nan"): OKAPI
+  (Keeps All Pixels Intact), OPAL (Packs All Light), KIWI (Is Wavelet Imaging), KOI, TINT. YAIF
+  still the favourite; stop proposing names unless asked.
 - macOS Finder/Quick Look: an ImageIO plugin, deferred past v2.
 - GNOME: re-verify the glycin install fix on the VM; Nautilus thumbnails still fail (not chased);
   `plugins/gdk-pixbuf` untested.
