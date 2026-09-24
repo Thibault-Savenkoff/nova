@@ -34,7 +34,10 @@ entry BELOW this one predates the rename and uses the old names: read `nova` as 
 
 - **beta.7 prepared** (version bump + `release/NOTES-v2.0.0-beta.7.md`: the rename, `.nova` no
   longer read -> convert first with the old `nova`, old installs removed -- same-kind only on
-  Windows: NSIS removes an NSIS NOVA, MSI an MSI NOVA; env vars renamed). Waiting for the user's tag.
+  Windows: NSIS removes an NSIS NOVA, MSI an MSI NOVA; env vars renamed). **PUBLISHED 2026-09-24** (tag on `8fe5964`, run `36062769240`, 7 jobs green):
+  title "YAIF v2.0.0-beta.7", pre-release, 7 assets `yaif-2.0.0-beta.7-*` + SHA256SUMS, body = notes +
+  checksum block. **To check on the user's Windows PC (still has NOVA): the beta.7 `-setup.exe` must
+  remove NOVA from Settings > Apps** -- the NSIS `RemoveNova` section has never run on real Windows.
 
 ### To do (details in the entries below)
 Next up, in order:
