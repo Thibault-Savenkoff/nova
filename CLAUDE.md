@@ -21,6 +21,12 @@ Open, no date:
   (non-image software), Opix; every 3-letter `.?if`; TOIF (Trezor). Ideas offered, unchecked: YAIF,
   NIMF, ELAN, OKAY; Imalo, Fotyx, Ovra, Zibo, Eclat; Mira, Deneb, Rigel, Spica. Waiting for the
   user's 3-5 favourites to check (name in imaging/software + extension). ~1 day of work if done.
+  Round 2 (2026-09-24): user likes acronyms, **refuses any name that knocks another format** (so no
+  "X Isn't PNG"/"Not JPEG XL" jokes). Liked: **YAIF** (checked: no format/software found, free) and
+  **FLARE** (checked: taken-ish -- Xara Flare vector format 1997, renamed Xar 2004; Homeworld's
+  `.flare` game files; MadCap Flare, a well-known doc tool, owns the search results -- same
+  unsearchable problem as NOVA). Rejected: ELAN (linguistics software), NIMF, OKAY, NAIF, WAIF/AWIF/
+  WHIP/HARP ("mouais"), MIRA, RIGEL, QUASAR, JINX/KIP/YIP.
 - macOS Finder/Quick Look: an ImageIO plugin, deferred past v2.
 - GNOME: re-verify the glycin install fix on the VM; Nautilus thumbnails still fail (not chased);
   `plugins/gdk-pixbuf` untested.
