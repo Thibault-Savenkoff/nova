@@ -148,11 +148,13 @@ _Updated 2026-09-22._
   `tmap` -- green on all four, macOS arm64 and x86_64 included (Apple clang, the
   `_NSGetExecutablePath` lookup). It even works where the system has no libheif at all (the macOS
   runners have none): libnova-heif does the whole write. **Release: `v2.0.0-beta.4` prepared
-  (`nova.li` bumped, `release/NOTES-v2.0.0-beta.4.md`, `dd71ad6`/`bdd9f27`), waiting for the user
-  to create the tag from the web UI.** Trap: a bare `#1503` in release notes is autolinked by
+  (`nova.li` bumped, `release/NOTES-v2.0.0-beta.4.md`, `dd71ad6`/`bdd9f27`). PUBLISHED
+  (tag on `bdd9f27`, run `35958881890`): 14 assets, pre-release, notes with the explicit #1503 link.** Trap: a bare `#1503` in release notes is autolinked by
   GitHub to *this* repo's issue #1503 -- always write `owner/repo#N` with an explicit URL.
   **Next after the release: direct conversion (user's call, 2026-09-24).**
-  **Workflow review proposed, awaiting the user's pick** (none done yet): (1) run on every push
+  **Workflow review: user said OK to 1, 2, 5; 3 = keep Fedora (only distro packaging the mingw64
+  zlib/libwebp/LibRaw/lcms nova ships; its dnf step is 46 s) but pin it; 4 = compromise: Intel-Mac
+  HEIC test on tag runs only (it alone covers kvazaar's x86 asm under Apple clang). Not done yet:** (1) run on every push
   to `v2` + run `test/unit.sh`/`test/install.sh` in the Linux x86_64 job -- the tests never ran in
   CI, which is how `test/install.sh` stayed broken since beta.3; (2) `permissions: contents: read`
   by default, `write` on `publish` only (build jobs download third-party code); (3) pin
