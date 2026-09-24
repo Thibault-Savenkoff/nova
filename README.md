@@ -190,7 +190,7 @@ HEIC/AVIF, WebP and RAW support load their libraries at run time, so `nova` buil
 from, for testing one without downloading it); `.github/workflows/release.yml` runs it on a `v2.*` tag.
 
 Windows: `win/build.sh` cross-compiles `nova.c` to `nova.exe` with MinGW-w64 (same output as on Linux; 4 cores by default, `NOVA_THREADS=n` for more).
-`win/dist.sh` packs it with the WIC codec and the zlib and libwebp DLLs into `dist/nova-<version>-windows-x86_64-setup.exe` (NSIS installer: `nova` on the PATH, codec registered, uninstaller in Settings > Apps), the same as a `.msi` (for deployment tools), and a `.zip`, each with its `.sha256`.
+`win/dist.sh` packs it with the WIC codec and the zlib and libwebp DLLs into `dist/nova-<version>-windows-x86_64-setup.exe` (NSIS installer: `nova` on the PATH, codec registered, uninstaller in Settings > Apps), the same as a `.msi` (for deployment tools), and a `.zip`.
 
 The web version is built with [Emscripten](https://emscripten.org): `docs/build.sh` compiles `nova.c` and LibRaw to `docs/nova_enc.wasm`.
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds a release archive: nova-<version>-<os>-<arch>.tar.gz + its .sha256,
+# Builds a release archive: nova-<version>-<os>-<arch>.tar.gz (arch "universal": a macOS lipo binary),
 # from a pre-built nova binary and the tracked files install.sh needs
 # (install.sh itself, completions, libnova sources, plugin sources, docs).
 # Used both by the GitHub Actions release job and by test/install.sh to
@@ -38,5 +38,4 @@ done
 
 mkdir -p "$out"
 tar -C "$stage" -czf "$out/$name.tar.gz" "$name"
-(cd "$out" && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
 echo "$out/$name.tar.gz"

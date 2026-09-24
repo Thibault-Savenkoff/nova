@@ -272,7 +272,12 @@ find_release() {
     info "Latest v2 release on github.com/$repo"
   fi
   version=${tag#v}
+  # macOS: one universal binary (Apple Silicon + Intel) since 2.0.0-beta.6, one archive per
+  # architecture before.
   archive="nova-$version-$os-$arch.tar.gz"
+  if [ "$os" = macos ] && curl -fsL -r 0-0 -o /dev/null "$RELEASE_BASE/$tag/nova-$version-macos-universal.tar.gz"; then
+    archive="nova-$version-macos-universal.tar.gz"
+  fi
   url="$RELEASE_BASE/$tag/$archive"
   ok "version $version, for $os $arch"
 }
@@ -284,7 +289,9 @@ download() {
 
 verify() {
   local want got
-  want=$(curl -fsSL "$url.sha256" | awk '{print $1}') || want=
+  # One SHA256SUMS per release since 2.0.0-beta.6, a .sha256 per file before.
+  want=$(curl -fsSL "$RELEASE_BASE/v$version/SHA256SUMS" | awk -v f="$archive" '$2 == f || $2 == "*" f {print $1}') || want=
+  [ -n "$want" ] || want=$(curl -fsSL "$url.sha256" | awk '{print $1}') || want=
   [ -n "$want" ] || die "could not fetch the checksum for $archive"
   got=$(sha256sum "$tmp/$archive" | awk '{print $1}')
   [ "$want" = "$got" ] || die "SHA-256 mismatch for $archive: the download is corrupt or was altered. Nothing was installed."
@@ -294,8 +301,8 @@ verify() {
 unpack() {
   step "Unpacking $archive"
   tar -xzf "$tmp/$archive" -C "$tmp" || die "could not unpack $archive"
-  src="$tmp/nova-$version-$os-$arch"
-  [ -d "$src" ] || die "unexpected archive layout: nova-$version-$os-$arch/ not found"
+  src="$tmp/${archive%.tar.gz}"
+  [ -d "$src" ] || die "unexpected archive layout: ${archive%.tar.gz}/ not found"
   [ $verbose = 1 ] && info "$(pretty "$src")"
   return 0
 }
@@ -561,7 +568,7 @@ printf 'NOVA installer  (%s %s, into %s)\n' "$os" "$arch" "$(pretty "$prefix")"
 if [ -n "$from" ]; then
   [ -f "$from" ] || die "no such file: $from"
   archive=$(basename "$from")
-  version=$(printf '%s' "$archive" | sed -E "s/^nova-(.+)-$os-$arch\\.tar\\.gz\$/\\1/")
+  version=$(printf '%s' "$archive" | sed -E "s/^nova-(.+)-$os-($arch|universal)\\.tar\\.gz\$/\\1/")
   [ -n "$version" ] && [ "$version" != "$archive" ] || die "unexpected archive name: $archive (expected nova-<version>-$os-$arch.tar.gz)"
   cp "$from" "$tmp/$archive"
   unpack

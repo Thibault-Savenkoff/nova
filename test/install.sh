@@ -47,7 +47,8 @@ archive=$(basename "$archive_path")
 
 # GitHub-shaped layout: /download/<tag>/<file> and a releases-list stand-in for the API.
 mkdir -p "$T/srv/download/v$v"
-cp "$archive_path" "$archive_path.sha256" "$T/srv/download/v$v/"
+cp "$archive_path" "$T/srv/download/v$v/"
+(cd "$T/srv/download/v$v" && sha256sum "$archive" > SHA256SUMS)
 printf '[{"tag_name": "v%s"}]' "$v" > "$T/srv/api.json"
 
 port=8765
@@ -111,7 +112,7 @@ check "uninstall: zshrc otherwise untouched" grep -qF 'alias ll=ls' "$h1/.zshrc"
 
 # --- 4: corrupt archive: refuses to install, nothing left behind ---
 h4="$T/home4"
-sha=$T/srv/download/v$v/$archive.sha256
+sha=$T/srv/download/v$v/SHA256SUMS
 cp "$sha" "$sha.bak"
 printf '0000000000000000000000000000000000000000000000000000000000000000  %s\n' "$archive" > "$sha"
 ok4=1

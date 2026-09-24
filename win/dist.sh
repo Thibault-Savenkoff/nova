@@ -148,12 +148,11 @@ if command -v makensis >/dev/null; then makensis -V2 -DVERSION="$V" win/nova.nsi
 if command -v wixl >/dev/null; then wixl -a x64 -D Version="${V%%-*}" -o dist/nova-setup.msi win/nova.wxs && ls -l dist/nova-setup.msi; else echo "wixl missing: no nova-setup.msi"; fi
 
 # Release names, the shape release/pack.sh gives the Linux and macOS archives
-# (nova-<version>-<os>-<arch>), each with its .sha256 in the same `sha256sum` format.
+# (nova-<version>-<os>-<arch>); the release's SHA256SUMS is written when it is published.
 n=nova-$V-windows-x86_64
 rm -f dist/$n*
 for f in nova-windows.zip:$n.zip nova-setup.exe:$n-setup.exe nova-setup.msi:$n.msi; do
   [ -f "dist/${f%%:*}" ] || continue
   mv "dist/${f%%:*}" "dist/${f#*:}"
-  (cd dist && sha256sum "${f#*:}" > "${f#*:}.sha256")
 done
 ls -l dist/$n*

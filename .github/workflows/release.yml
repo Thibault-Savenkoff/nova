@@ -125,9 +125,10 @@ jobs:
           "$RUNNER_TEMP/p/bin/nova" decode docs/samples/photo.nova "$RUNNER_TEMP/hdr.heic"
           grep -q tmap "$RUNNER_TEMP/hdr.heic" || { echo "::error::no gain map (tmap) in the HEIC" >&2; exit 1; }
 
+      # macOS: an input of the universal job below, not a release file (publish takes nova-*).
       - uses: actions/upload-artifact@v4
         with:
-          name: nova-${{ matrix.os }}-${{ matrix.arch }}
+          name: ${{ matrix.os == 'macos' && 'part' || 'nova' }}-${{ matrix.os }}-${{ matrix.arch }}
           path: dist/*
           if-no-files-found: error
 
@@ -138,6 +139,39 @@ jobs:
         with:
           name: c-source
           path: nova.c
+          if-no-files-found: error
+
+  # One macOS download for both kinds of Mac: the arm64 and x86_64 binaries joined with lipo.
+  # Nothing else in the archive depends on the processor (libnova-heif is built at install).
+  macos-universal:
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: part-macos-*
+          path: parts
+
+      - name: Join the two binaries, pack, install from the archive
+        run: |
+          for a in arm64 x86_64; do
+            mkdir -p "parts/$a"
+            tar -xzf parts/part-macos-$a/nova-*-macos-$a.tar.gz -C "parts/$a"
+          done
+          lipo -create -output nova parts/arm64/nova-*/bin/nova parts/x86_64/nova-*/bin/nova
+          lipo -archs nova | grep -qw arm64
+          lipo -archs nova | grep -qw x86_64
+          mkdir -p dist
+          release/pack.sh ./nova macos universal dist
+          ./install.sh --from dist/nova-*-macos-universal.tar.gz --prefix "$RUNNER_TEMP/p" -y --no-plugins --no-heic-hdr
+          "$RUNNER_TEMP/p/bin/nova" --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nova-macos-universal
+          path: dist/*
           if-no-files-found: error
 
   windows:
@@ -195,7 +229,7 @@ jobs:
 
   publish:
     if: startsWith(github.ref, 'refs/tags/v2.')
-    needs: [build, windows]
+    needs: [build, macos-universal, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -221,10 +255,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag=${GITHUB_REF#refs/tags/}
-          # Hand-written notes when release/NOTES-<tag>.md exists, else from the commits.
+          # One SHA256SUMS for every file (install.sh reads it), also shown in the notes as a
+          # collapsed block.
+          (cd dist && sha256sum nova-* > SHA256SUMS)
+          # Hand-written notes when release/NOTES-<tag>.md exists; else the body already on the
+          # release (the web form's), minus a checksum block from an earlier run; else empty, and
+          # the commits' notes come before it (--generate-notes, create only).
           notes=release/NOTES-$tag.md
-          set --
-          if [ -f "$notes" ]; then set -- --notes-file "$notes"; fi
+          body=$RUNNER_TEMP/body.md
+          if [ -f "$notes" ]; then
+            cp "$notes" "$body"
+          elif gh release view "$tag" >/dev/null 2>&1; then
+            gh release view "$tag" --json body --jq .body | sed '/^<details><summary>SHA-256/,$d' > "$body"
+          else
+            : > "$body"
+          fi
+          { printf '\n<details><summary>SHA-256 checksums</summary>\n\n```\n'; cat dist/SHA256SUMS; printf '```\n\n</details>\n'; } >> "$body"
+          set -- --notes-file "$body"
           case "$tag" in *beta*|*alpha*|*rc*) set -- "$@" --prerelease ;; esac
           # The release can exist before this job runs: creating a tag from the web UI (the only way
           # without a clone) creates one too, and a re-run after a failed publish finds its own.

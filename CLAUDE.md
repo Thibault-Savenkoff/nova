@@ -174,6 +174,18 @@ _Updated 2026-09-22._
   `release/NOTES-v2.0.0-beta.5.md` (nova convert + timings, install.sh fixes, Dolphin duplicate,
   Done time). **PUBLISHED 2026-09-24** (tag on `6a6b9ae`, run `35980687040`, all green incl. the
   Intel-Mac HEIC test): 14 assets, pre-release, body = the hand-written notes.
+  **Release page trimmed (user, 2026-09-24: "trop de trucs, on s'y perd"): 14 assets -> 7.**
+  (1) No more per-file `.sha256` (`pack.sh`, `win/dist.sh` stopped writing them): `publish` writes one
+  `SHA256SUMS` and appends it to the notes as a collapsed `<details>` block (on the edit path without
+  a NOTES file it keeps the web form's body, minus an earlier block). `install.sh` reads SHA256SUMS,
+  falls back to `<archive>.sha256` for releases up to beta.5. GitHub also shows each asset's sha256
+  itself now. (2) **macOS universal binary**: both Mac build jobs stay (the Intel one is still the
+  only Apple-clang build of kvazaar's x86 asm, HEIC test on tags); their artifacts are now
+  `part-macos-<arch>`, and a `macos-universal` job `lipo`s them, packs
+  `nova-<v>-macos-universal.tar.gz` and installs it with `--from`. `install.sh` on macOS asks for the
+  universal archive (1-byte range GET) and falls back to per-arch for older releases; `unpack` uses
+  the archive's own name, `--from` accepts `-universal`. (3) **`.msi` kept**: the user installs
+  nearly everything with MSIs. Not yet run in CI at the time of writing.
   **Workflow review: done (`f479a0c`).** `release.yml` now runs on every push to `v2` (not
   `**.md`-only pushes; `paths-ignore` is ignored for tags, so a release always runs), with
   `concurrency` cancelling a superseded branch run (never a tag run); `test/unit.sh` (uv via
