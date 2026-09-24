@@ -6,11 +6,9 @@ _Updated 2026-09-24._
 Next up, in order:
 1. **Mac test on real hardware** (user has no Mac access right now): `install.sh`, `nova convert`
    (HEIC -> JPEG/AVIF/HEIC, CR3 -> DNG), `.heic` with its gain map -- CI covers macOS, no human has.
-2. **Release `v2.0.0-beta.6`**, first with the trimmed page: check 7 assets (Linux x86_64/arm64,
-   macOS universal, setup.exe, .msi, .zip, SHA256SUMS), the collapsed checksum block in the body,
-   and that `install.sh` on a Mac downloads the universal archive. Write
-   `release/NOTES-v2.0.0-beta.6.md` first; its "Verify" line must point at `SHA256SUMS`
-   (`sha256sum -c SHA256SUMS --ignore-missing`), not per-file `.sha256`.
+2. **Decide the rename (YAIF is the user's favourite) and do it**, or explicitly keep NOVA -- before
+   v2.0.0 final. See the naming entry further down for the full history and the open question
+   (keep reading old `.nova` files after the rename? recommended yes).
 Open, no date:
 - `install.ps1` for Windows (`irm | iex`): sidesteps SmartScreen/Defender; ~150-200 lines.
 - **Rename the format (and `.nova`) or not -- decide BEFORE v2.0.0 final, never after.** `.nova` is
@@ -257,7 +255,7 @@ Not planned: Windows on ARM, `lisaac -split`, PowerShell completion filtered by 
   universal archive (1-byte range GET) and falls back to per-arch for older releases; `unpack` uses
   the archive's own name, `--from` accepts `-universal`. (3) **`.msi` kept**: the user installs
   nearly everything with MSIs. **CI green (run `36003142179`)**: universal archive 612 KB (arm64 315 +
-  x86_64 370), installed with `--from` on the arm runner. First release to show it: beta.6.
+  x86_64 370), installed with `--from` on the arm runner. First release to show it: beta.6. **PUBLISHED (2026-09-24, tag on `8408117`, run `36055433089`, all green incl. Windows 9m1s): 7 assets exactly** (Linux x86_64/arm64, macOS universal, 3 Windows forms, `SHA256SUMS`), body has the collapsed `<details>` checksum block with 6 hashes.
   **beta.5 on real Windows (2026-09-24)**: `nova convert IMG_1152.HEIC test.jpg` (12 Mpx iPhone HEIC)
   said 11.3 s the first time, then 0.6 s on every run, with or without `NOVA_THREADS=1` -- the first
   launch of a freshly installed unsigned `nova.exe` + DLLs is scanned by Defender. Not a nova bug;
