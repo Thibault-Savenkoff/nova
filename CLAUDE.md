@@ -170,9 +170,10 @@ _Updated 2026-09-22._
   (`nova.li` bumped, `release/NOTES-v2.0.0-beta.4.md`, `dd71ad6`/`bdd9f27`). PUBLISHED
   (tag on `bdd9f27`, run `35958881890`): 14 assets, pre-release, notes with the explicit #1503 link.** Trap: a bare `#1503` in release notes is autolinked by
   GitHub to *this* repo's issue #1503 -- always write `owner/repo#N` with an explicit URL.
-  **Release `v2.0.0-beta.5` prepared (2026-09-24, user said yes)**: `nova.li` bumped,
+  **Release `v2.0.0-beta.5` (2026-09-24)**: `nova.li` bumped,
   `release/NOTES-v2.0.0-beta.5.md` (nova convert + timings, install.sh fixes, Dolphin duplicate,
-  Done time). Not published yet: the user creates the tag from the web UI (target `v2`).
+  Done time). **PUBLISHED 2026-09-24** (tag on `6a6b9ae`, run `35980687040`, all green incl. the
+  Intel-Mac HEIC test): 14 assets, pre-release, body = the hand-written notes.
   **Workflow review: done (`f479a0c`).** `release.yml` now runs on every push to `v2` (not
   `**.md`-only pushes; `paths-ignore` is ignored for tags, so a release always runs), with
   `concurrency` cancelling a superseded branch run (never a tag run); `test/unit.sh` (uv via
