@@ -96,11 +96,15 @@ pretty() {  # pretty <path>: $HOME shown as ~, for messages only (never for what
   esac
 }
 
-ask() {  # ask "question" -> 0=yes. Never blocks on stdin when piped (curl | bash): no terminal = no.
+ask() {  # ask "question" -> 0=yes. Piped (curl | bash), stdin is the script: the question goes to
+         # the terminal (/dev/tty) instead; with no terminal at all (CI, Docker) the answer is no.
   [ $yes = 1 ] && { info "$1 y (--yes)"; return 0; }
   if [ -t 0 ]; then
     printf '    %s [y/N] ' "$1" >&2
     read -r reply || reply=n
+  elif { : </dev/tty; } 2>/dev/null; then
+    printf '    %s [y/N] ' "$1" >&2
+    read -r reply </dev/tty || reply=n
   else
     reply=n
     info "$1 n (no terminal to ask; pass --yes)"
@@ -290,7 +294,7 @@ download() {
 verify() {
   local want got
   # One SHA256SUMS per release since 2.0.0-beta.6, a .sha256 per file before.
-  want=$(curl -fsSL "$RELEASE_BASE/v$version/SHA256SUMS" | awk -v f="$archive" '$2 == f || $2 == "*" f {print $1}') || want=
+  want=$(curl -fsL "$RELEASE_BASE/v$version/SHA256SUMS" | awk -v f="$archive" '$2 == f || $2 == "*" f {print $1}') || want=
   [ -n "$want" ] || want=$(curl -fsSL "$url.sha256" | awk '{print $1}') || want=
   [ -n "$want" ] || die "could not fetch the checksum for $archive"
   got=$(sha256sum "$tmp/$archive" | awk '{print $1}')

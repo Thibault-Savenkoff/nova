@@ -133,6 +133,13 @@ Not planned: Windows on ARM, `lisaac -split`, PowerShell completion filtered by 
   `install.sh` itself to `$prefix/share/nova/install.sh` (in the manifest), and the hint is
   `bash <that> --uninstall [--system | --prefix DIR]` -- offline, and right for the prefix. The script
   deletes itself during uninstall; bash keeps reading from the open fd, verified to finish.
+- **`curl | bash` never asked anything** (user report, 2026-09-24): `ask()` tested `[ -t 0 ]`, and
+  piped, stdin is the script -- so every prompt (zshrc lines, all viewer plugins) answered "no"
+  even in a real terminal. It now reads the answer from `/dev/tty` when stdin is not one (the
+  `rustup`/Homebrew way), and says no only when there is no terminal at all (CI, Docker: opening
+  `/dev/tty` fails there, tested with `{ : </dev/tty; }`). Verified through `script` (a pty) with
+  `cat install.sh | bash -s`. Same report: the SHA256SUMS lookup printed `curl: (22) ... 404` on
+  beta.5 (which has none) before falling back to `.sha256` -- `-S` dropped from that fetch.
 - **Dolphin listed NOVA twice in its preview menu** (user report, 2026-09-24: `Image NOVA` and
   `Images "NOVA"`): recent Dolphin/kio-extras also reads freedesktop `.thumbnailer` files, so the
   gdk-pixbuf plugin's `/usr/share/thumbnailers/nova.thumbnailer` (built whenever gdk-pixbuf-2.0 is
