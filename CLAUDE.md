@@ -111,6 +111,13 @@ _Updated 2026-09-22._
   `install.sh` itself to `$prefix/share/nova/install.sh` (in the manifest), and the hint is
   `bash <that> --uninstall [--system | --prefix DIR]` -- offline, and right for the prefix. The script
   deletes itself during uninstall; bash keeps reading from the open fd, verified to finish.
+- **Dolphin listed NOVA twice in its preview menu** (user report, 2026-09-24: `Image NOVA` and
+  `Images "NOVA"`): recent Dolphin/kio-extras also reads freedesktop `.thumbnailer` files, so the
+  gdk-pixbuf plugin's `/usr/share/thumbnailers/nova.thumbnailer` (built whenever gdk-pixbuf-2.0 is
+  present, i.e. on most KDE systems too) showed next to `libnovathumb.so`. `install.sh` now skips
+  that file when the KDE thumbnailer was installed in the same run (`kde_thumb`), and removes it if
+  it is byte-identical to ours. Kept the KDE plugin: it decodes in-process, no process per thumbnail.
+  Tested with stub pkg-config/cmake/cc (no Qt/KF6 here), both ways. Not tried in a real Dolphin.
 - `install.sh --uninstall` is manifest-only: every file/rc-line it writes is recorded in
   `$prefix/share/nova/installed.txt`; uninstall only `rm -f`s a single path read back from it --
   never a directory, never a computed path. Deliberate (see Traps).
