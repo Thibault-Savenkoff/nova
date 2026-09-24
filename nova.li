@@ -1681,6 +1681,8 @@ Public
     ((File_utils.file_exists name) && {Nova_par.interactive}).if {
       ((short_name name) + " exists. [r] replace, [n] new name, [c] cancel: ").print
       Stdin.read_line
+      // The time spent answering is not the command's: "Done ... in" starts from here.
+      t0 := Nova_par.ms
       answer := Stdin.last_string.to_string
       c := 'c'
       (answer.count > 0).if { c := (answer.at 0).to_lower }
