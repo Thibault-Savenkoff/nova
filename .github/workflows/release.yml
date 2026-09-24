@@ -92,6 +92,14 @@ jobs:
           mkdir -p dist
           release/pack.sh ./nova ${{ matrix.os }} ${{ matrix.arch }} dist
 
+      # What a user gets: install.sh from this archive, which builds libnova-heif, then a HEIC
+      # written from the sample photo must carry its HDR gain map (the ISO 21496-1 tmap item).
+      - name: Install from the archive, write a HEIC with its gain map
+        run: |
+          ./install.sh --from dist/nova-*.tar.gz --prefix "$RUNNER_TEMP/p" -y --no-plugins
+          "$RUNNER_TEMP/p/bin/nova" decode docs/samples/photo.nova "$RUNNER_TEMP/hdr.heic"
+          grep -q tmap "$RUNNER_TEMP/hdr.heic" || { echo "::error::no gain map (tmap) in the HEIC" >&2; exit 1; }
+
       - uses: actions/upload-artifact@v4
         with:
           name: nova-${{ matrix.os }}-${{ matrix.arch }}
