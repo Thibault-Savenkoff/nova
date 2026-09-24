@@ -203,6 +203,19 @@ The output format comes from the extension: `.png`, `.tif`/`.tiff`, `.jpg`/`.jpe
 
 Decoding is exact: PNG and TIFF give back the pixels the encoder stored, whatever the level.
 
+## Converting
+
+```sh
+nova convert <in> <out.ext> [options]
+nova convert IMG_1152.HEIC IMG_1152.jpg     # HEIC to JPEG, EXIF, ICC and HDR gain map kept
+nova convert IMG_1401.CR3 IMG_1401.dng      # RAW straight to DNG
+```
+
+One step instead of `encode` then `decode`, with no `.nova` left behind: the source goes through a
+lossless `.nova` in memory (level 1, the fastest), so the result is the one `nova encode -m lossless
+-l 1` followed by `nova decode` would give. It reads what `encode` reads and takes `decode`'s options.
+Without `-m`, WebP, AVIF and HEIC are lossless when the source was (PNG, TIFF, PAM) and lossy otherwise.
+
 ## Animations
 
 Several sources make one file. Frames after the first store only the rectangle that changed, coded on top of

@@ -6,6 +6,7 @@ _nova() {
   cmds=(
     'encode:PNG, JPEG, HEIC, AVIF or RAW to .nova'
     'decode:.nova to PNG, TIFF, JPEG, WebP, AVIF, HEIC, PAM'
+    'convert:any image to another format, in one step'
     'preview:512 px thumbnail of a .nova'
     'info:chunks, size, level, frames of a .nova'
     'bench:lossless size of images, without writing'
@@ -25,7 +26,7 @@ _nova() {
         '-d[frame delay in ms]:ms' \
         '-live[Live Photo video]:video:_files -g "*.(mov|MOV)"' \
         '*:image:_files -g "*.(png|PNG|jpg|JPG|jpeg|JPEG|heic|HEIC|heif|HEIF|avif|AVIF|nova|cr2|CR2|cr3|CR3|nef|NEF|arw|ARW|dng|DNG|raf|RAF|orf|ORF|rw2|RW2)(-.)"' ;;
-    decode)
+    decode|convert)
       _arguments \
         '-q[output quality 1-100]:quality' \
         '-m[WebP, AVIF, HEIC]:mode:(lossy lossless)' \

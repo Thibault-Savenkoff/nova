@@ -68,6 +68,7 @@ nova decode photo.nova photo.avif            # iPhone photo: SDR image + HDR gai
 nova decode photo.nova photo.avif -hdr       # HDR (PQ, 10 bits): for editors and HDR players
 nova decode photo.nova photo.tif -hdr        # HDR as 16-bit float TIFF (linear), for editors
 nova decode IMG_1401.nova IMG_1401.dng       # RAW back to DNG, or developed to .png .tif .jpg
+nova convert IMG_1152.HEIC IMG_1152.jpg      # any source to any output in one step, no .nova left behind
 nova preview photo.nova thumb.png            # the embedded 512 px thumbnail, instantly
 nova info photo.nova                         # the chunks of the file
 ```

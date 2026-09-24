@@ -5,7 +5,7 @@
 _nova() {
   local cur prev
   _init_completion || return
-  local cmds="encode decode preview info bench version"
+  local cmds="encode decode convert preview info bench version"
 
   if [ "$COMP_CWORD" -eq 1 ]; then
     COMPREPLY=($(compgen -W "$cmds --version" -- "$cur"))
@@ -20,7 +20,7 @@ _nova() {
         -live) COMPREPLY=($(compgen -f -X '!*.@(mov|MOV)' -- "$cur")); return ;;
       esac
       COMPREPLY=($(compgen -f -- "$cur")) ;;
-    decode)
+    decode|convert)
       case $prev in
         -m) COMPREPLY=($(compgen -W "lossy lossless" -- "$cur")); return ;;
         -look) COMPREPLY=($(compgen -W "canon darktable" -- "$cur")); return ;;

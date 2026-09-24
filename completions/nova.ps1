@@ -6,7 +6,7 @@
 Register-ArgumentCompleter -Native -CommandName nova -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
     $tokens = $commandAst.CommandElements | ForEach-Object { $_.ToString() }
-    $cmds = 'encode', 'decode', 'preview', 'info', 'bench', 'version'
+    $cmds = 'encode', 'decode', 'convert', 'preview', 'info', 'bench', 'version'
 
     # After a trailing space the word being completed is not yet a CommandElement,
     # so its index is $tokens.Count rather than $tokens.Count - 1.
@@ -25,7 +25,7 @@ Register-ArgumentCompleter -Native -CommandName nova -ScriptBlock {
                 if ($wordToComplete -like '-*') {
                     switch ($sub) {
                         'encode' { '-m', '-l', '-q', '-e', '-d', '-live' }
-                        'decode' { '-q', '-m', '-fast', '-hdr', '-look' }
+                        { $_ -in 'decode', 'convert' } { '-q', '-m', '-fast', '-hdr', '-look' }
                         default { @() }
                     }
                 } else {

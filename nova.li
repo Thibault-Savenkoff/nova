@@ -51,6 +51,11 @@ Public
     "    (TIFF 16 bits, others 8 bits); .pgm: bare sensor frame\n".print
     "    -look  camera's look (canon, default) or darktable's\n".print
     "\n".print
+    "  nova convert <src> <dst> [options]\n".print
+    "    any source encode reads -> any dst decode writes, in one step,\n".print
+    "    with its metadata and HDR gain map; decode's options.\n".print
+    "    A lossy source stays lossy, a PNG/TIFF lossless (-m to choose)\n".print
+    "\n".print
     "  nova preview <src.nova> <dst.png>  thumbnail only (512 px), instant\n".print
     "  nova info    <src.nova>\n".print
     "  nova bench   <src.png|jpg...>\n".print
@@ -1276,6 +1281,9 @@ Public
 
   - data_size:Int
 
+  // Set by convert: data already holds the .nova, encoded in memory.
+  - in_memory:Boolean
+
   - load_file name:String <-
   ( + f:Pointer
     f := File_utils.open_read name
@@ -1324,7 +1332,7 @@ Public
     meta_pos.clear
     meta_len.clear
     (dst != NULL).if { Nova_par.status ("Reading " + (short_name name) + "...") }
-    load_file name
+    (in_memory).if { } else { load_file name }
     (data_size < 9).if { fail "not a NOVA file" }
     (((u32 0) != 894E4F56h) || {(u32 4) != 410D0A1Ah} || {(u8 8) != 0Ah}).if { fail "not a NOVA file" }
     pos := 9
@@ -1783,6 +1791,38 @@ Public
     }
   )
 
+  - convert n:Int <-
+  // nova convert src dst [decode options]: src -> .nova in memory, lossless (level 1, the fastest)
+  // -> dst. Everything decode keeps comes along (EXIF, ICC, HDR gain map, RAW development) and
+  // nothing is compressed twice. In memory, not a temporary file: on Windows the replicas of
+  // nova_par would read that file before replica 0 has written it.
+  // A lossy source stays lossy (a JPEG photo does not become a lossless WebP), a PNG or TIFF stays
+  // lossless; -m decides otherwise, as for decode.
+  ( + src,dst,e:String
+    src := Command_args.at 2
+    e := src.as_lower
+    (File_utils.file_exists src).if { } else { fail ("cannot read " + src) }
+    (e.has_suffix ".nova").if { fail "the source is a .nova: use nova decode" }
+    ((Command_args.at 3).as_lower.has_suffix ".nova").if { fail "the destination is a .nova: use nova encode" }
+    parse_decode_args n
+    (opt_webp = 0).if {
+      ((e.has_suffix ".png") || {e.has_suffix ".pam"} || {e.has_suffix ".tif"} || {e.has_suffix ".tiff"}).if { opt_webp := 2 } else { opt_webp := 1 }
+    }
+    dst := keep_or_rename (Command_args.at 3)
+    (is_raw src).if {
+      Nova_par.status ("Reading " + (short_name src) + " with LibRaw...")
+      encode_raw src
+    } else {
+      load_sources (2, 2)
+      meta_src := src
+      encode_frames 100 mode 1 level 1 eps 0
+    }
+    data := copy_bytes (Nova_codec.out) size (Nova_codec.out_count)
+    data_size := Nova_codec.out_count
+    in_memory := True
+    read_nova src decode_to dst
+  )
+
   - main <-
   ( + n:Int
     + cmd:String
@@ -1826,6 +1866,8 @@ Public
         height := gm_h
         write_png gm planes 3 to (Environment.read_variable "NOVA_GAINMAP")
       }
+    }.elseif {(cmd != NULL) && {cmd == "convert"} && {n >= 4}} then {
+      convert n
     }.elseif {(cmd != NULL) && {cmd == "preview"} && {n = 4}} then {
       preview_only := True
       read_nova (Command_args.at 2) decode_to (keep_or_rename (Command_args.at 3))
