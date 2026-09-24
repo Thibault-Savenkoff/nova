@@ -184,11 +184,20 @@ _Updated 2026-09-22._
   `test/unit.sh` now FAILs when `uv` is missing instead of silently skipping the fuzz -- expected
   locally here (no uv), not a regression.
   **`nova convert <src> <dst> [decode options]` (`1c53d31`)**, user's request after beta.4: any
-  source `encode` reads -> any output `decode` writes, no `.nova` left behind. The source goes
-  through a lossless level-1 `.nova` **held in memory** (`in_memory` slot, `read_nova` skips
-  `load_file`) -- not a temp file, because on Windows only nova_par's replica 0 writes files.
-  Byte-identical to `encode -m lossless -l 1` + `decode` (checked jpg->png/jpg/tif, png->png);
-  Ultra HDR JPEG keeps ICC + hdrgm; ~3.2 s for 7.7 Mpx. Without `-m`, WebP/AVIF/HEIC output is
+  source `encode` reads -> any output `decode` writes, no `.nova` left behind. **Direct path since
+  the follow-up (user asked, 2026-09-24)**: non-RAW sources skip the codec -- `load_sources`, then
+  `put_source_meta` into `Nova_codec.out`, whose MDAT chunks (plus the gain map's ISO metadata
+  appended) become `data` with `meta_pos`/`meta_len` filled by a chunk walk; `gm*` from `Nova_heic`;
+  then `write_image` directly. 7.7 Mpx JPEG->PNG 3.4 -> 0.7 s, ->JPEG 3.1 -> 0.5 s. **Byte-identical
+  to `encode -m lossless -l 1` + `decode`** for jpg/png(alpha)/png(text)/avif+tmap/heic+tmap sources
+  x png/jpg/tif/webp/avif/heic outputs (lossy ones compared with `decode -m lossy`); tmap kept in
+  AVIF/HEIC, hdrgm in JPEG. RAW sources still go through a `.nova` **held in memory** (`in_memory`
+  slot, `read_nova` skips `load_file`): developing reads RAWH + sensor frame from it; in memory, not a
+  temp file, because on Windows only nova_par's replica 0 writes files. Lisaac trap met: a one-line
+  block `{ i:Int Nova_codec.put_byte ... }` is a SYNTAX error ("Added '}'" warning, error at a later
+  `}`) -- an uppercase prototype right after `i:Int` is read as part of the type; newline after it.
+  Local test libs: `apt-get install libwebp7 libheif1 libheif-plugin-{libde265,kvazaar,aomdec,aomenc}
+  libavif16` (Debian trixie); libnova-heif found via a copy of nova in scratchpad `pfx/bin/`. Without `-m`, WebP/AVIF/HEIC output is
   lossless for PNG/TIFF/PAM sources, lossy otherwise. Refuses a `.nova` on either side (points to
   encode/decode). Completions (4 shells) + MANUAL "Converting" + README updated. **RAW source
   (`convert X.CR3 X.dng`) untested -- no RAW file here; ask the user to try it.**

@@ -211,9 +211,10 @@ nova convert IMG_1152.HEIC IMG_1152.jpg     # HEIC to JPEG, EXIF, ICC and HDR ga
 nova convert IMG_1401.CR3 IMG_1401.dng      # RAW straight to DNG
 ```
 
-One step instead of `encode` then `decode`, with no `.nova` left behind: the source goes through a
-lossless `.nova` in memory (level 1, the fastest), so the result is the one `nova encode -m lossless
--l 1` followed by `nova decode` would give. It reads what `encode` reads and takes `decode`'s options.
+One step instead of `encode` then `decode`, with no `.nova` in between: the pixels, the metadata and
+the HDR gain map go straight from the reader to the writer (a 7.7 Mpx JPEG to PNG in 0.7 s), and the
+result is the one `nova encode -m lossless` followed by `nova decode` would give. It reads what
+`encode` reads and takes `decode`'s options.
 Without `-m`, WebP, AVIF and HEIC are lossless when the source was (PNG, TIFF, PAM) and lossy otherwise.
 
 ## Animations

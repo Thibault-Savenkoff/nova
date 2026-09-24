@@ -1792,13 +1792,17 @@ Public
   )
 
   - convert n:Int <-
-  // nova convert src dst [decode options]: src -> .nova in memory, lossless (level 1, the fastest)
-  // -> dst. Everything decode keeps comes along (EXIF, ICC, HDR gain map, RAW development) and
-  // nothing is compressed twice. In memory, not a temporary file: on Windows the replicas of
-  // nova_par would read that file before replica 0 has written it.
+  // nova convert src dst [decode options]: the source's pixels, metadata (as the MDAT chunks encode
+  // would write) and HDR gain map go straight to write_image, with no .nova codec in between (about
+  // 2 s of the 3.3 s a 7.7 Mpx JPEG -> PNG took through a lossless .nova). The output is the same.
+  // A RAW still goes through a .nova held in memory: developing it reads the RAWH and sensor frame
+  // from there. In memory, not a temporary file: on Windows the replicas of nova_par would read
+  // that file before replica 0 has written it.
   // A lossy source stays lossy (a JPEG photo does not become a lossless WebP), a PNG or TIFF stays
   // lossless; -m decides otherwise, as for decode.
   ( + src,dst,e:String
+    + np,p,gn:Int
+    + gmeta,o:C_array Uint8
     src := Command_args.at 2
     e := src.as_lower
     (File_utils.file_exists src).if { } else { fail ("cannot read " + src) }
@@ -1812,15 +1816,45 @@ Public
     (is_raw src).if {
       Nova_par.status ("Reading " + (short_name src) + " with LibRaw...")
       encode_raw src
+      data := copy_bytes (Nova_codec.out) size (Nova_codec.out_count)
+      data_size := Nova_codec.out_count
+      in_memory := True
+      read_nova src decode_to dst
     } else {
       load_sources (2, 2)
-      meta_src := src
-      encode_frames 100 mode 1 level 1 eps 0
+      np := 3
+      (has_alpha).if { np := 4 }
+      // put_source_meta reads the source file from data (is_raw loaded it); its MDAT chunks, then
+      // the gain map's metadata, become the new data, which is what write_image reads them from.
+      Nova_codec.reset_out
+      put_source_meta src
+      meta_pos.clear
+      meta_len.clear
+      {p < Nova_codec.out_count}.while_do {
+        meta_pos.add_last (p + 8)
+        o := Nova_codec.out
+        meta_len.add_last ((((o.at (p + 4)).to_int) << 24) | (((o.at (p + 5)).to_int) << 16) | (((o.at (p + 6)).to_int) << 8) | (o.at (p + 7)).to_int)
+        p := p + 12 + meta_len.last
+      }
+      gm_w := Nova_heic.gain_width
+      (gm_w > 0).if {
+        gm_h := Nova_heic.gain_height
+        gm := copy_bytes (Nova_heic.gain_map) size (gm_w * gm_h * 4)
+        gn := Nova_heic.gain_meta_size
+        gmeta := Nova_heic.gain_meta
+        gm_meta_pos := Nova_codec.out_count
+        gm_meta_n := gn
+        0.to (gn - 1) do { i:Int
+          Nova_codec.put_byte ((gmeta.at i).to_int)
+        }
+      }
+      data := copy_bytes (Nova_codec.out) size (Nova_codec.out_count)
+      data_size := Nova_codec.out_count
+      Nova_par.status ("Writing " + (short_name dst) + "...")
+      write_image (frames.first) planes np to dst
+      Nova_par.clear
+      ("Done: wrote " + (short_name dst) + " in " + elapsed + "\n").print
     }
-    data := copy_bytes (Nova_codec.out) size (Nova_codec.out_count)
-    data_size := Nova_codec.out_count
-    in_memory := True
-    read_nova src decode_to dst
   )
 
   - main <-
