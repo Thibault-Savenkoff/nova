@@ -428,6 +428,14 @@ cmake_plugin() {
   ok "$2 installed"
 }
 
+drop_pixbuf_thumbnailer() {  # an earlier install's nova.thumbnailer, a second "NOVA" in Dolphin (see below)
+  local thumb="$TEST_ROOT/usr/share/thumbnailers/nova.thumbnailer"
+  if cmp -s "$src/plugins/gdk-pixbuf/nova.thumbnailer" "$thumb"; then
+    run root rm -f -- "$thumb" && ok "removed $(pretty "$thumb") (Dolphin listed NOVA twice)"
+  fi
+  return 0
+}
+
 make_gdk_pixbuf_plugin() {
   local so="$tmp/libpixbufloader-nova.so" moduledir
   moduledir=$(pkg-config --variable=gdk_pixbuf_moduledir gdk-pixbuf-2.0 2>/dev/null) || moduledir=
@@ -441,14 +449,7 @@ make_gdk_pixbuf_plugin() {
   install_file root "$so" "$moduledir/libpixbufloader-nova.so" 644
   # Dolphin lists freedesktop .thumbnailer files next to its own plugins: with the KDE thumbnailer
   # installed, this one would show as a second "NOVA" entry. It is for Nautilus/older GNOME only.
-  local thumb="$TEST_ROOT/usr/share/thumbnailers/nova.thumbnailer"
-  if [ $kde_thumb = 1 ]; then
-    if cmp -s "$src/plugins/gdk-pixbuf/nova.thumbnailer" "$thumb"; then
-      run root rm -f -- "$thumb" && ok "removed $thumb (the Dolphin thumbnailer replaces it)"
-    fi
-  else
-    install_file root "$src/plugins/gdk-pixbuf/nova.thumbnailer" "/usr/share/thumbnailers/nova.thumbnailer" 644
-  fi
+  [ $kde_thumb = 1 ] || install_file root "$src/plugins/gdk-pixbuf/nova.thumbnailer" "/usr/share/thumbnailers/nova.thumbnailer" 644
   if command -v gdk-pixbuf-query-loaders-64 >/dev/null 2>&1; then
     run root gdk-pixbuf-query-loaders-64 --update-cache
   elif command -v gdk-pixbuf-query-loaders >/dev/null 2>&1; then
@@ -513,7 +514,7 @@ install_plugins() {
     if ask "Build and install the Qt and KDE plugins?"; then
       cmake_plugin qt "Qt plugin (Gwenview, Okular, Krita)" || true
       if pkg-config --exists KF6KIO 2>/dev/null; then
-        if cmake_plugin kde "Dolphin thumbnailer"; then enable_dolphin_thumbnailer; kde_thumb=1; fi
+        if cmake_plugin kde "Dolphin thumbnailer"; then enable_dolphin_thumbnailer; kde_thumb=1; drop_pixbuf_thumbnailer; fi
       else
         info "KF6KIO not found, Dolphin thumbnailer skipped."
       fi

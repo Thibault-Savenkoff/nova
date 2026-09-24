@@ -11,7 +11,7 @@ Next up, in order:
    and that `install.sh` on a Mac downloads the universal archive. Write
    `release/NOTES-v2.0.0-beta.6.md` first; its "Verify" line must point at `SHA256SUMS`
    (`sha256sum -c SHA256SUMS --ignore-missing`), not per-file `.sha256`.
-3. **Dolphin duplicate fix** (`d7a015c`): only stub-tested -- confirm on the user's KDE machine
+3. **Dolphin duplicate fix** (`d7a015c`, redone after a failed real try): only stub-tested -- confirm on the user's KDE machine
    after a reinstall that one "NOVA" entry is left.
 Open, no date:
 - `install.ps1` for Windows (`irm | iex`): sidesteps SmartScreen/Defender; ~150-200 lines.
@@ -146,7 +146,10 @@ Not planned: Windows on ARM, `lisaac -split`, PowerShell completion filtered by 
   present, i.e. on most KDE systems too) showed next to `libnovathumb.so`. `install.sh` now skips
   that file when the KDE thumbnailer was installed in the same run (`kde_thumb`), and removes it if
   it is byte-identical to ours. Kept the KDE plugin: it decodes in-process, no process per thumbnail.
-  Tested with stub pkg-config/cmake/cc (no Qt/KF6 here), both ways. Not tried in a real Dolphin.
+  Tested with stub pkg-config/cmake/cc (no Qt/KF6 here), both ways. **First real try failed**: the
+  removal lived in `make_gdk_pixbuf_plugin`, so it only ran when the user ALSO said yes to the
+  gdk-pixbuf loader -- they said no, the file stayed. Now `drop_pixbuf_thumbnailer` runs right after
+  the KDE plugin installs (stub-tested: KDE y, gdk-pixbuf n -> removed). Re-check on the real machine.
 - `install.sh --uninstall` is manifest-only: every file/rc-line it writes is recorded in
   `$prefix/share/nova/installed.txt`; uninstall only `rm -f`s a single path read back from it --
   never a directory, never a computed path. Deliberate (see Traps).
