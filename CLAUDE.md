@@ -40,7 +40,9 @@ Open, no date:
   self-mocking like YAIF); rejected silently ALOHA, GLOW, FOAL. Checked: `.solar` unused, no
   SOLAR format -- but "solar image" searches return Sun astrophotography. `.loaf` IS taken by LoaF
   (Linear Object Archive Format, small GitHub archive format, `defcron/loaf`) + a LOAF fisheye image
-  dataset; name otherwise small iOS/Lua libs.
+  dataset; name otherwise small iOS/Lua libs. My advice: YAIF (only one free on name, extension
+  AND searchability). **User leans YAIF, likes its self-deprecation -- no "go" yet.** Open point for
+  the rename: keep READING old `.nova` files (old magic) while writing YAIF -- recommended.
 - macOS Finder/Quick Look: an ImageIO plugin, deferred past v2.
 - GNOME: re-verify the glycin install fix on the VM; Nautilus thumbnails still fail (not chased);
   `plugins/gdk-pixbuf` untested.
