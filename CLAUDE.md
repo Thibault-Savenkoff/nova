@@ -1,6 +1,28 @@
 ## Current state
 
-_Updated 2026-09-22._
+_Updated 2026-09-24._
+
+### To do (details in the entries below)
+Next up, in order:
+1. **Mac test on real hardware** (user has no Mac access right now): `install.sh`, `nova convert`
+   (HEIC -> JPEG/AVIF/HEIC, CR3 -> DNG), `.heic` with its gain map -- CI covers macOS, no human has.
+2. **Release `v2.0.0-beta.6`**, first with the trimmed page: check 7 assets (Linux x86_64/arm64,
+   macOS universal, setup.exe, .msi, .zip, SHA256SUMS), the collapsed checksum block in the body,
+   and that `install.sh` on a Mac downloads the universal archive. Write
+   `release/NOTES-v2.0.0-beta.6.md` first; its "Verify" line must point at `SHA256SUMS`
+   (`sha256sum -c SHA256SUMS --ignore-missing`), not per-file `.sha256`.
+3. **Dolphin duplicate fix** (`d7a015c`): only stub-tested -- confirm on the user's KDE machine
+   after a reinstall that one "NOVA" entry is left.
+Open, no date:
+- `install.ps1` for Windows (`irm | iex`): sidesteps SmartScreen/Defender; ~150-200 lines.
+- Code signing on Windows: SignPath Foundation first (free for open source).
+- macOS Finder/Quick Look: an ImageIO plugin, deferred past v2.
+- GNOME: re-verify the glycin install fix on the VM; Nautilus thumbnails still fail (not chased);
+  `plugins/gdk-pixbuf` untested.
+- libheif PR #1503: once in a libheif release, drop `libheif-gainmap/` for the system libheif.
+- Update check: Windows/WebAssembly branches never run.
+- v2.0.0 final: v2 to `main` (the web page still runs v1 until then).
+Not planned: Windows on ARM, `lisaac -split`, PowerShell completion filtered by extension.
 
 ### Decisions
 - Removed `encode_jpeg_retry` from `nova.li`: it re-lowered quality (down to 60) whenever a JPEG-
