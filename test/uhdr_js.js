@@ -1,6 +1,6 @@
-// node test/uhdr_js.js x.nova gain.raw [primary.jpg gain.jpg out.jpg]: the gain map decoded by
-// docs/nova_decode.js (RGBA), and the Ultra HDR JPEG its builder makes from two plain JPEGs.
-const fs = require('fs'), N = require('../docs/nova_decode.js');
+// node test/uhdr_js.js x.yaif gain.raw [primary.jpg gain.jpg out.jpg]: the gain map decoded by
+// docs/yaif_decode.js (RGBA), and the Ultra HDR JPEG its builder makes from two plain JPEGs.
+const fs = require('fs'), N = require('../docs/yaif_decode.js');
 (async () => {
   const a = process.argv, g = await N.decodeGainMap(new Uint8Array(fs.readFileSync(a[2])));
   if (!g) throw new Error('no gain map');

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Replaces the headers with those of the LibRaw-devel package of this Fedora release.
-# Then update the version in README, rebuild nova and run test/raw.sh.
+# Then update the version in README, rebuild yaif and run test/raw.sh.
 set -e
 cd "$(dirname "$0")"
 T=$(mktemp -d)

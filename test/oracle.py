@@ -1,4 +1,4 @@
-# Oracle for nova-lisaac.
+# Oracle for yaif-lisaac.
 #   oracle.py same <ref.rgba> <decoded.png> <w> <h>  -> exact pixel compare (decoded read by PIL)
 #   oracle.py sizes <src>                             -> sizes of best-effort PNG / WebP lossless
 #   oracle.py near <ref.rgba> <decoded.png> <eps>     -> lossy: |error| <= eps on RGB, alpha exact; prints PSNR

@@ -1,0 +1,131 @@
+Header
+  + name := Yaif_update
+  // Update check, at most once a day and never in the way: at the end of a command, in a terminal
+  // only (stderr), it prints one line if the release list cached by the previous check has a newer
+  // version. When that cache is a day old, curl refreshes it in the background: yaif does not wait,
+  // and a failure (no network, no curl) just leaves the old cache. YAIF_NO_UPDATE_CHECK=1 turns it off.
+  - include := `
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <unistd.h>
+#ifdef _WIN32
+#include <direct.h>
+#include <sys/utime.h>
+#else
+#include <signal.h>
+#include <utime.h>
+#endif
+`;
+  - external := `
+#define NU_RELEASES "https://api.github.com/repos/Thibault-Savenkoff/yaif/releases?per_page=30"
+#define NU_PAGE "https://github.com/Thibault-Savenkoff/yaif/releases"
+static char nu_dir[2048], nu_file[2100], nu_cmd[8192];
+
+/* Version order: major.minor.patch, then a pre-release ("2.0.0-beta") before the release. */
+static int nu_cmp(const char *a, const char *b) {
+  int i;
+  for (i = 0; i < 3; i++) {
+    long x = strtol(a, (char **)&a, 10), y = strtol(b, (char **)&b, 10);
+    if (x != y) return x < y ? -1 : 1;
+    if (*a == '.') a++;
+    if (*b == '.') b++;
+  }
+  if (*a != '-' || *b != '-') return (*a == '-') == (*b == '-') ? 0 : (*a == '-' ? -1 : 1);
+  return strcmp(a, b);
+}
+
+/* The newest "tag_name": "v<major>.…" of the cached release list, or 0. */
+static const char *nu_newest(const char *json, const char *version, char *best, int size) {
+  const char *p = json;
+  char tag[64];
+  int major = atoi(version), n;
+  best[0] = 0;
+  while ((p = strstr(p, "\"tag_name\""))) {
+    p = strchr(p + 10, '"');
+    if (!p || p[1] != 'v' || atoi(p + 2) != major) { if (!p) break; continue; }
+    for (n = 0, p += 2; *p && *p != '"' && n < 63; p++) tag[n++] = *p;
+    tag[n] = 0;
+    if (!best[0] || nu_cmp(tag, best) > 0) snprintf(best, size, "%s", tag);
+  }
+  return best[0] ? best : 0;
+}
+
+/* Prints the notice if due, and returns the curl command to start in the background, or 0. */
+static const char *nu_check(const char *version) {
+  const char *home, *e = getenv("YAIF_NO_UPDATE_CHECK");
+  struct stat st;
+  char best[64], *json;
+  FILE *f;
+  long n;
+#ifdef __EMSCRIPTEN__
+  return 0;
+#endif
+  if ((e && *e && strcmp(e, "0")) || getenv("YAIF_REPLICA") || !isatty(2)) return 0;
+#ifdef _WIN32
+  if (!(home = getenv("LOCALAPPDATA"))) return 0;
+  snprintf(nu_dir, sizeof nu_dir, "%s\\yaif", home);
+  snprintf(nu_file, sizeof nu_file, "%s\\releases.json", nu_dir);
+#else
+  if ((home = getenv("XDG_CACHE_HOME")) && *home) snprintf(nu_dir, sizeof nu_dir, "%s/yaif", home);
+  else if ((home = getenv("HOME")) && *home) snprintf(nu_dir, sizeof nu_dir, "%s/.cache/yaif", home);
+  else return 0;
+  snprintf(nu_file, sizeof nu_file, "%s/releases.json", nu_dir);
+#endif
+  /* Quotes around the paths in the command: skip odd paths rather than escape them. */
+  if (strpbrk(nu_file, "'\"%$\x60")) return 0;
+  if ((f = fopen(nu_file, "rb"))) {
+    fseek(f, 0, SEEK_END);
+    n = ftell(f);
+    rewind(f);
+    if (n > 0 && n < (1 << 20) && (json = malloc(n + 1))) {
+      json[fread(json, 1, n, f)] = 0;
+      if (nu_newest(json, version, best, sizeof best) && nu_cmp(best, version) > 0)
+        fprintf(stderr, "yaif %s is available (this is %s): %s\n", best, version, NU_PAGE);
+      free(json);
+    }
+    fclose(f);
+  }
+  if (stat(nu_file, &st) == 0 && time(0) - st.st_mtime < 86400 && st.st_mtime <= time(0)) return 0;
+  /* Due: mark the check as done now, so the commands that follow (a loop over files) skip it. */
+#ifdef _WIN32
+  _mkdir(nu_dir);
+#else
+  { char parent[2048]; snprintf(parent, sizeof parent, "%s", nu_dir); *strrchr(parent, '/') = 0; mkdir(parent, 0755); }
+  mkdir(nu_dir, 0755);
+#endif
+  if (!(f = fopen(nu_file, "ab"))) return 0;
+  fclose(f);
+  utime(nu_file, 0);
+#ifdef _WIN32
+  snprintf(nu_cmd, sizeof nu_cmd, "curl -fsL --max-time 20 -o \"%s.tmp\" \"%s\" && move /y \"%s.tmp\" \"%s\"",
+           nu_file, NU_RELEASES, nu_file, nu_file);
+  strcat(nu_cmd, " >nul 2>&1");
+#else
+  /* Closing the terminal right after yaif must not kill the refresh: yaif exits next anyway, and
+     the ignored SIGHUP is inherited by the fork and exec (a trap in sh would come too late). */
+  signal(SIGHUP, SIG_IGN);
+  snprintf(nu_cmd, sizeof nu_cmd, "(curl -fsL --max-time 20 -o '%s.tmp' '%s' && mv -f '%s.tmp' '%s') </dev/null >/dev/null 2>&1",
+           nu_file, NU_RELEASES, nu_file, nu_file);
+#endif
+  return nu_cmd;
+}
+`;
+
+Public
+
+  // After the command is done (nothing else runs in the background: Yaif_par waits for any child).
+  - check version:String <-
+  ( + v, c:C_array Char
+    + cmd:String_buffer
+    v := version.to_external
+    // The NULL test in C: the compiler takes a C_array from C for non-NULL and drops a Lisaac one.
+    (`nu_check((char*)@v) != 0`:Int = 1).if {
+      c := `nu_cmd`:C_array Char
+      cmd := String_buffer.create 256
+      cmd.from_external_copy c
+      Environment.run cmd background
+    }
+  )

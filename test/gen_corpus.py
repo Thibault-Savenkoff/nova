@@ -12,7 +12,7 @@ img.save(out + "checker.png")
 img = Image.new("RGB", (w, h), (255, 255, 255))
 d = ImageDraw.Draw(img)
 for i in range(12):
-    d.text((8, 4 + i * 15), "NOVA v2 lossless codec test line %d" % i, fill=(0, 0, 0))
+    d.text((8, 4 + i * 15), "YAIF v2 lossless codec test line %d" % i, fill=(0, 0, 0))
 img.save(out + "text.png")
 rng = random.Random(42)
 img = Image.new("RGB", (w, h))

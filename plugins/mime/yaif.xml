@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- YAIF image type for file managers and viewers (freedesktop shared-mime-info).
+     Install: copy to ~/.local/share/mime/packages (user) or /usr/share/mime/packages,
+     then run update-mime-database on the parent mime folder. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="image/x-yaif">
+    <comment>YAIF image</comment>
+    <comment xml:lang="fr">Image YAIF</comment>
+    <generic-icon name="image-x-generic"/>
+    <magic priority="80">
+      <match type="string" offset="0" value="\x89YAIF\r\n\x1a\n"/>
+    </magic>
+    <glob pattern="*.yaif"/>
+  </mime-type>
+</mime-info>

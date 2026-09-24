@@ -1,9 +1,9 @@
-# The NOVA image format, version 2
+# The YAIF image format, version 2
 
-This document describes `.nova` files: the container byte by byte, and the structure of each coded
+This document describes `.yaif` files: the container byte by byte, and the structure of each coded
 stream. The entropy model (context mixing) is too detailed for prose to be exact, so its reference is
-the decoder source: [`docs/nova_decode.js`](docs/nova_decode.js) (~1200 lines, levels 0-5) and the
-`nova` program (`nova_*.li`, all levels). Every section below names the functions that implement it.
+the decoder source: [`docs/yaif_decode.js`](docs/yaif_decode.js) (~1200 lines, levels 0-5) and the
+`yaif` program (`yaif_*.li`, all levels). Every section below names the functions that implement it.
 Two decoders written from these sources give the same pixels bit for bit (`test/js.sh`).
 
 All integers are **big-endian**. `u8`, `u16`, `u32` are unsigned; sizes are in bytes.
@@ -11,7 +11,7 @@ All integers are **big-endian**. `u8`, `u16`, `u32` are unsigned; sizes are in b
 ## 1. File layout
 
 ```
-signature   9 bytes   89 4E 4F 56 41 0D 0A 1A 0A   ("\x89NOVA\r\n\x1a\n", like PNG's)
+signature   9 bytes   89 59 41 49 46 0D 0A 1A 0A   ("\x89YAIF\r\n\x1a\n", like PNG's)
 chunk*      until the end of the file (or an IEND chunk)
 ```
 
@@ -27,7 +27,7 @@ u32  crc      CRC-32 (PNG/zlib polynomial 0xEDB88320) of type + data (not of len
 The order is type first, then length (PNG has the opposite order). A decoder must check every CRC and
 must **skip chunk types it does not know**: new optional chunks can be added without breaking readers.
 
-Chunk order written by `nova` (`nova.li`, `encode_frames`):
+Chunk order written by `yaif` (`yaif.li`, `encode_frames`):
 
 `IHDR`, `MDAT`*, `ANIM` (animations), `PREV` (thumbnail), `GMAP` (HDR), `FDAT`, `FDLT`* (animations),
 `LIVE`. RAW files: `IHDR`, `RAWH`, `MDAT`*, `PREV`, `FDAT`. `IEND` is optional (not written: every chunk
@@ -47,7 +47,7 @@ except that `IHDR` comes first and frames come in display order.
 
 **Versioning rule.** The version byte changes only when a version-2 decoder could no longer read the
 file correctly (a new coding of pixels, a changed meaning). Decoders must refuse other versions with a
-clear message (`nova`: "unsupported NOVA version (only v2)"). Everything that old decoders can safely
+clear message (`yaif`: "unsupported YAIF version (only v2)"). Everything that old decoders can safely
 ignore is added as a new chunk type instead, without changing the version. Version 1 was an earlier,
 unrelated container (PNG/JPEG inside); it is not readable as version 2.
 
@@ -74,7 +74,7 @@ rectangle: lossy frames stay consistent with the decoder.
 | `GMAP` | HDR gain map (ISO 21496-1, as in iPhone HEIC and Ultra HDR JPEG): `u16 w`, `u16 h`, `u8` planes (3), `u16 n`, `n` bytes of ISO 21496-1 metadata, coded region. Stills only. |
 | `MDAT` | One metadata block: `u32 kind`, payload as in the source file. Kinds: PNG chunk types (`eXIf`, `iCCP`, `iTXt`, `tEXt`…) or JPEG segments (`APP0`-`APPF`, `COM `) with their payload (e.g. `APP1` = `"Exif\0\0"` + TIFF, `APP2` = `"ICC_PROFILE\0"` + index + count + profile). HEIC metadata is stored as `APP1`/`APP2`. EXIF orientation is kept as written: **pixels are stored as the camera wrote them**, viewers apply the orientation. |
 | `LIVE` | The Live Photo video file (`.mov`) as it is (option `-live`). |
-| `RAWH` | RAW sensor frame parameters (CFA pattern, black/white levels, colour matrices, white balance…): LibRaw's structures as saved by `nova_rawin.li` (`nr_save`), read back by `nr_restore`. Version byte first. |
+| `RAWH` | RAW sensor frame parameters (CFA pattern, black/white levels, colour matrices, white balance…): LibRaw's structures as saved by `yaif_rawin.li` (`nr_save`), read back by `nr_restore`. Version byte first. |
 | `IEND` | Empty, optional end marker. |
 
 ## 5. Coded region
@@ -88,7 +88,7 @@ u8 param    level 0: unused; levels 1-4: eps (0 = lossless, else near-lossless: 
             level 5: quality 0-100
 ```
 
-Decoder entry point: `decodeRegion` (`docs/nova_decode.js`), `Nova_codec.decode` (`nova_codec.li`).
+Decoder entry point: `decodeRegion` (`docs/yaif_decode.js`), `Yaif_codec.decode` (`yaif_codec.li`).
 
 ### 5.1 Planes and colour transform (levels 0-4)
 
@@ -122,7 +122,7 @@ region, like LZ77 for repeated patterns), two logistic mixers (three at level 4)
 uses the 2 direct contexts and one mixer only. Near-lossless: residuals quantised by `2 eps + 1`.
 
 Reference: `Codec.codeRegion`, `predict`, `blend`, `nlms`, `setContexts`, `codeResidual`,
-`matchStep` (JS); `nova_codec.li`, `nova_model.li`.
+`matchStep` (JS); `yaif_codec.li`, `yaif_model.li`.
 
 ### 5.4 Level 5: wavelet (lossy photos)
 
@@ -146,7 +146,7 @@ RGBA:  u32 n, the RGB part above (n bytes), then the alpha plane as a coded regi
 
 `[u8 ns] ns x (u32 length, stream)`: 16-bit CFA samples, each predicted by the mean of its same-colour
 neighbours (2 apart), residuals coded with the level 5 binarisation and brightness / activity / other
-colour contexts, in stripes of even row counts. Reference: `nova_raw.li` (not in the JavaScript
+colour contexts, in stripes of even row counts. Reference: `yaif_raw.li` (not in the JavaScript
 decoder: viewers show the `PREV` thumbnail of RAW files).
 
 ## 6. Entropy coder
@@ -157,8 +157,8 @@ the end returns zeros; more than 4 bytes past it means a corrupt stream.
 
 Probabilities come from counters (16-bit probability + count, adaptive rate `131072 / (2n + 3)`),
 mixed in the logistic domain (`stretch` / `squash`, table `SQUASH_T`), then refined by an APM. All
-arithmetic is integer; products that can exceed 32 bits are 64-bit (`nova_decode.js` uses doubles, exact
-below 2^53). Reference: `Model` (JS), `nova_model.li`.
+arithmetic is integer; products that can exceed 32 bits are 64-bit (`yaif_decode.js` uses doubles, exact
+below 2^53). Reference: `Model` (JS), `yaif_model.li`.
 
 ## 7. Decoding checklist
 

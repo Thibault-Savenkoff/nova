@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NOVA image format</title>
+<title>YAIF image format</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3CclipPath id='t'%3E%3Crect width='100' height='100' rx='20'/%3E%3C/clipPath%3E%3Cg clip-path='url%28%23t%29'%3E%3Crect width='100' height='100' fill='%230c121e'/%3E%3Ccircle cx='8.3' cy='8.3' r='41.7' fill='%233278ff' fill-opacity='.18'/%3E%3C/g%3E%3Cpath fill='%23e4ecff' d='M22 22h12v56H22zM66 22h12v56H66zM34 22h12l32 56H66z'/%3E%3Ccircle cx='83.5' cy='74.5' r='3.5' fill='%234a9eff'/%3E%3C/svg%3E">
-<meta name="description" content="Open and create NOVA images (.nova) in your browser: photos, screenshots, animations and camera RAW files. Nothing is uploaded.">
+<meta name="description" content="Open and create YAIF images (.yaif) in your browser: photos, screenshots, animations and camera RAW files. Nothing is uploaded.">
 <style>
   @font-face { font-family: 'Bricolage Grotesque'; src: url(fonts/bricolage.woff2) format('woff2'); font-weight: 200 800; font-display: swap; }
   @font-face { font-family: 'Atkinson Hyperlegible Next'; src: url(fonts/atkinson.woff2) format('woff2'); font-weight: 200 800; font-display: swap; }
@@ -130,25 +130,25 @@
 <body>
 <main>
   <header>
-    <h1><svg class="logo" viewBox="0 0 408 100" role="img" aria-label="NOVA"><g fill="currentColor"><path d="M0 0h20v100H0zM60 0h20v100H60zM20 0h20l40 100H60z"/><path fill-rule="evenodd" d="M136 0h10a40 40 0 0 1 40 40v20a40 40 0 0 1-40 40h-10a40 40 0 0 1-40-40V40A40 40 0 0 1 136 0zm0 20a20 20 0 0 0-20 20v20a20 20 0 0 0 20 20h10a20 20 0 0 0 20-20V40a20 20 0 0 0-20-20z"/><path d="M196 0h22l23 72 23-72h22l-34 100h-22zM290 100h22l23-72 23 72h22L346 0h-22z"/><rect x="315" y="62" width="40" height="16"/></g><circle cx="398" cy="90" r="10" fill="var(--acc)"/></svg></h1>
-    <p>An open image format for photos, screenshots, animations and camera RAW files. This page opens and creates .nova files on your device; nothing is uploaded.</p>
+    <h1><svg class="logo" viewBox="0 0 408 100" role="img" aria-label="YAIF"><g fill="currentColor"><path d="M0 0h20v100H0zM60 0h20v100H60zM20 0h20l40 100H60z"/><path fill-rule="evenodd" d="M136 0h10a40 40 0 0 1 40 40v20a40 40 0 0 1-40 40h-10a40 40 0 0 1-40-40V40A40 40 0 0 1 136 0zm0 20a20 20 0 0 0-20 20v20a20 20 0 0 0 20 20h10a20 20 0 0 0 20-20V40a20 20 0 0 0-20-20z"/><path d="M196 0h22l23 72 23-72h22l-34 100h-22zM290 100h22l23-72 23 72h22L346 0h-22z"/><rect x="315" y="62" width="40" height="16"/></g><circle cx="398" cy="90" r="10" fill="var(--acc)"/></svg></h1>
+    <p>An open image format for photos, screenshots, animations and camera RAW files. This page opens and creates .yaif files on your device; nothing is uploaded.</p>
   </header>
 
   <section id="viewer" aria-label="Viewer">
     <div id="stage">
       <label id="drop" for="file">
         <strong>Drop images here, choose them, or paste one</strong>
-        <span>A .nova file opens right away. PNG, JPEG, HEIC, camera RAW and other images are converted to .nova, then shown.</span>
+        <span>A .yaif file opens right away. PNG, JPEG, HEIC, camera RAW and other images are converted to .yaif, then shown.</span>
       </label>
       <div id="view">
         <canvas id="cv" width="0" height="0" aria-label="Opened image" hidden></canvas>
         <img id="hdr" alt="Opened image, in HDR" hidden>
         <img id="src" alt="Source image" hidden>
-        <div id="split" role="slider" aria-label="Source and .nova split" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0" hidden>
-          <span class="tag" style="right:30px">Source</span><span class="tag" style="left:30px">.nova</span>
+        <div id="split" role="slider" aria-label="Source and .yaif split" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0" hidden>
+          <span class="tag" style="right:30px">Source</span><span class="tag" style="left:30px">.yaif</span>
         </div>
       </div>
-      <input type="file" id="file" multiple accept=".nova,image/*,.cr2,.cr3,.nef,.nrw,.arw,.dng,.raf,.orf,.rw2,.pef,.srw,.x3f,.3fr,.iiq" hidden>
+      <input type="file" id="file" multiple accept=".yaif,image/*,.cr2,.cr3,.nef,.nrw,.arw,.dng,.raf,.orf,.rw2,.pef,.srw,.x3f,.3fr,.iiq" hidden>
       <div id="bar"><div></div></div>
     </div>
     <div class="tools">
@@ -161,7 +161,7 @@
       </div>
       <div class="group">
         <button id="play" hidden>Pause</button>
-        <button id="savenova" hidden>Save .nova</button>
+        <button id="saveyaif" hidden>Save .yaif</button>
         <button id="cmp" aria-pressed="false" hidden>Compare with source</button>
         <button id="zoom" aria-pressed="false" disabled title="Or double-click the image">Zoom 100 %</button>
         <select id="fmt" disabled aria-label="Export format">
@@ -185,7 +185,7 @@
   <section id="create" aria-labelledby="create-h">
     <div class="intro">
       <h2 id="create-h">Conversion settings</h2>
-      <p>Used when you open an image that is not a .nova. It is converted in this browser, then shown above with a button to save the .nova. EXIF, XMP and the colour profile are kept for PNG, JPEG, HEIC and CR3 files.</p>
+      <p>Used when you open an image that is not a .yaif. It is converted in this browser, then shown above with a button to save the .yaif. EXIF, XMP and the colour profile are kept for PNG, JPEG, HEIC and CR3 files.</p>
     </div>
     <div class="settings">
       <div class="row">
@@ -197,7 +197,7 @@
       <label class="q"><input type="checkbox" id="egps"> Remove location (GPS)</label>
     </div>
     <details id="limits">
-      <summary>What only the nova program can do</summary>
+      <summary>What only the yaif program can do</summary>
       <ul>
         <li>HEIC images can be converted in Safari only, and without their HDR gain map: the program keeps it, and this page shows it on HDR screens.</li>
         <li>Other formats opened by the browser (WebP, GIF…) are converted without their metadata.</li>
@@ -215,10 +215,10 @@
   <div class="b"><button id="dlgC" value="no">Cancel</button><button id="dlgO" value="yes"></button></div>
 </dialog>
 <footer>
-  <span>NOVA v2. Images never leave your device.</span>
-  <a href="https://github.com/Thibault-Savenkoff/nova">Source on GitHub</a>
+  <span>YAIF v2. Images never leave your device.</span>
+  <a href="https://github.com/Thibault-Savenkoff/yaif">Source on GitHub</a>
 </footer>
-<script src="nova_decode.js?v=14"></script>
+<script src="yaif_decode.js?v=14"></script>
 <script src="heif_meta.js?v=14"></script>
 <script src="meta_strip.js?v=14"></script>
 <script>
@@ -253,7 +253,7 @@ function runner(progress, stat = {}) {
   return async jobs => {
     const ws = workers();
     stat.used = Math.max(stat.used || 1, Math.min(ws.length, jobs.length));
-    if (!ws.length) return jobs.map(NovaDecode.runJob);
+    if (!ws.length) return jobs.map(YaifDecode.runJob);
     // The wavelet planes (l5p) come after the stripes: the bar stays full meanwhile.
     try { return await onWorkers(ws, jobs, jobs[0] && jobs[0].kind === 'l5p' ? () => {} : progress); }
     catch (e) {
@@ -261,7 +261,7 @@ function runner(progress, stat = {}) {
       if (!e.workerFailed) throw e;
       pool.forEach(w => w.terminate());
       pool = [];
-      return jobs.map(NovaDecode.runJob);
+      return jobs.map(YaifDecode.runJob);
     }
   };
 }
@@ -300,7 +300,7 @@ async function ultraHdrBlob(src, q) {
   const g = document.createElement('canvas');
   g.width = gain.width; g.height = gain.height;
   g.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(gain.rgba.buffer), gain.width, gain.height), 0, 0);
-  const u = NovaDecode.ultraHdr(await jpegOf(src, q), await jpegOf(g), gain.meta);
+  const u = YaifDecode.ultraHdr(await jpegOf(src, q), await jpegOf(g), gain.meta);
   return u && new Blob([u], { type: 'image/jpeg' });
 }
 function showHdr(blob) {
@@ -311,7 +311,7 @@ function showHdr(blob) {
   cv.hidden = !!blob;
   if (blob) img.src = URL.createObjectURL(blob);
 }
-// Colour: a .nova with a Display P3 profile (iPhone photos) is shown in P3 where the browser can,
+// Colour: a .yaif with a Display P3 profile (iPhone photos) is shown in P3 where the browser can,
 // on a canvas created for it (a canvas keeps its colour space); icc goes into the PNG export.
 const P3 = (() => { try { return document.createElement('canvas').getContext('2d', { colorSpace: 'display-p3' }).getContextAttributes().colorSpace === 'display-p3'; } catch (e) { return false; } })();
 let space = 'srgb', icc = null;
@@ -325,7 +325,7 @@ function useSpace(s) {
   cv = n;
   ctx = cv.getContext('2d', { colorSpace: s });
 }
-// ICC profile kept in a .nova: MDAT iCCP (from PNG: name, 0, method, zlib data) or APP2 ICC_PROFILE
+// ICC profile kept in a .yaif: MDAT iCCP (from PNG: name, 0, method, zlib data) or APP2 ICC_PROFILE
 // (from JPEG). ponytail: first APP2 segment only (profiles over 64 KB are split; none seen in photos).
 async function iccOf(data, f) {
   try {
@@ -338,7 +338,7 @@ async function iccOf(data, f) {
   } catch (e) { }
   return null;
 }
-// EXIF orientation (1-8) of a .nova: MDAT eXIf (from PNG: TIFF data) or APP1 "Exif\0\0" + TIFF (from
+// EXIF orientation (1-8) of a .yaif: MDAT eXIf (from PNG: TIFF data) or APP1 "Exif\0\0" + TIFF (from
 // JPEG and HEIC). The pixels are kept as the camera wrote them; the viewer turns them upright.
 function orientationOf(data, f) {
   for (const c of f.chunks) {
@@ -442,14 +442,14 @@ async function open(file) {
   ['fmt', 'q', 'save', 'zoom'].forEach(id => $(id).disabled = true);
   setZoom(false);
   setSource(null);
-  $('savenova').hidden = !file.converted;
+  $('saveyaif').hidden = !file.converted;
   if (!(file.sample)) document.querySelectorAll('[data-k]').forEach(b => b.setAttribute('aria-pressed', 'false'));
-  name = file.name.replace(/\.nova$/i, '');
+  name = file.name.replace(/\.yaif$/i, '');
   gain = null;
   showHdr(null);
   const data = new Uint8Array(await file.arrayBuffer());
   try {
-    const f = NovaDecode.parse(data);
+    const f = YaifDecode.parse(data);
     icc = f.raw ? null : await iccOf(data, f);   // a developed RAW is sRGB
     orient = f.raw ? 1 : orientationOf(data, f);   // LibRaw turns a developed RAW itself
     if (my !== token) return;
@@ -460,15 +460,15 @@ async function open(file) {
     specs([...base, ['Content', kind]]);
     info.textContent = file.name;
     const t0 = performance.now();
-    const prev = await NovaDecode.decodePreview(data);
+    const prev = await YaifDecode.decodePreview(data);
     if (my !== token) return;
     // The preview is small: stretch it to where the full image will sit (same aspect ratio).
     const [fw, fh] = orient >= 5 ? [f.height, f.width] : [f.width, f.height];
     if (prev) { cv.style.width = `min(${fw}px, 100%, calc(72vh * ${fw / fh}))`; show(prev.width, prev.height, prev.rgba); }
     if (f.raw) {
-      // Developed by nova + LibRaw (wasm): camera white balance and look, 8-bit sRGB, as PAM (RGBA as is).
+      // Developed by yaif + LibRaw (wasm): camera white balance and look, 8-bit sRGB, as PAM (RGBA as is).
       info.textContent = `${file.name}: preview shown, developing the RAW…`;
-      const dev = await nova(name + '.nova', data.slice(), ['decode', 'IN', 'OUT'], 'dev.pam');
+      const dev = await yaif(name + '.yaif', data.slice(), ['decode', 'IN', 'OUT'], 'dev.pam');
       if (my !== token) return;
       const hdr = new TextDecoder().decode(dev.subarray(0, 128)), end = hdr.indexOf('ENDHDR\n') + 7;
       const dw = +/WIDTH (\d+)/.exec(hdr)[1], dh = +/HEIGHT (\d+)/.exec(hdr)[1];
@@ -483,7 +483,7 @@ async function open(file) {
     fill.style.width = '0';
     info.textContent = `${file.name}: decoding…`;
     const t1 = performance.now(), stat = { used: 1 };
-    const r = await NovaDecode.decode(data, { run: runner(x => {
+    const r = await YaifDecode.decode(data, { run: runner(x => {
       if (my !== token) return;
       fill.style.width = (x * 100).toFixed(1) + '%';
       // Time left from the pace so far (after a tenth of the work, before it is a guess).
@@ -499,10 +499,10 @@ async function open(file) {
     const rows = [...base, ['Content', `${kind}, ${r.lossy ? 'lossy' : 'lossless'}${r.frames.length > 1 ? `, ${r.frames.length} frames` : ''}`],
       ['Decoded in', `${((performance.now() - t0) / 1000).toFixed(1)} s on ${n} ${n > 1 ? 'cores' : 'core'}`]];
     specs(rows);
-    gain = r.frames.length === 1 ? await NovaDecode.decodeGainMap(data, { run: runner(() => {}) }) : null;
+    gain = r.frames.length === 1 ? await YaifDecode.decodeGainMap(data, { run: runner(() => {}) }) : null;
     if (gain && orient !== 1) { const u = upright(gain.width, gain.height, gain.rgba, orient); Object.assign(gain, { width: u.w, height: u.h, rgba: u.rgba }); }
     if (my !== token) return;
-    const gp = gain && NovaDecode.gainMapParams(gain.meta);
+    const gp = gain && YaifDecode.gainMapParams(gain.meta);
     if (gp) {
       const hdr = matchMedia('(dynamic-range: high)').matches;
       specs([...rows, ['HDR', `gain map, up to ${gp.headroomAlt.toFixed(1)} stops brighter${hdr ? '' : ' (this screen shows SDR)'}`]]);
@@ -531,13 +531,13 @@ async function open(file) {
   } finally { sleep(lock); }
 }
 
-// Examples: small .nova files next to this page (no metadata in them).
-const SAMPLES = { photo: 'photo.nova', screen: 'screenshot.nova', wheel: 'animation.nova' };
+// Examples: small .yaif files next to this page (no metadata in them).
+const SAMPLES = { photo: 'photo.yaif', screen: 'screenshot.yaif', wheel: 'animation.yaif' };
 // The same pixels in other formats (Pillow, best settings: PNG optimize, WebP lossless method 6, GIF
 // optimize). Lossless examples only: the photo's original is not here to compare fairly.
 const SIZES = {
-  screen: 'the same pixels take 99 KB as PNG, 33.5 KB as lossless WebP, 34.3 KB as .nova.',
-  wheel: 'the same 24 frames take 38 KB as GIF, 49 KB as APNG, 23 KB as animated lossless WebP, 7.5 KB as .nova.',
+  screen: 'the same pixels take 99 KB as PNG, 33.5 KB as lossless WebP, 34.3 KB as .yaif.',
+  wheel: 'the same 24 frames take 38 KB as GIF, 49 KB as APNG, 23 KB as animated lossless WebP, 7.5 KB as .yaif.',
 };
 async function sample(k) {
   document.querySelectorAll('[data-k]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === k)));
@@ -571,7 +571,7 @@ function fail(msg) {
   s.textContent = msg;
   info.replaceChildren(s);
 }
-// One place to open anything: a .nova is decoded; an image is converted to .nova first, then shown.
+// One place to open anything: a .yaif is decoded; an image is converted to .yaif first, then shown.
 const PHONE = /iPhone|iPad|Android/.test(navigator.userAgent);
 // Pop-up: resolves true for the main button. cancel: text of the second button (none: OK only).
 function ask(title, text, okText, cancel, warn = false) {
@@ -599,7 +599,7 @@ async function pick(file, batch = false) {
   if (d[0] === 0x89 && d[1] === 0x4E && d[2] === 0x4F && d[3] === 0x56) return open(file);
   const image = (d[0] === 0x89 && d[1] === 0x50) || (d[0] === 0xFF && d[1] === 0xD8) || RAW.test(file.name) || HeifMeta.isHeif(d) || /^image\//.test(file.type);
   if (!image) {
-    const msg = `${file.name} is not an image. Open a .nova file, or an image to convert (PNG, JPEG, HEIC, camera RAW…).`;
+    const msg = `${file.name} is not an image. Open a .yaif file, or an image to convert (PNG, JPEG, HEIC, camera RAW…).`;
     if (batch) return fail(msg);
     return ask('This file cannot be opened', msg, 'OK');
   }
@@ -627,7 +627,7 @@ async function pickAll(files) {
       const out = await pick(f, true);
       if (out instanceof File) {
         const b = document.createElement('button');
-        b.textContent = 'Save .nova';
+        b.textContent = 'Save .yaif';
         b.onclick = () => download(out, out.name);
         li.replaceChildren(`${f.name} → ${out.name}: ${mb(out.size)}, ${(out.size / f.size * 100).toFixed(0)} % `, b);
       } else li.textContent = info.querySelector('.err') ? info.textContent : `${f.name}: opened`;
@@ -667,10 +667,10 @@ stage.addEventListener('pointerdown', e => {
   e.preventDefault();
 });
 
-// Compare: after a conversion, the source (as the browser shows it) covers the .nova left of the split.
+// Compare: after a conversion, the source (as the browser shows it) covers the .yaif left of the split.
 // ponytail: sources the browser cannot show (RAW, HEIC outside Safari) have no compare.
 let srcUrl = null;
-// The browser shows the source upright, like the viewer shows the .nova.
+// The browser shows the source upright, like the viewer shows the .yaif.
 function setSource(file) {
   if (srcUrl) URL.revokeObjectURL(srcUrl);
   srcUrl = null;
@@ -702,18 +702,18 @@ split.onkeydown = e => {
 $('eq').oninput = () => { $('eqv').textContent = $('eq').value; };
 $('ekeep').onchange = () => { $('egps').disabled = !$('ekeep').checked; };
 
-// Encoder: nova itself (wasm) in a worker. PNG/JPEG go in as they are (metadata kept);
+// Encoder: yaif itself (wasm) in a worker. PNG/JPEG go in as they are (metadata kept);
 // anything else is decoded by the browser and handed over as an exact PNG.
 // HEIC: pixels from the browser (Safari only: no HEVC decoder is shipped here), metadata from heif_meta.js.
 const RAW = /\.(3fr|arw|cr2|cr3|crw|dcr|dng|erf|iiq|k25|kdc|mef|mos|mrw|nef|nrw|orf|pef|raf|raw|rw2|rwl|sr2|srf|srw|x3f)$/i;
-// One nova command on n cores: n workers run it as replicas (enc_worker.js); at each barrier every
+// One yaif command on n cores: n workers run it as replicas (enc_worker.js); at each barrier every
 // replica sends its changes straight to the others (a MessageChannel per pair). Falls back to one
 // core if the replicas fail (out of memory with n copies).
 // Phones: one replica (each holds a whole copy of the image, up to ~1 GB for a 24 Mpx RAW, and iOS
 // closes the tab beyond its memory limit); 8 elsewhere.
 const CORES = /iPhone|iPad|Android/.test(navigator.userAgent) ? 1 : Math.min(navigator.hardwareConcurrency || 1, 8);
 // onStep({pc, label} or {step}): pc adds up the replicas' shares of the work.
-async function nova(name, data, argv, out, n = CORES, onStep = () => {}) {
+async function yaif(name, data, argv, out, n = CORES, onStep = () => {}) {
   const pcs = new Array(n).fill(0);
   const ws = [...Array(n)].map(() => new Worker('enc_worker.js' + V)), peers = ws.map(() => []);
   for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
@@ -729,18 +729,18 @@ async function nova(name, data, argv, out, n = CORES, onStep = () => {}) {
         pcs[e.data.replica] = e.data.pc;
         onStep({ pc: Math.min(100, pcs.reduce((a, b) => a + b)), label: e.data.label });
       };
-      w.onerror = e => { if (e.preventDefault) e.preventDefault(); ko(new Error(e.message || 'nova failed to load')); };
+      w.onerror = e => { if (e.preventDefault) e.preventDefault(); ko(new Error(e.message || 'yaif failed to load')); };
       w.postMessage({ name, data, argv, out, replica: i, n, peers: peers[i] }, peers[i]);
     }).then(r => { if (!r.ok) throw new Error(r.error); return r; })));
     return rs[0].out;
   } catch (x) {
     if (n === 1) throw x;
-    console.warn('nova on ' + n + ' cores failed, retrying on one:', x.message);
-    return nova(name, data, argv, out, 1, onStep);
+    console.warn('yaif on ' + n + ' cores failed, retrying on one:', x.message);
+    return yaif(name, data, argv, out, 1, onStep);
   } finally { ws.forEach(w => w.terminate()); }
 }
-let novaOut = null;
-$('savenova').onclick = () => novaOut && download(novaOut, novaOut.name);
+let yaifOut = null;
+$('saveyaif').onclick = () => yaifOut && download(yaifOut, yaifOut.name);
 async function encode(file) {
   const ei = info, base = file.name.replace(/\.[^.]*$/, '');
   let data = new Uint8Array(await file.arrayBuffer()), src = file.name;
@@ -768,15 +768,15 @@ async function encode(file) {
       g.drawImage(bm, 0, 0);
       const px = g.getImageData(0, 0, bm.width, bm.height, inP3 ? { colorSpace: 'display-p3' } : undefined);
       const w = bm.width, h = bm.height;
-      bm.close();                  // phones: free the bitmap and the canvas before nova needs the memory
+      bm.close();                  // phones: free the bitmap and the canvas before yaif needs the memory
       c.width = c.height = 0;
       data = new Uint8Array(await (await png(w, h, new Uint8Array(px.data.buffer), meta)).arrayBuffer());
       src = base + '.png';
     }
     ei.textContent = `${file.name}: encoding (${mb(file.size)})…`;
     const t0 = performance.now();
-    // Quality always given: without -q, nova lowers it for JPEG sources to stay smaller than the JPEG.
-    // Progress: the step nova is on, and the bar with the time left while the stripes are coded.
+    // Quality always given: without -q, yaif lowers it for JPEG sources to stay smaller than the JPEG.
+    // Progress: the step yaif is on, and the bar with the time left while the stripes are coded.
     let step = 'encoding', t2 = 0;
     const onStep = m => {
       if (m.step) { step = m.step.replace(/\.\.\.$/, '').replace(/^./, c => c.toLowerCase()); t2 = 0; bar.style.visibility = 'hidden'; }
@@ -790,14 +790,14 @@ async function encode(file) {
       }
       ei.textContent = `${file.name}: ${step}…`;
     };
-    const r = await nova(src, data, ['encode', 'IN', 'OUT', '-m', $('emode').value, '-q', $('eq').value], 'out.nova', CORES, onStep);
+    const r = await yaif(src, data, ['encode', 'IN', 'OUT', '-m', $('emode').value, '-q', $('eq').value], 'out.yaif', CORES, onStep);
     bar.style.visibility = 'hidden';
-    const out = new File([MetaStrip.apply(r, { keep: $('ekeep').checked, gps: $('egps').checked })], base + '.nova');
+    const out = new File([MetaStrip.apply(r, { keep: $('ekeep').checked, gps: $('egps').checked })], base + '.yaif');
     out.converted = true;
-    novaOut = out;
+    yaifOut = out;
     const done = `${file.name} → ${out.name}: ${mb(out.size)}, ${(out.size / file.size * 100).toFixed(0)} % of the source, converted in ${((performance.now() - t0) / 1000).toFixed(1)} s on ${CORES} ${CORES > 1 ? 'cores' : 'core'}.`;
     await open(out);
-    if (novaOut === out && !info.querySelector('.err')) { info.textContent = done; setSource(file); }
+    if (yaifOut === out && !info.querySelector('.err')) { info.textContent = done; setSource(file); }
     return out;
   } catch (e) {
     bar.style.visibility = 'hidden';
@@ -810,7 +810,7 @@ const fmt = $('fmt'), q = $('q');
 fmt.onchange = () => { $('qbox').hidden = fmt.value === 'image/png'; };
 q.oninput = () => { $('qv').textContent = q.value; };
 // Exact PNG of the decoded RGBA (8-bit, colour type 6), zlib via the browser's CompressionStream.
-// meta: {exif, xmp, icc} as eXIf, iTXt and iCCP chunks (nova keeps them as they are).
+// meta: {exif, xmp, icc} as eXIf, iTXt and iCCP chunks (yaif keeps them as they are).
 const deflate = async b => new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
 const bytes = s => Uint8Array.from(s, c => c.charCodeAt(0));
 async function png(w, h, rgba, meta = {}) {
@@ -823,7 +823,7 @@ async function png(w, h, rgba, meta = {}) {
     v.setUint32(0, data.length);
     for (let i = 0; i < 4; i++) c[4 + i] = type.charCodeAt(i);
     c.set(data, 8);
-    v.setUint32(8 + data.length, (NovaDecode.crc(0xFFFFFFFF, c, 4, 8 + data.length) ^ 0xFFFFFFFF) >>> 0);
+    v.setUint32(8 + data.length, (YaifDecode.crc(0xFFFFFFFF, c, 4, 8 + data.length) ^ 0xFFFFFFFF) >>> 0);
     return c;
   };
   const ih = new Uint8Array(13), v = new DataView(ih.buffer);

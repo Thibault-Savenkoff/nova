@@ -1,12 +1,12 @@
 #!/bin/bash
 # HDR gain map: each HEIC of $@ (default: an iPhone photo, lossy, and a screenshot, lossless) goes to
-# .nova with its gain map (GMAP). Checks:
-# - the gain map decoded by node (docs/nova_decode.js) is the one nova decodes, byte for byte;
+# .yaif with its gain map (GMAP). Checks:
+# - the gain map decoded by node (docs/yaif_decode.js) is the one yaif decodes, byte for byte;
 # - the Ultra HDR JPEG, read back by libuhdr (ImageMagick UHDR, PQ output), is the -hdr PNG
 #   (mean error < 1 on 8 bits: the two apply the gain map independently);
 # - the same for the JavaScript Ultra HDR builder, on JPEGs made by ImageMagick (< 2: JPEG loss);
 # - the -hdr AVIF, read back by heif-dec, is the -hdr PNG (< 2), tagged PQ, with clli and mdcv;
-# - the plain AVIF of a lossy .nova has the gain map (tmap item), and its SDR image, read back by
+# - the plain AVIF of a lossy .yaif has the gain map (tmap item), and its SDR image, read back by
 #   heif-dec, is the PNG (< 2); a lossless one stays a lossless AVIF, without it.
 #   (Its HDR rendition was checked once with libavif's own avifImageApplyGainMap: within 1 of the
 #   -hdr PNG; the check needs avif.h, which is not installed here.)
@@ -16,7 +16,7 @@ cd "$(dirname "$0")/.." || exit 1
 export LC_ALL=C UV_OFFLINE=1
 T=$(mktemp -d)
 trap 'rm -rf $T' EXIT
-[ $# -eq 0 ] && set -- ~/photos-nova/IMG_1045.HEIC ~/photos-nova/IMG_1036.HEIC
+[ $# -eq 0 ] && set -- ~/photos-yaif/IMG_1045.HEIC ~/photos-yaif/IMG_1036.HEIC
 fail=0
 mad() {  # mean absolute difference of two images, 8-bit RGB
   uv run -q --with pillow --with numpy python -c "
@@ -29,30 +29,30 @@ check() {  # $1 label, $2 value, $3 limit
 }
 for f in "$@"; do
   b=$(basename "$f")
-  ./nova encode "$f" $T/t.nova >$T/enc.txt 2>&1 && ./nova info $T/t.nova | grep -q GMAP || { echo "FAIL $b: no GMAP"; fail=1; continue; }
-  NOVA_GAINMAP=$T/gm.png ./nova decode $T/t.nova $T/t.png >/dev/null 2>&1
-  r=$(node test/uhdr_js.js $T/t.nova $T/gm.raw 2>&1) || { echo "FAIL $b: $r"; fail=1; continue; }
+  ./yaif encode "$f" $T/t.yaif >$T/enc.txt 2>&1 && ./yaif info $T/t.yaif | grep -q GMAP || { echo "FAIL $b: no GMAP"; fail=1; continue; }
+  YAIF_GAINMAP=$T/gm.png ./yaif decode $T/t.yaif $T/t.png >/dev/null 2>&1
+  r=$(node test/uhdr_js.js $T/t.yaif $T/gm.raw 2>&1) || { echo "FAIL $b: $r"; fail=1; continue; }
   ok=$(uv run -q --with pillow --with numpy python -c "
 import numpy as np; from PIL import Image
 a = np.asarray(Image.open('$T/gm.png').convert('RGBA')).ravel(); b = np.fromfile('$T/gm.raw', np.uint8)
 print('ok' if a.shape == b.shape and (a == b).all() else 'bad')")
-  [ "$ok" = ok ] && echo "OK   $b gain map, JS = nova ($r)" || { echo "FAIL $b gain map JS/nova"; fail=1; }
-  ./nova decode $T/t.nova $T/hdr.png -hdr >/dev/null 2>&1 && ./nova decode $T/t.nova $T/u.jpg >/dev/null 2>&1 || { echo "FAIL $b: nova HDR export"; fail=1; continue; }
+  [ "$ok" = ok ] && echo "OK   $b gain map, JS = yaif ($r)" || { echo "FAIL $b gain map JS/yaif"; fail=1; }
+  ./yaif decode $T/t.yaif $T/hdr.png -hdr >/dev/null 2>&1 && ./yaif decode $T/t.yaif $T/u.jpg >/dev/null 2>&1 || { echo "FAIL $b: yaif HDR export"; fail=1; continue; }
   magick -define uhdr:output-color-transfer=pq UHDR:$T/u.jpg -depth 16 $T/u.png 2>/dev/null
-  check "$b Ultra HDR (nova) vs -hdr PNG:" "$(mad $T/u.png $T/hdr.png)" 1
+  check "$b Ultra HDR (yaif) vs -hdr PNG:" "$(mad $T/u.png $T/hdr.png)" 1
   magick $T/t.png -quality 95 $T/p.jpg && magick $T/gm.png -quality 95 $T/g.jpg
-  node test/uhdr_js.js $T/t.nova $T/gm.raw $T/p.jpg $T/g.jpg $T/j.jpg >/dev/null
+  node test/uhdr_js.js $T/t.yaif $T/gm.raw $T/p.jpg $T/g.jpg $T/j.jpg >/dev/null
   magick -define uhdr:output-color-transfer=pq UHDR:$T/j.jpg -depth 16 $T/j.png 2>/dev/null
   check "$b Ultra HDR (JS)   vs -hdr PNG:" "$(mad $T/j.png $T/hdr.png)" 2
-  ./nova decode $T/t.nova $T/h.avif -hdr >/dev/null 2>&1 && heif-dec $T/h.avif $T/a.png >/dev/null 2>&1
+  ./yaif decode $T/t.yaif $T/h.avif -hdr >/dev/null 2>&1 && heif-dec $T/h.avif $T/a.png >/dev/null 2>&1
   heif-info -d $T/h.avif | grep -q "transfer_characteristics: 16" || { echo "FAIL $b AVIF not tagged PQ"; fail=1; }
   check "$b -hdr AVIF        vs -hdr PNG:" "$(mad $T/a.png $T/hdr.png)" 2
   [ "$(heif-info -d $T/h.avif | grep -c 'Box: clli\|Box: mdcv')" = 2 ] || { echo "FAIL $b -hdr AVIF without clli/mdcv"; fail=1; }
-  ./nova decode $T/t.nova $T/g.avif >/dev/null 2>&1 && heif-dec $T/g.avif $T/s.png >/dev/null 2>&1
+  ./yaif decode $T/t.yaif $T/g.avif >/dev/null 2>&1 && heif-dec $T/g.avif $T/s.png >/dev/null 2>&1
   lossy=$(grep -c "(lossy" $T/enc.txt)
   [ "$(heif-info -d $T/g.avif | grep -c 'item_type: tmap')" = "$lossy" ] || { echo "FAIL $b AVIF gain map: expected $lossy tmap item"; fail=1; }
   check "$b gain map AVIF SDR vs PNG:  " "$(mad $T/s.png $T/t.png)" 2
-  ./nova decode $T/t.nova $T/h.tif -hdr >/dev/null 2>&1 || { echo "FAIL $b: nova HDR TIFF"; fail=1; continue; }
+  ./yaif decode $T/t.yaif $T/h.tif -hdr >/dev/null 2>&1 || { echo "FAIL $b: yaif HDR TIFF"; fail=1; continue; }
   check "$b -hdr TIFF (rel. p99) vs PNG:" "$(uv run -q --with tifffile --with numpy python -c "
 import tifffile, numpy as np, zlib, struct
 T = tifffile.imread('$T/h.tif').astype(float)

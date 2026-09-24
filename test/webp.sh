@@ -1,19 +1,19 @@
 #!/bin/bash
 # WebP output: each file of $@ (default: a HEIC photo with EXIF/ICC/XMP, a screenshot, an RGBA PNG) goes to
-# .nova (adaptive), then to .png and .webp. Default mode: lossless when the .nova frame is (visible pixels
+# .yaif (adaptive), then to .png and .webp. Default mode: lossless when the .yaif frame is (visible pixels
 # exact), else lossy (PSNR >= 38 dB at q 90). Size within 5 % of PIL's (same libwebp); EXIF values, ICC
-# and XMP as in the PNG. Also: -m lossy forced on a lossless .nova.
+# and XMP as in the PNG. Also: -m lossy forced on a lossless .yaif.
 cd "$(dirname "$0")/.." || exit 1
 export LC_ALL=C UV_OFFLINE=1
 T=$(mktemp -d)
 trap 'rm -rf $T' EXIT
-[ $# -eq 0 ] && set -- ~/photos-nova/IMG_0577.HEIC test/photos/screenshot.png test/corpus/alpha.png
+[ $# -eq 0 ] && set -- ~/photos-yaif/IMG_0577.HEIC test/photos/screenshot.png test/corpus/alpha.png
 fail=0
 for f in "$@"; do
   b=$(basename "$f")
-  ./nova encode "$f" $T/t.nova >/dev/null 2>&1 && ./nova decode $T/t.nova $T/t.png >/dev/null 2>&1 \
-    && ./nova decode $T/t.nova $T/t.webp >/dev/null 2>&1 && ./nova decode $T/t.nova $T/f.webp -m lossy -q 75 >/dev/null 2>&1 \
-    || { echo "FAIL $b: nova"; fail=1; continue; }
+  ./yaif encode "$f" $T/t.yaif >/dev/null 2>&1 && ./yaif decode $T/t.yaif $T/t.png >/dev/null 2>&1 \
+    && ./yaif decode $T/t.yaif $T/t.webp >/dev/null 2>&1 && ./yaif decode $T/t.yaif $T/f.webp -m lossy -q 75 >/dev/null 2>&1 \
+    || { echo "FAIL $b: yaif"; fail=1; continue; }
   r=$(uv run -q --with pillow --with numpy python -c "
 import io, os, numpy as np
 from PIL import Image

@@ -1,4 +1,4 @@
-// glycin loader for .nova (GNOME Loupe, Nautilus thumbnails): decodes with libnovadec.
+// glycin loader for .yaif (GNOME Loupe, Nautilus thumbnails): decodes with libyaifdec.
 // glycin runs it sandboxed, one process per image; the file arrives on a Unix socket.
 use std::ffi::CStr;
 use std::io::Read;
@@ -9,7 +9,7 @@ use glycin_utils::*;
 use gufo_common::orientation::Orientation;
 
 #[repr(C)]
-struct NovaInfo {
+struct YaifInfo {
     width: c_int,
     height: c_int,
     planes: c_int,
@@ -22,10 +22,10 @@ struct NovaInfo {
 }
 
 unsafe extern "C" {
-    fn nova_read_info(d: *const u8, n: usize, info: *mut NovaInfo) -> c_int;
-    fn nova_decode(d: *const u8, n: usize, info: *mut NovaInfo) -> *mut u8;
-    fn nova_decode_preview(d: *const u8, n: usize, w: *mut c_int, h: *mut c_int) -> *mut u8;
-    fn nova_icc(d: *const u8, n: usize, len: *mut usize) -> *mut u8;
+    fn yaif_read_info(d: *const u8, n: usize, info: *mut YaifInfo) -> c_int;
+    fn yaif_decode(d: *const u8, n: usize, info: *mut YaifInfo) -> *mut u8;
+    fn yaif_decode_preview(d: *const u8, n: usize, w: *mut c_int, h: *mut c_int) -> *mut u8;
+    fn yaif_icc(d: *const u8, n: usize, len: *mut usize) -> *mut u8;
     fn free(p: *mut u8);
 }
 
@@ -33,12 +33,12 @@ fn fail(msg: &str) -> ProcessError {
     ProcessError::UnsupportedImageFormat(msg.to_string())
 }
 
-fn err_of(info: &NovaInfo) -> ProcessError {
-    let msg = if info.error.is_null() { "bad NOVA file" } else { unsafe { CStr::from_ptr(info.error) }.to_str().unwrap_or("bad NOVA file") };
+fn err_of(info: &YaifInfo) -> ProcessError {
+    let msg = if info.error.is_null() { "bad YAIF file" } else { unsafe { CStr::from_ptr(info.error) }.to_str().unwrap_or("bad YAIF file") };
     fail(msg)
 }
 
-pub struct Nova {
+pub struct Yaif {
     width: u32,
     height: u32,
     frames: Vec<Vec<u8>>, // RGBA, one per frame
@@ -47,24 +47,24 @@ pub struct Nova {
     next: usize,
 }
 
-impl LoaderImplementation for Nova {
+impl LoaderImplementation for Yaif {
     fn init(mut stream: UnixStream, _mime_type: String, _details: InitializationDetails) -> Result<(Self, ImageDetails), ProcessError> {
         let mut d = Vec::new();
         stream.read_to_end(&mut d).internal_error()?;
-        let mut info: NovaInfo = unsafe { std::mem::zeroed() };
-        if unsafe { nova_read_info(d.as_ptr(), d.len(), &mut info) } != 0 {
+        let mut info: YaifInfo = unsafe { std::mem::zeroed() };
+        if unsafe { yaif_read_info(d.as_ptr(), d.len(), &mut info) } != 0 {
             return Err(err_of(&info));
         }
-        // ponytail: every frame decoded at once; fine for NOVA animations (small), stream them if one is huge
+        // ponytail: every frame decoded at once; fine for YAIF animations (small), stream them if one is huge
         let (w, h, count, px) = if info.raw != 0 {
             let (mut w, mut h) = (0, 0);
-            let p = unsafe { nova_decode_preview(d.as_ptr(), d.len(), &mut w, &mut h) };
+            let p = unsafe { yaif_decode_preview(d.as_ptr(), d.len(), &mut w, &mut h) };
             if p.is_null() {
-                return Err(fail("NOVA RAW file without a preview"));
+                return Err(fail("YAIF RAW file without a preview"));
             }
             (w, h, 1, p)
         } else {
-            let p = unsafe { nova_decode(d.as_ptr(), d.len(), &mut info) };
+            let p = unsafe { yaif_decode(d.as_ptr(), d.len(), &mut info) };
             if p.is_null() {
                 return Err(err_of(&info));
             }
@@ -75,7 +75,7 @@ impl LoaderImplementation for Nova {
         let frames = all.chunks(size).map(|f| f.to_vec()).collect();
         unsafe { free(px) };
         let mut len = 0;
-        let icc = unsafe { nova_icc(d.as_ptr(), d.len(), &mut len) };
+        let icc = unsafe { yaif_icc(d.as_ptr(), d.len(), &mut len) };
         let icc = (!icc.is_null()).then(|| {
             let v = unsafe { std::slice::from_raw_parts(icc, len) }.to_vec();
             unsafe { free(icc) };
@@ -83,11 +83,11 @@ impl LoaderImplementation for Nova {
         });
 
         let mut details = ImageDetails::new(w as u32, h as u32);
-        details.info_format_name = Some("NOVA".into());
+        details.info_format_name = Some("YAIF".into());
         // pixels are stored as the camera wrote them: the viewer applies the EXIF orientation
         details.transformation_orientation = Orientation::try_from(info.orientation as u16).ok();
         let delay = (count > 1).then(|| Duration::from_millis(info.delay.max(10) as u64));
-        Ok((Nova { width: w as u32, height: h as u32, frames, delay, icc, next: 0 }, details))
+        Ok((Yaif { width: w as u32, height: h as u32, frames, delay, icc, next: 0 }, details))
     }
 
     fn frame(&mut self, request: FrameRequest) -> Result<Frame, ProcessError> {
@@ -110,4 +110,4 @@ impl LoaderImplementation for Nova {
     }
 }
 
-init_main_loader!(Nova);
+init_main_loader!(Yaif);

@@ -1,0 +1,266 @@
+Header
+  + name := Yaif_raw
+  // Level 6: lossless coding of a camera sensor frame (CFA samples up to 16 bits, one plane).
+  // Each sample is predicted from its own colour (mean of W, N, NW, NE, 2 apart), the residual is coded
+  // by Yaif_model with Yaif_lossy's binarization. Contexts: brightness (photon noise grows with the
+  // signal), local activity, residuals of the same colour and of the other colours just coded.
+  // Coded in independent stripes (even row counts, so each stripe starts on the same CFA row),
+  // run in parallel like level 5. Layout: [6][stripe count] then per stripe [u32 length][stream].
+  // Measured on a CR3 (order-0 entropy): the mean beats MED by 3.4 %, a least-squares linear
+  // predictor with 13 taps (other colours included) only gains 0.4 % more: sensor noise dominates.
+
+Public
+
+  // Frame samples (shared memory: the stripe processes decode into it).
+  - fr:C_array Int32 := C_array Int32.create 4
+
+  // 0: the first setup allocates it in shared memory, even for a frame of 4 samples or less.
+  - fcap:Int
+
+  - w:Int
+
+  - h:Int
+
+  // Black level: brightness contexts start there.
+  - black:Int
+
+  - ytop:Int
+
+  - ybot:Int
+
+  // Residuals of the last 4 rows, at (y & 3) * w + x.
+  - er:C_array Int := C_array Int.create 4
+
+  - ecap:Int := 4
+
+  - setup (fw,fh:Int) black b:Int <-
+  (
+    w := fw
+    h := fh
+    black := b
+    (w * h > fcap).if {
+      fcap := w * h
+      fr := Yaif_par.shared_int32 fcap
+    }
+    (4 * w > ecap).if {
+      ecap := 4 * w
+      er := C_array Int.create ecap
+    }
+  )
+
+  - put v:Int at i:Int <- ( fr.at i put (v.to_raw_int32); )
+
+  - value i:Int :Int <- (fr.at i).to_int
+
+  - inside (x,y:Int) :Boolean <- (x >= 0) && {x < w} && {y >= ytop} && {y < ybot}
+
+  // Sample at (x,y) if inside the stripe, else d.
+  - s (x,y:Int) or d:Int :Int <-
+  ( + result:Int
+    result := d
+    (inside (x, y)).if { result := (fr.at (y * w + x)).to_int }
+    result
+  )
+
+  // Residual at (x,y), 0 outside the stripe.
+  - e (x,y:Int) :Int <-
+  ( + result:Int
+    (inside (x, y)).if { result := er.at ((y & 3) * w + x) }
+    result
+  )
+
+  // Bit length of v, capped: 0, 1, 2-3, 4-7...
+  - lg v:Int cap m:Int :Int <-
+  ( + a,result:Int
+    a := v
+    {(a > 0) && {result < m}}.while_do {
+      result := result + 1
+      a := a >> 1
+    }
+    result
+  )
+
+  // Signed bit length, capped at 7.
+  - sl v:Int :Int <-
+  ( + result:Int
+    result := lg (v.abs) cap 7
+    (v < 0).if { result := - result }
+    result
+  )
+
+  - code_sample (x,y:Int) <-
+  ( + a,b,c,d,pr,v,cl,lum,act,ew,en,c1,c2,c3,q1,q2,hh:Int
+    // Same colour: W, N, NW, NE two samples away. Missing ones copy their neighbour; the first
+    // samples of a stripe fall back to the other colours, then to the black level.
+    a := s (x - 2, y) or (-1)
+    b := s (x, y - 2) or (-1)
+    (a < 0).if { a := b }
+    (b < 0).if { b := a }
+    (a < 0).if {
+      a := s (x - 1, y) or (s (x, y - 1) or black)
+      b := a
+    }
+    c := s (x - 2, y - 2) or b
+    d := s (x + 2, y - 2) or b
+    pr := (a + b + c + d + 2) >> 2
+    cl := ((y & 1) << 1) | (x & 1)
+    lum := lg (((pr - black).max 0) >> 2) cap 11
+    act := lg ((a - c).abs + (b - c).abs + (d - b).abs) cap 11
+    ew := e (x - 2, y)
+    en := e (x, y - 2)
+    c1 := e (x - 1, y)
+    c2 := e (x, y - 1)
+    c3 := e (x - 1, y - 1)
+    q1 := lg ((ew.abs) + (en.abs)) cap 11
+    q2 := lg ((c1.abs) + (c2.abs)) cap 11
+    Yaif_model.ctx.at 0 put (((cl * 12 + lum) * 12 + act) * 80)
+    Yaif_model.ctx.at 1 put (46080 + ((cl * 12 + q1) * 12 + q2) * 80)
+    Yaif_model.set_weights (cl * 4 + (act >> 2)) and (cl * 8 + (lum >> 1)) and (cl * 8 + (q2 >> 1)) apm ((cl * 16 + lum) * 10)
+    hh := Yaif_model.hash (cl + 1) with (sl ew)
+    hh := Yaif_model.hash hh with (sl en)
+    Yaif_model.ctx.at 2 put (Yaif_model.hash hh with (lum >> 1))
+    hh := Yaif_model.hash (cl + 11) with (sl c1)
+    hh := Yaif_model.hash hh with (sl c2)
+    Yaif_model.ctx.at 3 put (Yaif_model.hash hh with (sl c3))
+    hh := Yaif_model.hash (cl + 21) with lum
+    hh := Yaif_model.hash hh with act
+    Yaif_model.ctx.at 4 put (Yaif_model.hash hh with q1)
+    hh := Yaif_model.hash (cl + 31) with (sl (e (x - 2, y - 2)))
+    hh := Yaif_model.hash hh with (sl (e (x + 2, y - 2)))
+    Yaif_model.ctx.at 5 put (Yaif_model.hash hh with q2)
+    hh := Yaif_model.hash (cl + 41) with (sl (b - a))
+    hh := Yaif_model.hash hh with (sl (d - b))
+    Yaif_model.ctx.at 6 put (Yaif_model.hash hh with lum)
+    (Yaif_model.decoding).if {
+      v := pr + (Yaif_lossy.code_coef 0)
+      put v at (y * w + x)
+    } else {
+      v := value (y * w + x)
+      Yaif_lossy.code_coef (v - pr)
+    }
+    er.at ((y & 3) * w + x) put (v - pr)
+  )
+
+  - code_stripe <-
+  (
+    ytop.to (ybot - 1) do { y:Int
+      Yaif_par.tick (y - ytop)
+      0.to (w - 1) do { x:Int
+        code_sample (x, y)
+      }
+    }
+  )
+
+  - stripes:Int <-
+  // From the frame size only: ~2 Mpx per stripe, 16 at most.
+  ( + n,per,result:Int
+    n := (h + 1) / 2
+    result := ((w * h) / 2000000).max 1
+    (result > 16).if { result := 16 }
+    (result > n).if { result := n }
+    per := (n + result - 1) / result
+    (n + per - 1) / per
+  )
+
+  - stripe i:Int of ns:Int <-
+  ( + n,per:Int
+    n := (h + 1) / 2
+    per := (n + ns - 1) / ns
+    ytop := (i * per * 2).min h
+    ybot := ((i + 1) * per * 2).min h
+  )
+
+  // Sizes the hash tables of one stripe (~16 MB per process at 2 Mpx).
+  - stripe_samples:Int <- (w * (ybot - ytop)) / 4
+
+  - encode <-
+  // Frame fr (setup first) -> Yaif_codec.out.
+  ( + ns,at,n,cap:Int
+    + lens:C_array Int32
+    + sb,out:C_array Uint8
+    (Yaif_codec.qtables_ready).if { } else { Yaif_codec.make_qtables }
+    ns := stripes
+    stripe 0 of ns
+    // ponytail: 6 bytes per sample is far above a real stream (16-bit samples cost < 2.5 bytes).
+    cap := w * (ybot - ytop) * 6 + 65536
+    lens := Yaif_par.shared_int32 ns
+    sb := Yaif_par.shared_uint8 (cap * ns)
+    Yaif_par.progress "Encoding" of h jobs ns
+    0.to (ns - 1) do { i:Int
+      n := Yaif_par.start
+      (n <= 0).if {
+        stripe i of ns
+        at := Yaif_codec.out_count
+        Yaif_model.start_encoder stripe_samples level 3
+        Yaif_model.set_match 0
+        code_stripe
+        Yaif_model.flush_encoder
+        out := Yaif_codec.out
+        0.to (Yaif_codec.out_count - at - 1) do { j:Int
+          sb.at (i * cap + j) put (out.at (at + j))
+        }
+        lens.at i put ((Yaif_codec.out_count - at).to_raw_int32)
+        Yaif_codec.truncate_out at
+        (n = 0).if { Yaif_par.finish }
+      }
+    }
+    Yaif_par.wait_all
+    Yaif_codec.put_byte 6
+    Yaif_codec.put_byte ns
+    0.to (ns - 1) do { i:Int
+      n := (lens.at i).to_int
+      Yaif_codec.put_u32 n
+      0.to (n - 1) do { j:Int
+        Yaif_codec.put_byte ((sb.at (i * cap + j)).to_int)
+      }
+    }
+    Yaif_par.free_u8 sb size (cap * ns)
+    Yaif_par.free lens size (ns * 4)
+  )
+
+  - decode data:C_array Uint8 from pos:Int size len:Int :Boolean <-
+  // FDAT payload -> fr (setup first).
+  ( + ns,p,n:Int
+    + ok:Boolean
+    + offs:C_array Int
+    + st:C_array Int32
+    (Yaif_codec.qtables_ready).if { } else { Yaif_codec.make_qtables }
+    ok := (len >= 2) && {(data.at pos).to_int = 6}
+    (ok).if {
+      ns := (data.at (pos + 1)).to_int
+      ok := (ns >= 1) && {ns <= 16}
+    }
+    offs := C_array Int.create 34
+    p := pos + 2
+    0.to (ns - 1) do { i:Int
+      ok := ok && {p + 4 <= pos + len}
+      (ok).if {
+        n := (((data.at p).to_int) << 24) | (((data.at (p + 1)).to_int) << 16) | (((data.at (p + 2)).to_int) << 8) | ((data.at (p + 3)).to_int)
+        ok := p + 4 + n <= pos + len
+        offs.at (2 * i) put (p + 4)
+        offs.at (2 * i + 1) put n
+        p := p + 4 + n
+      }
+    }
+    (ok).if {
+      st := Yaif_par.shared_int32 ns
+      Yaif_par.progress "Decoding" of h jobs ns
+      0.to (ns - 1) do { i:Int
+        n := Yaif_par.start
+        (n <= 0).if {
+          stripe i of ns
+          Yaif_model.start_decoder data from (offs.at (2 * i)) size (offs.at (2 * i + 1)) samples stripe_samples level 3
+          Yaif_model.set_match 0
+          code_stripe
+          (Yaif_model.overrun).if { } else { st.at i put 1 }
+          (n = 0).if { Yaif_par.finish }
+        }
+      }
+      Yaif_par.wait_all
+      0.to (ns - 1) do { i:Int
+        ok := ok && {(st.at i).to_int = 1}
+      }
+      Yaif_par.free st size (ns * 4)
+    }
+    ok
+  )

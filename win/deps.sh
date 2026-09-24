@@ -3,7 +3,7 @@
 #
 # HEIC: libheif reads it with libde265 and writes it with kvazaar (BSD), not x265, which is GPL
 # inside an otherwise MIT package. AVIF: one library covers all of it -- libheif needs aom to read
-# and to write .avif, and libavif needs the same aom for the HDR gain map (nova_heic.li loads
+# and to write .avif, and libavif needs the same aom for the HDR gain map (yaif_heic.li loads
 # libavif for that path only).
 #
 # Usage: win/deps.sh <staging-dir>
@@ -66,7 +66,7 @@ fi
 
 # AV1, encoder and decoder: the one library both libheif and libavif need. Shared, so they link
 # one copy instead of embedding two. CONFIG_AV1_HIGHBITDEPTH is on by default and has to stay:
-# 10-bit is what nova's HDR (PQ) output uses. The rest is build products nobody here runs.
+# 10-bit is what yaif's HDR (PQ) output uses. The rest is build products nobody here runs.
 # The assembler is yasm, aom's own default (aom_configure.cmake looks for it first). Not nasm:
 # ENABLE_NASM=ON sends aom through test_nasm(), which greps `nasm -hf` for "-Ox" and rejects the
 # nasm in fedora:latest outright ("multipass optimization not supported").
@@ -104,9 +104,9 @@ if ! built "heif-$HEIF+kvazaar"; then
   mark "heif-$HEIF+kvazaar"
 fi
 
-# Only nova's HDR gain-map AVIF goes through libavif (nova_heic.li dlopens "libavif.so.16", which
-# win/nova_win.h turns into libavif-16.dll); plain AVIF is libheif's job. 1.3.0 is the version
-# nova_heic.li checked its struct offsets against, and it has the gain-map API unconditionally.
+# Only yaif's HDR gain-map AVIF goes through libavif (yaif_heic.li dlopens "libavif.so.16", which
+# win/yaif_win.h turns into libavif-16.dll); plain AVIF is libheif's job. 1.3.0 is the version
+# yaif_heic.li checked its struct offsets against, and it has the gain-map API unconditionally.
 if ! built "avif-$AVIF"; then
   get "https://github.com/AOMediaCodec/libavif/archive/refs/tags/v$AVIF.tar.gz"
   build "avif-$AVIF" "libavif-$AVIF" \
@@ -115,16 +115,16 @@ if ! built "avif-$AVIF"; then
   mark "avif-$AVIF"
 fi
 
-# libnova-heif: libheif with its gain-map pull request, for writing a .heic that keeps the HDR --
-# the same recipe install.sh runs on Linux and macOS (libheif-gainmap/build.sh). Only nova's HEIC
+# libyaif-heif: libheif with its gain-map pull request, for writing a .heic that keeps the HDR --
+# the same recipe install.sh runs on Linux and macOS (libheif-gainmap/build.sh). Only yaif's HEIC
 # gain-map export loads it; every read goes through the libheif above. Its marker is the recipe's
 # checksum, so any change to build.sh or the patch rebuilds it.
-novaheif="novaheif-$(cat "$(dirname "$0")/../libheif-gainmap/build.sh" "$(dirname "$0")/../libheif-gainmap/pr1503.patch" | cksum | awk '{print $1}')"
-if ! built "$novaheif"; then
+yaifheif="yaifheif-$(cat "$(dirname "$0")/../libheif-gainmap/build.sh" "$(dirname "$0")/../libheif-gainmap/pr1503.patch" | cksum | awk '{print $1}')"
+if ! built "$yaifheif"; then
   mkdir -p "$stage$M/bin"
-  CMAKE=mingw64-cmake sh "$(dirname "$0")/../libheif-gainmap/build.sh" "$work/novaheif" "$stage$M/bin/libnova-heif.dll"
+  CMAKE=mingw64-cmake sh "$(dirname "$0")/../libheif-gainmap/build.sh" "$work/yaifheif" "$stage$M/bin/libyaif-heif.dll"
   sync
-  mark "$novaheif"
+  mark "$yaifheif"
 fi
 
 echo "win/deps.sh: installed into $M"

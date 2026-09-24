@@ -1,16 +1,16 @@
 #!/bin/bash
-# TIFF output: each file of $@ (default: a HEIC with MM EXIF, a screenshot, an RGBA PNG) goes to .nova,
+# TIFF output: each file of $@ (default: a HEIC with MM EXIF, a screenshot, an RGBA PNG) goes to .yaif,
 # then to .png and .tif: same pixels (tifffile and PIL), same EXIF values (exiv2), same ICC and XMP.
 cd "$(dirname "$0")/.." || exit 1
 export LC_ALL=C UV_OFFLINE=1
-[ $# -eq 0 ] && set -- ~/photos-nova/IMG_0577.HEIC test/photos/screenshot.png test/corpus/alpha.png
+[ $# -eq 0 ] && set -- ~/photos-yaif/IMG_0577.HEIC test/photos/screenshot.png test/corpus/alpha.png
 T=$(mktemp -d)
 trap 'rm -rf $T' EXIT
 fail=0
 for f in "$@"; do
   b=$(basename "$f")
-  ./nova encode "$f" $T/t.nova -m lossless >/dev/null 2>&1 && ./nova decode $T/t.nova $T/t.png >/dev/null 2>&1 \
-    && ./nova decode $T/t.nova $T/t.tif >/dev/null 2>&1 || { echo "FAIL $b: nova"; fail=1; continue; }
+  ./yaif encode "$f" $T/t.yaif -m lossless >/dev/null 2>&1 && ./yaif decode $T/t.yaif $T/t.png >/dev/null 2>&1 \
+    && ./yaif decode $T/t.yaif $T/t.tif >/dev/null 2>&1 || { echo "FAIL $b: yaif"; fail=1; continue; }
   r=$(uv run -q --with pillow --with tifffile python -c "
 import numpy as np, tifffile
 from PIL import Image

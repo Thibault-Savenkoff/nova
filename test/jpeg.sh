@@ -1,6 +1,6 @@
 #!/bin/bash
 # JPEG output: each file of $@ (default: a HEIC with EXIF/ICC/XMP, a screenshot, an RGBA PNG, odd sizes)
-# goes to .nova (lossless), then to .png and to .jpg at q 75 and 90. The JPEG must decode (PIL), be no
+# goes to .yaif (lossless), then to .png and to .jpg at q 75 and 90. The JPEG must decode (PIL), be no
 # bigger than libjpeg's (optimised Huffman, same subsampling) by more than 1 % at no more than 0.2 dB
 # less PSNR (from 4096 pixels: on a few pixels PSNR is one rounding), and keep the EXIF values, ICC
 # and XMP of the PNG. An Ultra HDR JPEG (HEIC with a gain map) is measured on its primary image; the
@@ -13,13 +13,13 @@ uv run -q --with pillow python -c "
 from PIL import Image
 Image.new('RGB', (1, 1), (200, 30, 90)).save('$T/one.png')
 Image.radial_gradient('L').resize((37, 19)).convert('RGB').save('$T/odd.png')"
-[ $# -eq 0 ] && set -- ~/photos-nova/IMG_0577.HEIC test/photos/screenshot.png test/corpus/alpha.png $T/one.png $T/odd.png
+[ $# -eq 0 ] && set -- ~/photos-yaif/IMG_0577.HEIC test/photos/screenshot.png test/corpus/alpha.png $T/one.png $T/odd.png
 fail=0
 for f in "$@"; do
   b=$(basename "$f")
-  ./nova encode "$f" $T/t.nova -m lossless >/dev/null 2>&1 && ./nova decode $T/t.nova $T/t.png >/dev/null 2>&1 || { echo "FAIL $b: nova"; fail=1; continue; }
+  ./yaif encode "$f" $T/t.yaif -m lossless >/dev/null 2>&1 && ./yaif decode $T/t.yaif $T/t.png >/dev/null 2>&1 || { echo "FAIL $b: yaif"; fail=1; continue; }
   for q in 75 90; do
-    ./nova decode $T/t.nova $T/t.jpg -q $q >/dev/null 2>&1 || { echo "FAIL $b q$q: decode"; fail=1; continue; }
+    ./yaif decode $T/t.yaif $T/t.jpg -q $q >/dev/null 2>&1 || { echo "FAIL $b q$q: decode"; fail=1; continue; }
     r=$(uv run -q --with pillow --with numpy python -c "
 import io, os, numpy as np
 from PIL import Image

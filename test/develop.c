@@ -1,12 +1,12 @@
-/* Reference development of a RAW file with LibRaw, same settings as nova (Nova_rawin nr_develop):
-   camera white balance, linear, no automatic brightness, then a tone curve of nova_look.h (look: 0 canon, default; 1 darktable), 16 bits;
+/* Reference development of a RAW file with LibRaw, same settings as yaif (Yaif_rawin nr_develop):
+   camera white balance, linear, no automatic brightness, then a tone curve of yaif_look.h (look: 0 canon, default; 1 darktable), 16 bits;
    writes a binary PPM (big-endian samples).
    cc -Ithird_party/libraw test/develop.c -o test/develop -l:libraw_r.so.25 -lm */
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <libraw/libraw.h>
-#include "../nova_look.h"
+#include "../yaif_look.h"
 int main(int argc, char **argv) {
   libraw_data_t *r = libraw_init(0);
   libraw_processed_image_t *im;
@@ -27,10 +27,10 @@ int main(int argc, char **argv) {
     int look = argc > 3 ? atoi(argv[3]) : 0;
     static unsigned short lut[65536];
     unsigned short o[3];
-    for (i = 0; i < 65536; i++) lut[i] = nova_look_map(i, look);
+    for (i = 0; i < 65536; i++) lut[i] = yaif_look_map(i, look);
     for (i = 0; i < n; i += 3) {
       int c;
-      nova_look_rgb(lut, p + i, o, look);
+      yaif_look_rgb(lut, p + i, o, look);
       for (c = 0; c < 3; c++) { fputc(o[c] >> 8, f); fputc(o[c] & 255, f); }
     }
     fclose(f);

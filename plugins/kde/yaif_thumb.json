@@ -1,0 +1,12 @@
+{
+    "CacheThumbnail": true,
+    "KPlugin": {
+        "Description": "Thumbnails of YAIF images",
+        "Description[fr]": "Miniatures des images « YAIF »",
+        "MimeTypes": [
+            "image/x-yaif"
+        ],
+        "Name": "YAIF Images",
+        "Name[fr]": "Images « YAIF »"
+    }
+}

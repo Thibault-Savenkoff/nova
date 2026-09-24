@@ -3,33 +3,33 @@
 <h1>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/images/logo-dark.svg">
-    <img src=".github/images/logo-light.svg" height="72" alt="NOVA">
+    <img src=".github/images/logo-light.svg" height="72" alt="YAIF">
   </picture>
 </h1>
 
 **One image format for photos, screenshots, animations and camera RAW files.**<br>
 Half the size of PNG and usually smaller than WebP when every pixel must stay exact, on par with AVIF when it need not.
 
-[![Try it in your browser](https://img.shields.io/badge/try_it-in_your_browser-2945c7)](https://thibault-savenkoff.github.io/nova/)
+[![Try it in your browser](https://img.shields.io/badge/try_it-in_your_browser-2945c7)](https://thibault-savenkoff.github.io/yaif/)
 [![Status: v2 in progress](https://img.shields.io/badge/status-v2_in_progress-c98314)](#status)
 [![Written in Lisaac Ω](https://img.shields.io/badge/written_in-Lisaac_%CE%A9-16191d)](https://lisaac.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2e8b6e)](LICENSE)
 
-<a href="https://thibault-savenkoff.github.io/nova/"><img src=".github/images/site.jpg" width="760" alt="The NOVA web page: a photo opened from a .nova file, with the file's chunks drawn to scale under it"></a>
+<a href="https://thibault-savenkoff.github.io/yaif/"><img src=".github/images/site.jpg" width="760" alt="The YAIF web page: a photo opened from a .yaif file, with the file's chunks drawn to scale under it"></a>
 
 </div>
 
 ## Status
 
-This is the `v2` branch: NOVA rewritten from scratch in [Lisaac Ω](https://lisaac.org), with its own codec.
-NOVA v1, on `main`, is a Python container around PNG and JPEG data. v2 replaces it on `main` once it is finished.
+This is the `v2` branch: YAIF rewritten from scratch in [Lisaac Ω](https://lisaac.org), with its own codec.
+YAIF v1, on `main`, is a Python container around PNG and JPEG data. v2 replaces it on `main` once it is finished.
 v1 and v2 files are not compatible. The web page linked here is still v1 until v2 reaches `main`.
 
 ## Numbers
 
 **Lossless.** Every pixel comes back exactly. Sizes against PNG (optimised) and WebP lossless (method 6):
 
-| Image | NOVA vs PNG | NOVA vs WebP |
+| Image | YAIF vs PNG | YAIF vs WebP |
 | --- | --- | --- |
 | Photos, 12–24 Mpx (10 photos) | **50 %** on average (45–63 %) | **84 %** on average (80–99 %) |
 | iPhone screenshots (2) | 42 % | 86–87 % |
@@ -39,7 +39,7 @@ v1 and v2 files are not compatible. The web page linked here is still v1 until v
 
 **Lossy.** Same quality as the other formats (PSNR / SSIM), three photo crops:
 
-| Against | Size of the NOVA file |
+| Against | Size of the YAIF file |
 | --- | --- |
 | WebP | **69 %** (PSNR), 80 % (SSIM) |
 | AVIF | 100 % (PSNR), 108 % (SSIM) |
@@ -47,107 +47,106 @@ v1 and v2 files are not compatible. The web page linked here is still v1 until v
 
 **Camera RAW.** The sensor data of a Canon CR3 is kept bit for bit in 80–85 % of the CR3's size.
 
-NOVA sizes include the 512 px thumbnail (`PREV`) that PNG and WebP files do not carry.
+YAIF sizes include the 512 px thumbnail (`PREV`) that PNG and WebP files do not carry.
 Measured with `test/check.sh` and `test/rd_summary.sh`. The photos themselves are not in the repository.
 
 ## Try it
 
-**In your browser:** [thibault-savenkoff.github.io/nova](https://thibault-savenkoff.github.io/nova/) opens and creates `.nova` files.
-It runs NOVA compiled to WebAssembly on your device; nothing is uploaded. It works on phones too (tested on an iPhone 17 Pro Max).
+**In your browser:** [thibault-savenkoff.github.io/yaif](https://thibault-savenkoff.github.io/yaif/) opens and creates `.yaif` files.
+It runs YAIF compiled to WebAssembly on your device; nothing is uploaded. It works on phones too (tested on an iPhone 17 Pro Max).
 
 **On the command line:**
 
 ```sh
-nova encode photo.heic photo.nova            # adaptive: exact for graphics, wavelet q 90 for photos
-nova encode shot.png shot.nova -m lossless   # always exact
-nova encode frame*.png anim.nova -d 40       # several sources make an animation
-nova encode IMG_1401.CR3 IMG_1401.nova       # camera RAW, sensor frame kept exactly
+yaif encode photo.heic photo.yaif            # adaptive: exact for graphics, wavelet q 90 for photos
+yaif encode shot.png shot.yaif -m lossless   # always exact
+yaif encode frame*.png anim.yaif -d 40       # several sources make an animation
+yaif encode IMG_1401.CR3 IMG_1401.yaif       # camera RAW, sensor frame kept exactly
 
-nova decode photo.nova photo.jpg -q 90       # also .png .tif .webp .avif .heic (-fast: quicker WebP)
-nova decode photo.nova photo.avif            # iPhone photo: SDR image + HDR gain map, shows right everywhere
-nova decode photo.nova photo.avif -hdr       # HDR (PQ, 10 bits): for editors and HDR players
-nova decode photo.nova photo.tif -hdr        # HDR as 16-bit float TIFF (linear), for editors
-nova decode IMG_1401.nova IMG_1401.dng       # RAW back to DNG, or developed to .png .tif .jpg
-nova convert IMG_1152.HEIC IMG_1152.jpg      # any source to any output in one step, no .nova left behind
-nova preview photo.nova thumb.png            # the embedded 512 px thumbnail, instantly
-nova info photo.nova                         # the chunks of the file
+yaif decode photo.yaif photo.jpg -q 90       # also .png .tif .webp .avif .heic (-fast: quicker WebP)
+yaif decode photo.yaif photo.avif            # iPhone photo: SDR image + HDR gain map, shows right everywhere
+yaif decode photo.yaif photo.avif -hdr       # HDR (PQ, 10 bits): for editors and HDR players
+yaif decode photo.yaif photo.tif -hdr        # HDR as 16-bit float TIFF (linear), for editors
+yaif decode IMG_1401.yaif IMG_1401.dng       # RAW back to DNG, or developed to .png .tif .jpg
+yaif convert IMG_1152.HEIC IMG_1152.jpg      # any source to any output in one step, no .yaif left behind
+yaif preview photo.yaif thumb.png            # the embedded 512 px thumbnail, instantly
+yaif info photo.yaif                         # the chunks of the file
 ```
 
-EXIF (GPS included), XMP and the colour profile of the source are kept. Run `nova` with no arguments for every
+EXIF (GPS included), XMP and the colour profile of the source are kept. Run `yaif` with no arguments for every
 option, and read [MANUAL.md](MANUAL.md) for what the modes, levels and quality settings actually do.
 
-NOVA stores 8 bits per channel. 10-bit HEIC images (iPhone screenshots) are rounded to 8 bits: at most 2 steps out of 1024 change, less than half an 8-bit level, which is invisible and keeps the files small.
+YAIF stores 8 bits per channel. 10-bit HEIC images (iPhone screenshots) are rounded to 8 bits: at most 2 steps out of 1024 change, less than half an 8-bit level, which is invisible and keeps the files small.
 
 ## Install
 
 **Linux and macOS:**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Thibault-Savenkoff/nova/v2/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Thibault-Savenkoff/yaif/v2/install.sh | bash
 ```
 
-Downloads the right binary (x86_64 or arm64, on Linux as on macOS), installs `nova` and its shell completion
-(zsh, bash, fish -- bash needs the `bash-completion` package) into `~/.local`, registers the `.nova` file
+Downloads the right binary (x86_64 or arm64, on Linux as on macOS), installs `yaif` and its shell completion
+(zsh, bash, fish -- bash needs the `bash-completion` package) into `~/.local`, registers the `.yaif` file
 type, and offers to build the viewer plugins below for whichever desktop you have. `--system` installs
 into `/usr/local` instead (needs sudo); `--no-plugins` skips the viewers; `-y`/`--yes` skips every prompt
 (for scripts and Dockerfiles: also the default when there is no terminal to ask); `install.sh --help`
 lists the rest. To remove everything it installed, and nothing else:
 
 ```sh
-bash ~/.local/share/nova/install.sh --uninstall     # add --system or --prefix DIR if you installed with it
+bash ~/.local/share/yaif/install.sh --uninstall     # add --system or --prefix DIR if you installed with it
 ```
 
 Building from source instead (you have the [Lisaac Ω](https://lisaac.org) compiler)? See [Build](#build):
 `build.sh` compiles and runs the same installer on the result.
 
-There is no package yet. Note that OpenStack's `python3-novaclient` also provides a `nova` command: if you
-have it, whichever comes first in `PATH` wins.
+There is no package yet.
 
-**Windows:** `nova-<version>-windows-x86_64-setup.exe` or `….msi` (on the release page, and built by `win/dist.sh`) install
-`nova.exe`, put it on the `PATH` and register the codec, so the Explorer shows thumbnails and previews.
+**Windows:** `yaif-<version>-windows-x86_64-setup.exe` or `….msi` (on the release page, and built by `win/dist.sh`) install
+`yaif.exe`, put it on the `PATH` and register the codec, so the Explorer shows thumbnails and previews.
 The `.zip` is the same files without an installer. Uninstall from Settings > Apps. Either
 installer sets up PowerShell tab completion by itself, for Windows PowerShell and PowerShell 7 both; from
-the zip, run `nova-profile.ps1` once (its `README.txt` has the details). The completion script is named
-`nova-completion.ps1`, not `nova.ps1`, because PowerShell resolves a bare `nova` to a `.ps1` on the `PATH`
-in preference to `nova.exe`. cmd.exe has no such hook for a third-party program's arguments.
+the zip, run `yaif-profile.ps1` once (its `README.txt` has the details). The completion script is named
+`yaif-completion.ps1`, not `yaif.ps1`, because PowerShell resolves a bare `yaif` to a `.ps1` on the `PATH`
+in preference to `yaif.exe`. cmd.exe has no such hook for a third-party program's arguments.
 
 Camera RAW works, and HEIC and AVIF both ways: the package carries LibRaw, libheif with libde265 and
 kvazaar, and aom with libavif, cross-compiled by `win/deps.sh` because Fedora packages none of them for
 MinGW. Neither installer is signed yet, so SmartScreen shows "unknown publisher".
 
-**Browser:** nothing to install, the [web page](https://thibault-savenkoff.github.io/nova/) runs NOVA on your device.
+**Browser:** nothing to install, the [web page](https://thibault-savenkoff.github.io/yaif/) runs YAIF on your device.
 
-Once a day, in a terminal, `nova` checks in the background for a newer version and prints one line if there
-is one; a failed check (no network) is silent, and it never runs in a script. `NOVA_NO_UPDATE_CHECK=1` turns
+Once a day, in a terminal, `yaif` checks in the background for a newer version and prints one line if there
+is one; a failed check (no network) is silent, and it never runs in a script. `YAIF_NO_UPDATE_CHECK=1` turns
 it off.
 
 Desktop viewers need one more plugin, below.
 
 ## Image viewers
 
-`plugins/` makes `.nova` files open in desktop viewers and show thumbnails. The plugins decode with
-[`libnova/`](libnova/novadec.h), a small C decoder without dependencies (same pixels as `nova`, on every core).
+`plugins/` makes `.yaif` files open in desktop viewers and show thumbnails. The plugins decode with
+[`libyaif/`](libyaif/yaifdec.h), a small C decoder without dependencies (same pixels as `yaif`, on every core).
 `install.sh` builds and installs whichever of these your system has the tools for (see [Install](#install)).
 The table is for building from source without it, or for troubleshooting one plugin. First install the file
 type (all desktops):
 
 ```sh
-cp plugins/mime/nova.xml ~/.local/share/mime/packages/ && update-mime-database ~/.local/share/mime
+cp plugins/mime/yaif.xml ~/.local/share/mime/packages/ && update-mime-database ~/.local/share/mime
 ```
 
 | Viewers | Plugin | Install |
 | --- | --- | --- |
 | KDE: Gwenview, Okular, Krita, any Qt 6 app | `plugins/qt` | `cmake -S plugins/qt -B build-qt && cmake --build build-qt && sudo cmake --install build-qt` |
-| KDE: Dolphin thumbnails (KDE's image thumbnailer has a fixed list of types, so `.nova` needs its own) | `plugins/kde` | `plugins/qt` installed, then `cmake -S plugins/kde -B build-kde && cmake --build build-kde && sudo cmake --install build-kde` (needs `kf6-kio-devel`) |
+| KDE: Dolphin thumbnails (KDE's image thumbnailer has a fixed list of types, so `.yaif` needs its own) | `plugins/kde` | `plugins/qt` installed, then `cmake -S plugins/kde -B build-kde && cmake --build build-kde && sudo cmake --install build-kde` (needs `kf6-kio-devel`) |
 | GNOME: Loupe, Nautilus thumbnails (glycin) | `plugins/glycin` | `cargo build --release --manifest-path plugins/glycin/Cargo.toml`, then the two lines below |
 | GTK apps using gdk-pixbuf: Eye of GNOME, GIMP, older apps | `plugins/gdk-pixbuf` | `make -C plugins/gdk-pixbuf && sudo make -C plugins/gdk-pixbuf install` |
-| Windows: Explorer thumbnails and preview, Paint, XnView MP (WIC) | `plugins/wic` | the `-setup.exe` from `win/dist.sh` (MinGW, NSIS), or `regsvr32 nova_wic.dll` as administrator |
+| Windows: Explorer thumbnails and preview, Paint, XnView MP (WIC) | `plugins/wic` | the `-setup.exe` from `win/dist.sh` (MinGW, NSIS), or `regsvr32 yaif_wic.dll` as administrator |
 
 glycin loader, for your user:
 
 ```sh
 mkdir -p ~/.local/share/glycin-loaders/2+/conf.d
-printf '[loader:image/x-nova]\nExec=%s\n' "$PWD/plugins/glycin/target/release/glycin-nova" > ~/.local/share/glycin-loaders/2+/conf.d/glycin-nova.conf
+printf '[loader:image/x-yaif]\nExec=%s\n' "$PWD/plugins/glycin/target/release/glycin-yaif" > ~/.local/share/glycin-loaders/2+/conf.d/glycin-yaif.conf
 ```
 
 Animations play in Qt and glycin (gdk-pixbuf shows the first frame). RAW files show their embedded thumbnail.
@@ -155,9 +154,9 @@ Build needs: `qt6-qtbase-devel`, `kf6-kio-devel`, `gdk-pixbuf2-devel`, Rust 1.92
 
 What a codec cannot reach:
 
-- **Windows Photos** and the **iOS Photos** app take no third-party codec, whatever the format: `.nova` opens
+- **Windows Photos** and the **iOS Photos** app take no third-party codec, whatever the format: `.yaif` opens
   in Windows Photo Viewer instead (set by the installer), which is sharp only at 100 % scaling and shows the
-  frames of an animation as pages rather than playing them. A NOVA viewer is the way out, and is not written yet.
+  frames of an animation as pages rather than playing them. A YAIF viewer is the way out, and is not written yet.
 - **IrfanView** has no public plugin API; whether it reads WIC codecs is untested. XnView MP does.
 - KDE's own image thumbnailer carries a fixed list of MIME types, hence `plugins/kde`.
 
@@ -168,8 +167,8 @@ What a codec cannot reach:
 | **Modes** | `adaptive` (the default) measures each image and codes it exactly or with the wavelet, `lossless` never changes a pixel, `lossy` always trades some. [MANUAL.md](MANUAL.md) has the rules. |
 | **Lossless codec** | Context mixing, as in paq and GraLIC: several models predict each bit and a logistic mixer blends them. Levels 0–4 trade time for size, from palette coding to blended predictors. |
 | **Lossy codec** | A wavelet codec (level 5), picked automatically for photos in adaptive mode. Quality 90 is about 45 dB: it looks identical to the source. |
-| **RAW** | Level 6 codes the camera's sensor frame exactly and keeps what LibRaw needs to develop it, so a `.nova` goes back to DNG or develops with the camera's look. |
-| **HDR** | iPhone photos carry an HDR gain map (ISO 21496-1). NOVA keeps it (1–3 % of the file), writes it back in an Ultra HDR JPEG, an AVIF or a HEIC, or applies it for PQ PNG, AVIF and HEIC (`-hdr`, with the light levels players tone map by). The web page shows it on HDR screens. |
+| **RAW** | Level 6 codes the camera's sensor frame exactly and keeps what LibRaw needs to develop it, so a `.yaif` goes back to DNG or develops with the camera's look. |
+| **HDR** | iPhone photos carry an HDR gain map (ISO 21496-1). YAIF keeps it (1–3 % of the file), writes it back in an Ultra HDR JPEG, an AVIF or a HEIC, or applies it for PQ PNG, AVIF and HEIC (`-hdr`, with the light levels players tone map by). The web page shows it on HDR screens. |
 | **Animation** | Frames after the first store only the rectangle that changed. |
 | **Speed** | Images are coded in independent stripes and decoded on every core, in the program and in the browser. |
 | **Container** | PNG-like chunks: `IHDR` header, `PREV` thumbnail first so viewers show something at once, `FDAT`/`FDLT` frames, `GMAP` HDR gain map, `MDAT` metadata, `LIVE` Live Photo video. Unknown chunks are skipped. |
@@ -180,34 +179,34 @@ You need the [Lisaac Ω](https://lisaac.org) compiler (0.6) and GCC.
 
 ```sh
 ./build.sh          # compiles, then runs install.sh on the result (same options: --no-plugins, --system...)
-lisaac nova.li -boost      # or, just the binary: writes ./nova (and nova.c)
+lisaac yaif.li -boost      # or, just the binary: writes ./yaif (and yaif.c)
 ```
 
-HEIC/AVIF, WebP and RAW support load their libraries at run time, so `nova` builds without them and uses them when they are installed:
+HEIC/AVIF, WebP and RAW support load their libraries at run time, so `yaif` builds without them and uses them when they are installed:
 [libheif](https://github.com/strukturag/libheif), [libavif](https://github.com/AOMediaCodec/libavif) 1.2+ (AVIF with a gain map; without it, the AVIF has no HDR), [libwebp](https://chromium.googlesource.com/webm/libwebp) and [LibRaw](https://www.libraw.org) 0.22.
 
 `release/pack.sh` builds the archive a release publishes (and what `install.sh --from archive.tar.gz` installs
 from, for testing one without downloading it); `.github/workflows/release.yml` runs it on a `v2.*` tag.
 
-Windows: `win/build.sh` cross-compiles `nova.c` to `nova.exe` with MinGW-w64 (same output as on Linux; 4 cores by default, `NOVA_THREADS=n` for more).
-`win/dist.sh` packs it with the WIC codec and the zlib and libwebp DLLs into `dist/nova-<version>-windows-x86_64-setup.exe` (NSIS installer: `nova` on the PATH, codec registered, uninstaller in Settings > Apps), the same as a `.msi` (for deployment tools), and a `.zip`.
+Windows: `win/build.sh` cross-compiles `yaif.c` to `yaif.exe` with MinGW-w64 (same output as on Linux; 4 cores by default, `YAIF_THREADS=n` for more).
+`win/dist.sh` packs it with the WIC codec and the zlib and libwebp DLLs into `dist/yaif-<version>-windows-x86_64-setup.exe` (NSIS installer: `yaif` on the PATH, codec registered, uninstaller in Settings > Apps), the same as a `.msi` (for deployment tools), and a `.zip`.
 
-The web version is built with [Emscripten](https://emscripten.org): `docs/build.sh` compiles `nova.c` and LibRaw to `docs/nova_enc.wasm`.
+The web version is built with [Emscripten](https://emscripten.org): `docs/build.sh` compiles `yaif.c` and LibRaw to `docs/yaif_enc.wasm`.
 
 ## Tests
 
-Each test compares NOVA with a reference, byte for byte or pixel for pixel:
+Each test compares YAIF with a reference, byte for byte or pixel for pixel:
 
 ```sh
 test/all.sh            # the 16 scripts below, one OK/FAIL line each (~30 min)
 test/check.sh          # lossless round trip of every image, with the size table
-test/libnova.sh        # the C decoder of the plugins against the program
+test/libyaif.sh        # the C decoder of the plugins against the program
 test/js.sh             # the JavaScript decoder against the program
 test/replicas.sh       # the multi-core WebAssembly build against the program
 test/raw.sh            # RAW: sensor frame, DNG and developed images against LibRaw
 test/hdr.sh            # HDR: gain map in JavaScript = program, Ultra HDR JPEG read back by libuhdr, AVIF gain map, clli
-test/unit.sh           # unit tests of the Lisaac modules, then corrupt files through `nova decode`
-test/libnova_unit.sh   # unit tests and fuzzing of libnovadec, the decoder inside the plugins
+test/unit.sh           # unit tests of the Lisaac modules, then corrupt files through `yaif decode`
+test/libyaif_unit.sh   # unit tests and fuzzing of libyaifdec, the decoder inside the plugins
 test/update.sh         # the update check, against a fake curl and release list (no network)
 ```
 
@@ -221,7 +220,7 @@ under a throwaway `$HOME` and a local fake release server: not part of `test/all
 ## FAQ
 
 **Why Lisaac Ω?**
-It is a prototype-based language, compiled to C: the first compiled one. NOVA v2 is also a test of how far it goes on real work: a codec, a container, six output formats and a WebAssembly build.
+It is a prototype-based language, compiled to C: the first compiled one. YAIF v2 is also a test of how far it goes on real work: a codec, a container, six output formats and a WebAssembly build.
 
 **Can the browser version open HEIC files?**
 In Safari only, which decodes HEIC itself. Other browsers do not ship an HEVC decoder, and this site does not either.
@@ -229,31 +228,31 @@ In Safari only, which decodes HEIC itself. Other browsers do not ship an HEVC de
 **Does it run on macOS?**
 It builds: GitHub Actions compiles and packages Intel and Apple Silicon binaries on every release. Running it
 has not been verified on a real Mac yet, and there is no ImageIO or Quick Look plugin, so Finder and Preview
-will not show `.nova` files.
+will not show `.yaif` files.
 
 **What does the browser version leave out?**
 Animations and Live Photos are created with the program only, and export is limited to PNG, JPEG and WebP. The page lists the rest.
 
 ## Credits
 
-- [LibRaw](https://www.libraw.org) (LGPL 2.1 or CDDL 1.0) reads and develops camera RAW files. Its headers are in `third_party/libraw/`, and the web version (`docs/nova_enc.wasm`) contains it.
+- [LibRaw](https://www.libraw.org) (LGPL 2.1 or CDDL 1.0) reads and develops camera RAW files. Its headers are in `third_party/libraw/`, and the web version (`docs/yaif_enc.wasm`) contains it.
 - [libwebp](https://chromium.googlesource.com/webm/libwebp) (BSD) writes WebP. Its headers are in `third_party/libwebp/`.
 - The site uses [Bricolage Grotesque](https://github.com/ateliertriay/bricolage) and [Atkinson Hyperlegible](https://www.brailleinstitute.org/freefont/) (SIL Open Font License, in `docs/fonts/`).
 
 ## Privacy and uninstalling
 
-- **Privacy:** nova sends nothing about you or your files anywhere. Its only network access is the update
+- **Privacy:** yaif sends nothing about you or your files anywhere. Its only network access is the update
   check: at most once a day, only in an interactive terminal, one HTTPS request to GitHub for the list of
   releases (GitHub sees your IP address, as for any page; see
   [GitHub's privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)).
-  `NOVA_NO_UPDATE_CHECK=1` turns it off. The installers change nothing else over the network; `install.sh`
-  downloads the release (and, to build libnova-heif, libheif and kvazaar) from GitHub. The
-  [web page](https://thibault-savenkoff.github.io/nova/) runs on your device and uploads nothing.
-- **What the installers change**, all undone by uninstalling: nova on the `PATH`, the `.nova` file type
+  `YAIF_NO_UPDATE_CHECK=1` turns it off. The installers change nothing else over the network; `install.sh`
+  downloads the release (and, to build libyaif-heif, libheif and kvazaar) from GitHub. The
+  [web page](https://thibault-savenkoff.github.io/yaif/) runs on your device and uploads nothing.
+- **What the installers change**, all undone by uninstalling: yaif on the `PATH`, the `.yaif` file type
   and its codec (Explorer thumbnails), and one line in your PowerShell profile for Tab completion (Windows);
   on Linux and macOS, the lines `install.sh` offers to add to `~/.zshrc`, which it asks about first.
-- **Uninstalling:** Windows, Settings > Apps > NOVA (or, from the zip, `uninstall.bat`, then delete the
-  folder); Linux and macOS, `bash ~/.local/share/nova/install.sh --uninstall` (add `--system` or
+- **Uninstalling:** Windows, Settings > Apps > YAIF (or, from the zip, `uninstall.bat`, then delete the
+  folder); Linux and macOS, `bash ~/.local/share/yaif/install.sh --uninstall` (add `--system` or
   `--prefix DIR` if you installed with one), which removes only what the install recorded.
 
 ## License

@@ -2,6 +2,6 @@ LibRaw 0.22.2 public headers (libraw/*.h), unmodified, with LibRaw's licence fil
 Source: Fedora package LibRaw-devel-0.22.2-1.fc44 (upstream https://www.libraw.org).
 Licence: LGPL 2.1 or CDDL 1.0, at the user's choice (COPYRIGHT, LICENSE.LGPL, LICENSE.CDDL).
 
-nova only uses them for the struct layout: the library itself (libraw_r.so) is loaded at run
-time (nova_rawin.li) and must have the same major.minor version, checked at load.
+yaif only uses them for the struct layout: the library itself (libraw_r.so) is loaded at run
+time (yaif_rawin.li) and must have the same major.minor version, checked at load.
 To move to a new LibRaw: run ./update_libraw.sh, rebuild, run test/raw.sh.

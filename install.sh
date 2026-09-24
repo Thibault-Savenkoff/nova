@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# NOVA installer: downloads (or unpacks --from) a release, installs the
-# nova command, its zsh completion and the .nova MIME type, then offers to
+# YAIF installer: downloads (or unpacks --from) a release, installs the
+# yaif command, its zsh completion and the .yaif MIME type, then offers to
 # build the viewer plugins (Qt/KDE, GNOME/glycin, GTK/gdk-pixbuf) for
 # whichever of those are present on this system.
 #
@@ -9,13 +9,13 @@
 # removes paths read back from that manifest -- never a directory, never
 # a guessed or computed path.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Thibault-Savenkoff/nova/v2/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/Thibault-Savenkoff/nova/v2/install.sh | bash -s -- --uninstall
+#   curl -fsSL https://raw.githubusercontent.com/Thibault-Savenkoff/yaif/v2/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Thibault-Savenkoff/yaif/v2/install.sh | bash -s -- --uninstall
 #
 # Bash 3.2 compatible (macOS ships nothing newer): no arrays, no [[ ]].
 set -eu
 
-repo=Thibault-Savenkoff/nova
+repo=Thibault-Savenkoff/yaif
 prefix=$HOME/.local
 system=0
 plugins=1
@@ -31,17 +31,17 @@ CC=${CC:-cc}
 # Set by test/install.sh to redirect system-wide (root) installs into a
 # fake root instead of touching the real system directories or needing
 # real sudo. Empty in a normal install.
-TEST_ROOT=${NOVA_TEST_ROOT:-}
+TEST_ROOT=${YAIF_TEST_ROOT:-}
 # Test-only: overrides the GitHub URLs with a local server. Empty in a
 # normal install.
-RELEASE_BASE=${NOVA_RELEASE_BASE:-https://github.com/$repo/releases/download}
+RELEASE_BASE=${YAIF_RELEASE_BASE:-https://github.com/$repo/releases/download}
 # The releases' Atom feed, not the REST API: the API allows 60 requests an hour per IP address
 # without a token, and a few installs plus other tools on the same network used them up (403).
-FEED=${NOVA_FEED:-https://github.com/$repo/releases.atom}
+FEED=${YAIF_FEED:-https://github.com/$repo/releases.atom}
 
 usage() {
   cat <<'EOF'
-NOVA installer
+YAIF installer
 
 Usage:
   install.sh [options]
@@ -55,7 +55,7 @@ Options:
                   (run from an unpacked archive, it installs that archive's files)
   --no-plugins    skip the Qt/KDE/GNOME/GTK viewer plugins
   --no-deps       skip checking for the HEIC/AVIF/WebP/RAW libraries
-  --no-heic-hdr   don't build libnova-heif (then .heic output has no HDR gain map)
+  --no-heic-hdr   don't build libyaif-heif (then .heic output has no HDR gain map)
   -y, --yes       don't ask before touching ~/.zshrc or building plugins
   --verbose       print every command this script runs (always shown on failure)
   --uninstall     remove everything a previous run installed
@@ -144,7 +144,7 @@ insert_before() {
 
 # ---- manifest: what we installed, read back (in reverse) by --uninstall ----
 # One of "user|root <path>" or "line <rc-file><TAB><text>" or "dolphin <previous Plugins= value>" per line.
-manifest="$prefix/share/nova/installed.txt"
+manifest="$prefix/share/yaif/installed.txt"
 record() {
   local line="$*"
   mkdir -p "$(dirname "$manifest")" 2>/dev/null || true
@@ -180,7 +180,7 @@ add_rc_line() {  # add_rc_line <line> <question> <ok-suffix>: append <line> to ~
 
 add_fpath_line() {  # like add_rc_line, but inserted before compinit/oh-my-zsh (they read fpath once)
   local dir=$1 rc="$HOME/.zshrc" line at
-  line="fpath=($dir \$fpath)   # NOVA completion"
+  line="fpath=($dir \$fpath)   # YAIF completion"
   [ -f "$rc" ] || { warn "no ~/.zshrc, add manually before compinit: $line"; return 0; }
   if grep -qxF -- "$line" "$rc" 2>/dev/null; then
     record line "$rc"$'\t'"$line"
@@ -203,19 +203,19 @@ add_fpath_line() {  # like add_rc_line, but inserted before compinit/oh-my-zsh (
 # ---- uninstall ----
 enable_dolphin_thumbnailer() {
   if ! command -v kreadconfig6 >/dev/null 2>&1 || ! command -v kwriteconfig6 >/dev/null 2>&1; then
-    info "kreadconfig6/kwriteconfig6 not found, enable novathumb in Dolphin's settings manually"
+    info "kreadconfig6/kwriteconfig6 not found, enable yaifthumb in Dolphin's settings manually"
     return 0
   fi
   local cur new
   cur=$(kreadconfig6 --file dolphinrc --group PreviewSettings --key Plugins 2>/dev/null) || cur=
   case ",$cur," in
-    *,novathumb,*) ok "Dolphin already uses the NOVA thumbnailer" ;;
+    *,yaifthumb,*) ok "Dolphin already uses the YAIF thumbnailer" ;;
     *)
-      new=${cur:+$cur,}novathumb
+      new=${cur:+$cur,}yaifthumb
       run user kwriteconfig6 --file dolphinrc --group PreviewSettings --key Plugins "$new" ||
         { warn "could not enable the Dolphin thumbnailer"; return 0; }
       record dolphin "$cur"
-      ok "Dolphin thumbnails enabled for .nova (restart Dolphin)"
+      ok "Dolphin thumbnails enabled for .yaif (restart Dolphin)"
       ;;
   esac
 }
@@ -227,7 +227,7 @@ remove_dolphin_thumbnailer() {  # $rest: the pre-install Plugins= value, read by
   else
     run user kwriteconfig6 --file dolphinrc --group PreviewSettings --key Plugins --delete || return 0
   fi
-  ok "Dolphin no longer uses the NOVA thumbnailer"
+  ok "Dolphin no longer uses the YAIF thumbnailer"
 }
 
 refresh_caches() {
@@ -235,7 +235,7 @@ refresh_caches() {
 }
 
 do_uninstall() {
-  step "Uninstalling NOVA ($(pretty "$prefix"))"
+  step "Uninstalling YAIF ($(pretty "$prefix"))"
   [ -f "$manifest" ] || die "nothing to uninstall: $manifest not found (installed with another --prefix?)"
   local kind rest file text
   # Undo in reverse so, e.g., an rc-file line inserted before another added line still matches.
@@ -261,17 +261,17 @@ do_uninstall() {
   done < "$tmp/manifest"
   refresh_caches
   rm -f -- "$manifest"
-  ok "NOVA is uninstalled."
+  ok "YAIF is uninstalled."
 }
 
 # ---- download / verify / unpack ----
 find_release() {
-  step "Finding the NOVA release"
+  step "Finding the YAIF release"
   local tag
   if [ -n "$version" ]; then
     tag="v$version"
   else
-    # v1 ("NOVA Viewer") releases are also published, and one of them is the repo's "latest":
+    # v1 ("YAIF Viewer") releases are also published, and one of them is the repo's "latest":
     # filter to v2.* tags instead of trusting "latest".
     tag=$(curl -fsSL "$FEED" | grep -o 'releases/tag/v2\.[^"<]*' | head -1 | sed 's#.*/##') || tag=
     [ -n "$tag" ] || die "no v2 release found on github.com/$repo"
@@ -280,9 +280,9 @@ find_release() {
   version=${tag#v}
   # macOS: one universal binary (Apple Silicon + Intel) since 2.0.0-beta.6, one archive per
   # architecture before.
-  archive="nova-$version-$os-$arch.tar.gz"
-  if [ "$os" = macos ] && curl -fsL -r 0-0 -o /dev/null "$RELEASE_BASE/$tag/nova-$version-macos-universal.tar.gz"; then
-    archive="nova-$version-macos-universal.tar.gz"
+  archive="yaif-$version-$os-$arch.tar.gz"
+  if [ "$os" = macos ] && curl -fsL -r 0-0 -o /dev/null "$RELEASE_BASE/$tag/yaif-$version-macos-universal.tar.gz"; then
+    archive="yaif-$version-macos-universal.tar.gz"
   fi
   url="$RELEASE_BASE/$tag/$archive"
   ok "version $version, for $os $arch"
@@ -315,16 +315,16 @@ unpack() {
 
 # ---- install steps ----
 install_bin() {
-  step "Installing the nova command"
-  install_file "$owner" "$src/bin/nova" "$prefix/bin/nova" 755
+  step "Installing the yaif command"
+  install_file "$owner" "$src/bin/yaif" "$prefix/bin/yaif" 755
   # A copy of this script, so uninstalling needs neither the network nor the archive.
-  install_file "$owner" "$src/install.sh" "$prefix/share/nova/install.sh" 755
-  ok "nova $version -> $(pretty "$prefix/bin/nova")"
+  install_file "$owner" "$src/install.sh" "$prefix/share/yaif/install.sh" 755
+  ok "yaif $version -> $(pretty "$prefix/bin/yaif")"
   case ":$PATH:" in
     *":$prefix/bin:"*) ;;
     *)
       warn "$(pretty "$prefix/bin") is not in PATH"
-      add_rc_line "export PATH=\"$prefix/bin:\$PATH\"   # NOVA" \
+      add_rc_line "export PATH=\"$prefix/bin:\$PATH\"   # YAIF" \
         "Add it to ~/.zshrc?" "(open a new terminal)" ;;
   esac
 }
@@ -332,22 +332,22 @@ install_bin() {
 install_completion() {
   step "Installing shell completion"
   local dir="$prefix/share/zsh/site-functions"
-  install_file "$owner" "$src/completions/_nova" "$dir/_nova" 644
+  install_file "$owner" "$src/completions/_yaif" "$dir/_yaif" 644
   add_fpath_line "$dir"
   # bash and fish auto-load from these locations (if the shell/package is present): no rc-file edit.
-  install_file "$owner" "$src/completions/nova.bash" "$prefix/share/bash-completion/completions/nova" 644
-  install_file "$owner" "$src/completions/nova.fish" "$prefix/share/fish/vendor_completions.d/nova.fish" 644
+  install_file "$owner" "$src/completions/yaif.bash" "$prefix/share/bash-completion/completions/yaif" 644
+  install_file "$owner" "$src/completions/yaif.fish" "$prefix/share/fish/vendor_completions.d/yaif.fish" 644
   ok "bash and fish pick it up automatically (a new shell; bash needs the bash-completion package)"
 }
 
 install_mime() {
-  step "Registering the .nova file type (image/x-nova)"
-  install_file "$owner" "$src/plugins/mime/nova.xml" "$prefix/share/mime/packages/nova.xml" 644
+  step "Registering the .yaif file type (image/x-yaif)"
+  install_file "$owner" "$src/plugins/mime/yaif.xml" "$prefix/share/mime/packages/yaif.xml" 644
   if command -v update-mime-database >/dev/null 2>&1; then
     run "$owner" update-mime-database "$prefix/share/mime" || warn "update-mime-database failed"
-    ok "file managers now know .nova files"
+    ok "file managers now know .yaif files"
   else
-    warn "update-mime-database not found; .nova files won't get an icon/thumbnail until it runs"
+    warn "update-mime-database not found; .yaif files won't get an icon/thumbnail until it runs"
   fi
 }
 
@@ -364,30 +364,30 @@ check_lib() {  # check_lib <linux-soname> <macos-dylib> <label>
 
 check_libs() {
   [ $deps = 1 ] || return 0
-  step "Checking the libraries nova uses for other formats"
-  info "nova runs without them; each one adds formats (HEIC, AVIF, WebP, RAW)."
+  step "Checking the libraries yaif uses for other formats"
+  info "yaif runs without them; each one adds formats (HEIC, AVIF, WebP, RAW)."
   check_lib libheif.so.1 libheif.1.dylib "libheif: HEIC, HEIF, AVIF"
   check_lib libavif.so.16 libavif.16.dylib "libavif: AVIF with an HDR gain map"
   check_lib libwebp.so.7 libwebp.7.dylib "libwebp: WebP output"
   check_lib libraw_r.so.25 libraw_r.25.dylib "LibRaw: camera RAW"
 }
 
-# libnova-heif: libheif with its gain-map pull request (libheif-gainmap/build.sh), which nova loads
+# libyaif-heif: libheif with its gain-map pull request (libheif-gainmap/build.sh), which yaif loads
 # only to write a .heic that keeps the photo's HDR. Built here, like the plugins: no released libheif
 # can do it. Skipped (with the command to get the tools) when cmake or a compiler is missing, and
 # not rebuilt when the recipe has not changed since the last install.
 install_heic_hdr() {
-  local lib=libnova-heif.so miss="" t stamp dir
-  [ $os = macos ] && lib=libnova-heif.dylib
+  local lib=libyaif-heif.so miss="" t stamp dir
+  [ $os = macos ] && lib=libyaif-heif.dylib
   if [ $heic_hdr = 0 ]; then
     step "HEIC with HDR skipped (--no-heic-hdr)"
     return 0
   fi
-  step "HEIC with HDR (libnova-heif)"
+  step "HEIC with HDR (libyaif-heif)"
   stamp=$(cat "$src/libheif-gainmap/build.sh" "$src/libheif-gainmap/pr1503.patch" | cksum | awk '{print $1}')
-  dir=$prefix/lib/nova
+  dir=$prefix/lib/yaif
   [ $owner = root ] && dir=$TEST_ROOT$dir
-  if [ -f "$dir/$lib" ] && [ "$(cat "$dir/libnova-heif.stamp" 2>/dev/null)" = "$stamp" ]; then
+  if [ -f "$dir/$lib" ] && [ "$(cat "$dir/libyaif-heif.stamp" 2>/dev/null)" = "$stamp" ]; then
     ok "already built, unchanged"
     return 0
   fi
@@ -405,14 +405,14 @@ install_heic_hdr() {
   info "No released libheif can write HDR into a HEIC: building one that can (1-3 min)..."
   if ! run user sh "$src/libheif-gainmap/build.sh" "$tmp/heif" "$tmp/$lib" > "$tmp/heif.log" 2>&1; then
     tail -20 "$tmp/heif.log" >&2
-    warn "libnova-heif: build failed (log above) -- .heic output will be SDR only"
+    warn "libyaif-heif: build failed (log above) -- .heic output will be SDR only"
     return 0
   fi
   command -v strip >/dev/null 2>&1 && strip -x "$tmp/$lib" 2>/dev/null || true
-  printf '%s\n' "$stamp" > "$tmp/libnova-heif.stamp"
-  install_file "$owner" "$tmp/$lib" "$prefix/lib/nova/$lib" 644
-  install_file "$owner" "$tmp/libnova-heif.stamp" "$prefix/lib/nova/libnova-heif.stamp" 644
-  ok "nova decode photo.nova photo.heic now keeps the HDR gain map"
+  printf '%s\n' "$stamp" > "$tmp/libyaif-heif.stamp"
+  install_file "$owner" "$tmp/$lib" "$prefix/lib/yaif/$lib" 644
+  install_file "$owner" "$tmp/libyaif-heif.stamp" "$prefix/lib/yaif/libyaif-heif.stamp" 644
+  ok "yaif decode photo.yaif photo.heic now keeps the HDR gain map"
 }
 
 # cmake_plugin <dir> <label>: builds plugins/<dir>, installs it (Qt's own system plugin dir), records the files.
@@ -438,28 +438,28 @@ has_kf6kio() {  # KDE Frameworks ship CMake package files, no pkg-config .pc: lo
   return 1
 }
 
-drop_pixbuf_thumbnailer() {  # an earlier install's nova.thumbnailer, a second "NOVA" in Dolphin (see below)
-  local thumb="$TEST_ROOT/usr/share/thumbnailers/nova.thumbnailer"
-  if cmp -s "$src/plugins/gdk-pixbuf/nova.thumbnailer" "$thumb"; then
-    run root rm -f -- "$thumb" && ok "removed $(pretty "$thumb") (Dolphin listed NOVA twice)"
+drop_pixbuf_thumbnailer() {  # an earlier install's yaif.thumbnailer, a second "YAIF" in Dolphin (see below)
+  local thumb="$TEST_ROOT/usr/share/thumbnailers/yaif.thumbnailer"
+  if cmp -s "$src/plugins/gdk-pixbuf/yaif.thumbnailer" "$thumb"; then
+    run root rm -f -- "$thumb" && ok "removed $(pretty "$thumb") (Dolphin listed YAIF twice)"
   fi
   return 0
 }
 
 make_gdk_pixbuf_plugin() {
-  local so="$tmp/libpixbufloader-nova.so" moduledir
+  local so="$tmp/libpixbufloader-yaif.so" moduledir
   moduledir=$(pkg-config --variable=gdk_pixbuf_moduledir gdk-pixbuf-2.0 2>/dev/null) || moduledir=
   [ -n "$moduledir" ] || { warn "gdk-pixbuf loader: gdk_pixbuf_moduledir unknown, skipped"; return 1; }
   # shellcheck disable=SC2046  # pkg-config's output must split into separate flags.
   run user "$CC" -O2 -std=c99 -Wall -fPIC -shared \
-    -I"$src/libnova" "$src/plugins/gdk-pixbuf/io-nova.c" "$src/libnova/novadec.c" -o "$so" \
+    -I"$src/libyaif" "$src/plugins/gdk-pixbuf/io-yaif.c" "$src/libyaif/yaifdec.c" -o "$so" \
     $(pkg-config --cflags --libs gdk-pixbuf-2.0) -lpthread \
     > "$tmp/gdk-pixbuf.log" 2>&1 ||
     { tail -20 "$tmp/gdk-pixbuf.log" >&2; warn "gdk-pixbuf loader: build failed (log above)"; return 1; }
-  install_file root "$so" "$moduledir/libpixbufloader-nova.so" 644
+  install_file root "$so" "$moduledir/libpixbufloader-yaif.so" 644
   # Dolphin lists freedesktop .thumbnailer files next to its own plugins: with the KDE thumbnailer
-  # installed, this one would show as a second "NOVA" entry. It is for Nautilus/older GNOME only.
-  [ $kde_thumb = 1 ] || install_file root "$src/plugins/gdk-pixbuf/nova.thumbnailer" "/usr/share/thumbnailers/nova.thumbnailer" 644
+  # installed, this one would show as a second "YAIF" entry. It is for Nautilus/older GNOME only.
+  [ $kde_thumb = 1 ] || install_file root "$src/plugins/gdk-pixbuf/yaif.thumbnailer" "/usr/share/thumbnailers/yaif.thumbnailer" 644
   if command -v gdk-pixbuf-query-loaders-64 >/dev/null 2>&1; then
     run root gdk-pixbuf-query-loaders-64 --update-cache
   elif command -v gdk-pixbuf-query-loaders >/dev/null 2>&1; then
@@ -481,31 +481,31 @@ cargo_glycin_plugin() {
   run user cargo build --release --manifest-path "$src/plugins/glycin/Cargo.toml" --target-dir "$tmp/glycin" \
     > "$tmp/glycin.log" 2>&1 ||
     { tail -20 "$tmp/glycin.log" >&2; warn "glycin loader: build failed (log above)"; return 1; }
-  bin_out=$(find "$tmp/glycin/release" -maxdepth 1 -type f -name 'glycin-nova*' ! -name '*.d' | head -1)
+  bin_out=$(find "$tmp/glycin/release" -maxdepth 1 -type f -name 'glycin-yaif*' ! -name '*.d' | head -1)
   [ -n "$bin_out" ] || { warn "glycin loader: build produced no binary, skipped"; return 1; }
   name=$(basename "$bin_out")
   install_file root "$bin_out" "$execdir/$name" 755
-  printf '[loader:image/x-nova]\nExec=%s/%s\n' "$execdir" "$name" > "$tmp/glycin-nova.conf"
-  install_file root "$tmp/glycin-nova.conf" "$confdir/glycin-nova.conf" 644
+  printf '[loader:image/x-yaif]\nExec=%s/%s\n' "$execdir" "$name" > "$tmp/glycin-yaif.conf"
+  install_file root "$tmp/glycin-yaif.conf" "$confdir/glycin-yaif.conf" 644
   # Nautilus thumbnails: glycin-thumbnailer is a generic tool that thumbnails whatever glycin can
-  # load, so registering the loader above is enough to make it work for .nova too, in principle.
+  # load, so registering the loader above is enough to make it work for .yaif too, in principle.
   # Newer GNOME (glycin-loaders' era) ships this instead of the older gdk-pixbuf-thumbnailer, which
-  # make_gdk_pixbuf_plugin's own nova.thumbnailer still targets for systems that have it. The other
+  # make_gdk_pixbuf_plugin's own yaif.thumbnailer still targets for systems that have it. The other
   # glycin-shipped .thumbnailer files all use glycin-thumbnailer's absolute path (the factory spawns
   # it outside an interactive shell's PATH), so this does too -- confirmed NOT sufficient on its own
   # by itself on a real GNOME 50 VM (still no thumbnail); see CLAUDE.md, not chased further.
   local gt_path
   gt_path=$(command -v glycin-thumbnailer 2>/dev/null) || gt_path=
   if [ -n "$gt_path" ]; then
-    printf '[Thumbnailer Entry]\nTryExec=%s\nExec=%s --input %%u --output %%o --size %%s\nMimeType=image/x-nova;\n' \
-      "$gt_path" "$gt_path" > "$tmp/nova-glycin.thumbnailer"
-    install_file root "$tmp/nova-glycin.thumbnailer" "/usr/share/thumbnailers/nova-glycin.thumbnailer" 644
+    printf '[Thumbnailer Entry]\nTryExec=%s\nExec=%s --input %%u --output %%o --size %%s\nMimeType=image/x-yaif;\n' \
+      "$gt_path" "$gt_path" > "$tmp/yaif-glycin.thumbnailer"
+    install_file root "$tmp/yaif-glycin.thumbnailer" "/usr/share/thumbnailers/yaif-glycin.thumbnailer" 644
   fi
   # A working loader is not enough for double-click-to-open: GNOME resolves the default app for a
   # MIME type from mimeapps.list, not from which loader can technically decode it, so Loupe (which
-  # decodes .nova fine once given the file) never gets offered unless set as the default here.
+  # decodes .yaif fine once given the file) never gets offered unless set as the default here.
   if [ -f /usr/share/applications/org.gnome.Loupe.desktop ] && command -v xdg-mime > /dev/null 2>&1; then
-    run user xdg-mime default org.gnome.Loupe.desktop image/x-nova
+    run user xdg-mime default org.gnome.Loupe.desktop image/x-yaif
   fi
   ok "glycin loader installed"
 }
@@ -515,12 +515,12 @@ install_plugins() {
     step "Viewer plugins skipped (--no-plugins)"
     return 0
   fi
-  step "Viewer plugins (open .nova files in image viewers, show thumbnails)"
+  step "Viewer plugins (open .yaif files in image viewers, show thumbnails)"
   info "They are built here, for this system's Qt / GNOME. Installing them needs root (system plugin folders)."
   echo
 
   if command -v cmake >/dev/null 2>&1 && pkg-config --exists Qt6Core 2>/dev/null; then
-    info "KDE / Qt: Gwenview, Okular, Krita open .nova; Dolphin shows thumbnails."
+    info "KDE / Qt: Gwenview, Okular, Krita open .yaif; Dolphin shows thumbnails."
     if ask "Build and install the Qt and KDE plugins?"; then
       cmake_plugin qt "Qt plugin (Gwenview, Okular, Krita)" || true
       if has_kf6kio; then
@@ -535,7 +535,7 @@ install_plugins() {
   echo
 
   if pkg-config --exists glycin-2 2>/dev/null; then
-    info "GNOME (Loupe, Nautilus): open .nova via the glycin loader."
+    info "GNOME (Loupe, Nautilus): open .yaif via the glycin loader."
     if command -v cargo >/dev/null 2>&1; then
       if ask "Build and install the glycin loader?"; then cargo_glycin_plugin || true; fi
     else
@@ -547,7 +547,7 @@ install_plugins() {
   echo
 
   if pkg-config --exists gdk-pixbuf-2.0 2>/dev/null; then
-    info "GTK / gdk-pixbuf: Eye of GNOME, GIMP and older GTK apps open .nova."
+    info "GTK / gdk-pixbuf: Eye of GNOME, GIMP and older GTK apps open .yaif."
     if ask "Build and install the gdk-pixbuf loader?"; then make_gdk_pixbuf_plugin || true; fi
   else
     info "gdk-pixbuf not found, GTK loader skipped."
@@ -578,20 +578,30 @@ if [ $uninstall = 1 ]; then
   exit 0
 fi
 
-printf 'NOVA installer  (%s %s, into %s)\n' "$os" "$arch" "$(pretty "$prefix")"
+printf 'YAIF installer  (%s %s, into %s)\n' "$os" "$arch" "$(pretty "$prefix")"
+
+# YAIF was called NOVA up to v2.0.0-beta.6: that install's own manifest-only uninstaller removes it.
+old_nova="$prefix/share/nova/install.sh"
+if [ -f "$old_nova" ]; then
+  step "Removing NOVA, the former name of YAIF ($(pretty "$prefix"))"
+  if [ $system = 1 ]; then old_flag=--system; else old_flag="--prefix $prefix"; fi
+  # shellcheck disable=SC2086
+  NOVA_TEST_ROOT=$TEST_ROOT bash "$old_nova" --uninstall $old_flag ||
+    warn "NOVA's uninstaller failed; run it yourself: bash $(pretty "$old_nova") --uninstall"
+fi
 
 if [ -n "$from" ]; then
   [ -f "$from" ] || die "no such file: $from"
   archive=$(basename "$from")
-  version=$(printf '%s' "$archive" | sed -E "s/^nova-(.+)-$os-($arch|universal)\\.tar\\.gz\$/\\1/")
-  [ -n "$version" ] && [ "$version" != "$archive" ] || die "unexpected archive name: $archive (expected nova-<version>-$os-$arch.tar.gz)"
+  version=$(printf '%s' "$archive" | sed -E "s/^yaif-(.+)-$os-($arch|universal)\\.tar\\.gz\$/\\1/")
+  [ -n "$version" ] && [ "$version" != "$archive" ] || die "unexpected archive name: $archive (expected yaif-<version>-$os-$arch.tar.gz)"
   cp "$from" "$tmp/$archive"
   unpack
-elif [ -z "$version" ] && [ -x "$here/bin/nova" ]; then
+elif [ -z "$version" ] && [ -x "$here/bin/yaif" ]; then
   # Run from an unpacked release archive: install what sits next to this script.
   step "Installing from $(pretty "$here")"
-  version=$("$here/bin/nova" --version 2>/dev/null | awk 'NR == 1 {print $2}') || true
-  [ -n "$version" ] || die "$(pretty "$here/bin/nova") does not run here: an archive for another OS or architecture?"
+  version=$("$here/bin/yaif" --version 2>/dev/null | awk 'NR == 1 {print $2}') || true
+  [ -n "$version" ] || die "$(pretty "$here/bin/yaif") does not run here: an archive for another OS or architecture?"
   src=$here
 else
   find_release
@@ -607,11 +617,11 @@ install_heic_hdr
 install_plugins
 
 step "Done"
-ok "nova $version is installed."
-info "Try:  nova encode photo.jpg          (writes photo.nova)"
-info "      nova decode photo.nova photo.png"
+ok "yaif $version is installed."
+info "Try:  yaif encode photo.jpg          (writes photo.yaif)"
+info "      yaif decode photo.yaif photo.png"
 info "Manual: https://github.com/$repo/blob/v2/MANUAL.md"
 if [ $system = 1 ]; then flag=" --system"
 elif [ "$prefix" != "$HOME/.local" ]; then flag=" --prefix $(pretty "$prefix")"
 else flag=; fi
-info "Uninstall: bash $(pretty "$prefix/share/nova/install.sh") --uninstall$flag"
+info "Uninstall: bash $(pretty "$prefix/share/yaif/install.sh") --uninstall$flag"

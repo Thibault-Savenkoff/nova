@@ -1,8 +1,8 @@
 [package]
-name = "glycin-nova"
+name = "glycin-yaif"
 version = "2.0.0"
 edition = "2024"
-description = "glycin loader for NOVA images (GNOME Loupe, Nautilus thumbnails)"
+description = "glycin loader for YAIF images (GNOME Loupe, Nautilus thumbnails)"
 license = "MIT"
 
 [dependencies]

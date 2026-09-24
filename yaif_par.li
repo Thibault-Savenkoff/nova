@@ -1,0 +1,473 @@
+Header
+  + name := Yaif_par
+  // Parallel jobs with fork(): each job runs in a child process with its own copy of the global
+  // codec state (Yaif_model, Yaif_lossy are singletons), results go through shared memory.
+  // YAIF_THREADS=n caps the number of processes (1 = everything in this process, same output).
+  // Progress: after `progress label of n` (n work units in all), each job reports its units done
+  // (tick) into shared memory and the parent shows the percentage on stderr (terminal only) until
+  // the next wait_all.
+  - include := `
+#include <stdio.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
+`;
+  - external := `
+/* WebAssembly has no fork: the page runs N copies ("replicas") of the same command instead
+   (YAIF_REPLICA=r/N). They stay identical: job j runs in replica j mod N only, the others skip
+   it, and at wait_all each replica sends the bytes its jobs changed in the shared buffers and
+   applies the others' (np_exchange: Module.sync, async, via Asyncify).
+   Windows has no fork either: yaif.exe starts the other replicas itself (np_spawn). */
+#if defined(__EMSCRIPTEN__) || defined(_WIN32)
+#include <stdlib.h>
+#include <string.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+/* Module.sync(changes) resolves to the other replicas' changes (one array or a list of them). */
+EM_ASYNC_JS(int, np_exchange, (const void *d, int n), {
+  Module.syncData = [].concat(await Module.sync(HEAPU8.slice(d, d + n)));
+  return Module.syncData.reduce((s, x) => s + x.length, 0);
+});
+EM_JS(void, np_take, (void *p), {
+  for (const x of Module.syncData) { HEAPU8.set(x, p); p += x.length; }
+  Module.syncData = null;
+});
+#endif
+static int np_rn, np_rid, np_job, np_open;
+static void np_fail(const char *m) { fprintf(stderr, "yaif replicas: %s\n", m); exit(3); }
+#ifdef _WIN32
+/* Replica 0 is the yaif.exe the user started: it runs the same command line N-1 more times with
+   YAIF_REPLICA=r/N and YAIF_PIPES=<in> <out> (inherited pipe handles to replica 0), stdin/stdout/
+   stderr on NUL; win/yaif_win.h sends their file writes to NUL too. At wait_all replica 0 collects
+   the changes of all, then sends each the others'. */
+static HANDLE np_in[64], np_out[64];
+static unsigned char *np_got;
+static long np_gotn;
+static long yaif_cpus(void);
+static void np_io(HANDLE h, void *p, long n, int w) {
+  DWORD k;
+  for (; n > 0; p = (char *)p + k, n -= k)
+    if (!(w ? WriteFile(h, p, n > (1 << 30) ? 1 << 30 : n, &k, 0) : ReadFile(h, p, n > (1 << 30) ? 1 << 30 : n, &k, 0)) || !k) np_fail("a replica stopped");
+}
+static void np_spawn(void) {
+  SECURITY_ATTRIBUTES sa = { sizeof sa, 0, TRUE };
+  STARTUPINFOW si;
+  PROCESS_INFORMATION pi;
+  HANDLE nul, r, w;
+  WCHAR exe[MAX_PATH];
+  char v[64];
+  const char *e = getenv("YAIF_THREADS");
+  int i, n = e ? atoi(e) : (int)yaif_cpus();
+  /* ponytail: 4 replicas by default: each holds the whole image (~700 MB for 24 Mpx), and on Linux
+     4 processes already give most of the gain (21.5 s -> 12.2 s, 16: 11 s). YAIF_THREADS for more. */
+  if (!e && n > 4) n = 4;
+  if (n < 2) return;
+  if (n > 64) n = 64;
+  nul = CreateFileA("NUL", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, 0);
+  GetModuleFileNameW(0, exe, MAX_PATH);
+  for (i = 1; i < n; i++) {
+    /* r: replica i reads what replica 0 writes to np_out[i]; w: replica i writes, replica 0 reads np_in[i] */
+    if (!CreatePipe(&r, &np_out[i], 0, 1 << 20) || !CreatePipe(&np_in[i], &w, 0, 1 << 20)) np_fail("no pipe");
+    SetHandleInformation(r, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+    SetHandleInformation(w, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+    sprintf(v, "%d/%d", i, n);
+    SetEnvironmentVariableA("YAIF_REPLICA", v);
+    sprintf(v, "%llu %llu", (unsigned long long)(size_t)r, (unsigned long long)(size_t)w);
+    SetEnvironmentVariableA("YAIF_PIPES", v);
+    memset(&si, 0, sizeof si);
+    si.cb = sizeof si;
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = si.hStdOutput = si.hStdError = nul;
+    if (!CreateProcessW(exe, GetCommandLineW(), 0, 0, TRUE, 0, 0, 0, &si, &pi)) np_fail("cannot start a replica");
+    CloseHandle(pi.hThread); CloseHandle(pi.hProcess); CloseHandle(r); CloseHandle(w);
+  }
+  SetEnvironmentVariableA("YAIF_REPLICA", 0);
+  SetEnvironmentVariableA("YAIF_PIPES", 0);
+  CloseHandle(nul);
+  np_rn = n;
+}
+static int np_exchange(const void *d, int n) {
+  unsigned int len[64], t;
+  unsigned char *b[64];
+  long o = 0;
+  int i, j;
+  if (np_rid) {
+    t = n;
+    np_io(np_out[0], &t, 4, 1); np_io(np_out[0], (void *)d, n, 1);
+    np_io(np_in[0], &t, 4, 0);
+    np_got = malloc(t ? t : 1);
+    if (!np_got) np_fail("out of memory");
+    np_io(np_in[0], np_got, t, 0);
+    return np_gotn = t;
+  }
+  b[0] = (unsigned char *)d; len[0] = n;
+  for (i = 1; i < np_rn; i++) {
+    np_io(np_in[i], &len[i], 4, 0);
+    b[i] = malloc(len[i] ? len[i] : 1);
+    if (!b[i]) np_fail("out of memory");
+    np_io(np_in[i], b[i], len[i], 0);
+  }
+  for (i = 1; i < np_rn; i++) {
+    for (t = 0, j = 0; j < np_rn; j++) if (j != i) t += len[j];
+    np_io(np_out[i], &t, 4, 1);
+    for (j = 0; j < np_rn; j++) if (j != i) np_io(np_out[i], b[j], len[j], 1);
+  }
+  for (t = 0, i = 1; i < np_rn; i++) t += len[i];
+  np_got = malloc(t ? t : 1);
+  if (!np_got) np_fail("out of memory");
+  for (i = 1; i < np_rn; o += len[i], free(b[i]), i++) memcpy(np_got + o, b[i], len[i]);
+  return np_gotn = t;
+}
+static void np_take(void *p) { memcpy(p, np_got, np_gotn); free(np_got); np_got = 0; }
+#endif
+/* Shared buffers in allocation order (the same in every replica); snap: contents when the
+   section opened, NULL if they were all zero. */
+static struct { unsigned char *p, *snap; long n; } np_reg[256];
+static int np_nreg;
+static int np_count(void) {
+  const char *e;
+  if (!np_rn) {
+    e = getenv("YAIF_REPLICA");
+    if (!e || sscanf(e, "%d/%d", &np_rid, &np_rn) != 2 || np_rn < 2 || np_rid < 0 || np_rid >= np_rn) np_rn = 1;
+#ifdef _WIN32
+    /* only the commands with parallel jobs: info and preview stay one quick process */
+    if (np_rn == 1) {
+      np_rid = 0;
+      if (__argc > 1 && (!strcmp(__argv[1], "encode") || !strcmp(__argv[1], "decode") || !strcmp(__argv[1], "bench"))) np_spawn();
+    }
+    else {
+      unsigned long long r, w;
+      e = getenv("YAIF_PIPES");
+      if (!e || sscanf(e, "%llu %llu", &r, &w) != 2) np_fail("no YAIF_PIPES");
+      np_in[0] = (HANDLE)(size_t)r; np_out[0] = (HANDLE)(size_t)w;
+    }
+#endif
+  }
+  return np_rn;
+}
+#ifdef _WIN32
+/* Zeroed pages, committed on first touch by Windows. */
+static void *np_alloc(long n) { return VirtualAlloc(0, n > 0 ? n : 1, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE); }
+/* The replicas start with the program, so they do its serial part at the same time as replica 0. */
+__attribute__((constructor)) static void np_start(void) { np_count(); }
+#else
+/* Fresh memory above the heap (emscripten's malloc never gives memory back): WebAssembly memory is
+   zero when it grows, so pages cost RAM only once written, like MAP_NORESERVE (calloc would write
+   them all: ~600 MB for the stripe buffer of a 24 Mpx lossy encode). Never freed: one yaif command
+   per instance. */
+static void *np_alloc(long n) {
+  void *p = sbrk(((n > 0 ? n : 1) + 15) & ~15L);
+  return p == (void *)-1 ? 0 : p;
+}
+#endif
+static void *yaif_shared(long n) {
+  void *p = np_alloc(n);
+  if (np_count() > 1 && p) {
+    if (np_open || np_nreg == 256) np_fail("shared buffer allocated in a job");
+    np_reg[np_nreg].p = p; np_reg[np_nreg].n = n; np_reg[np_nreg++].snap = 0;
+  }
+  return p;
+}
+static void yaif_unshare(void *p, long n) {
+  int i;
+  (void)n;
+  for (i = 0; i < np_nreg; i++) if (np_reg[i].p == p) np_reg[i].p = 0;
+#ifdef _WIN32
+  VirtualFree(p, 0, MEM_RELEASE);
+#endif
+}
+/* Before a job: 1 if this replica runs it. The first job of a section snapshots the buffers.
+   ponytail: full copies of the non-zero buffers (+290 MB for a 24 Mpx lossy encode); per-page
+   hashes if memory matters. */
+static int np_zero(const unsigned char *p, long n) {
+  long k;
+  unsigned long long a;
+  for (k = 0; k + 8 <= n; k += 8) { memcpy(&a, p + k, 8); if (a) return 0; }
+  for (; k < n; k++) if (p[k]) return 0;
+  return 1;
+}
+static int np_own(void) {
+  int i;
+  if (!np_open) {
+    np_open = 1;
+    for (i = 0; i < np_nreg; i++) if (np_reg[i].p && !np_zero(np_reg[i].p, np_reg[i].n)) {
+      np_reg[i].snap = malloc(np_reg[i].n > 0 ? np_reg[i].n : 1);
+      if (!np_reg[i].snap) np_fail("out of memory");
+      memcpy(np_reg[i].snap, np_reg[i].p, np_reg[i].n);
+    }
+  }
+  return np_job++ % np_rn == np_rid;
+}
+/* wait_all: the bytes this replica's jobs changed go out, the others' come in. Record:
+   [u32 buffer][u32 offset][u32 length][mask: 1 bit per byte][bytes]. A run goes on across up to
+   32 unchanged bytes (cheaper than a new record), but only the masked bytes are written: an
+   unchanged byte could be another replica's change. */
+static int np_changed(int i, long k) {
+  return np_reg[i].snap ? np_reg[i].p[k] != np_reg[i].snap[k] : np_reg[i].p[k] != 0;
+}
+/* First byte from k that may have changed, 8 bytes at a time. */
+static long np_skip(int i, long k, long n) {
+  unsigned long long a, b = 0;
+  for (; k + 8 <= n; k += 8) {
+    memcpy(&a, np_reg[i].p + k, 8);
+    if (np_reg[i].snap) memcpy(&b, np_reg[i].snap + k, 8);
+    if (a != b) break;
+  }
+  return k;
+}
+static void np_merge(void) {
+  long cap = 1 << 16, o = 0, k, s, e, n, j, ml;
+  unsigned char *d, *m, *p;
+  unsigned int h[3];
+  int i;
+  if (!np_open) return;
+  d = malloc(cap);
+  for (i = 0; i < np_nreg; i++) {
+    p = np_reg[i].p; n = np_reg[i].n;
+    for (k = 0; p && k < n; ) {
+      if (!np_changed(i, k)) { k = np_skip(i, k + 1, n); continue; }
+      for (s = k, e = k + 1, k++; k < n && k - e < 32; k++) if (np_changed(i, k)) e = k + 1;
+      k = e;
+      ml = (e - s + 7) / 8;
+      while (o + 12 + ml + (e - s) > cap) { cap *= 2; d = realloc(d, cap); if (!d) np_fail("out of memory"); }
+      h[0] = i; h[1] = s; h[2] = e - s;
+      memcpy(d + o, h, 12);
+      m = d + o + 12;
+      memset(m, 0, ml);
+      for (j = s; j < e; j++) if (np_changed(i, j)) m[(j - s) >> 3] |= 1 << ((j - s) & 7);
+      memcpy(m + ml, p + s, e - s);
+      o += 12 + ml + (e - s);
+    }
+    free(np_reg[i].snap); np_reg[i].snap = 0;
+  }
+  n = np_exchange(d, o);
+  free(d);
+  d = malloc(n > 0 ? n : 1);
+  if (!d) np_fail("out of memory");
+  np_take(d);
+  for (o = 0; o + 12 <= n; o += 12 + ml + h[2]) {
+    memcpy(h, d + o, 12);
+    ml = (h[2] + 7) / 8;
+    if (h[0] >= (unsigned)np_nreg || !np_reg[h[0]].p || h[1] + (long)h[2] > np_reg[h[0]].n || o + 12 + ml + h[2] > n) np_fail("bad exchange");
+    m = d + o + 12;
+    p = np_reg[h[0]].p + h[1];
+    for (j = 0; j < h[2]; j++) if (m[j >> 3] >> (j & 7) & 1) p[j] = m[ml + j];
+  }
+  free(d);
+  np_open = 0;
+}
+#else
+static void *yaif_shared(long n) {
+  void *p = mmap(0, n > 0 ? n : 1, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+  return p == MAP_FAILED ? 0 : p;
+}
+static void yaif_unshare(void *p, long n) { munmap(p, n); }
+static int np_count(void) { return 1; }
+static int np_own(void) { return 1; }
+static void np_merge(void) {}
+#endif
+/* WebAssembly: a replica runs its jobs in turn, so every tick can report progress. */
+#ifdef __EMSCRIPTEN__
+static int np_wasm(void) { return 1; }
+#elif defined(_WIN32)
+static int np_wasm(void) { return np_rn > 1; }
+#else
+static int np_wasm(void) { return 0; }
+#endif
+static long yaif_cpus(void) {
+  long n = sysconf(_SC_NPROCESSORS_ONLN);
+#ifdef _WIN32
+  if (np_rn > 1) return np_rn;   /* the replicas started (progress line: "... on N cores") */
+#endif
+  return n < 1 ? 1 : n;
+}
+static long np_ms(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1000 + t.tv_nsec / 1000000; }
+static const char *np_label, *np_info;
+static int np_total, np_last;
+static long np_t0, np_tlast;
+static int *np_prog;
+/* "\r" + m + erase to end of line, m cut to the terminal width: a line that wraps could not be
+   erased by the next one (the terminal only clears its last row). Width counts UTF-8 characters. */
+static void np_line(const char *m) {
+  struct winsize ws;
+  int cols = ioctl(2, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 1 ? ws.ws_col - 1 : 79, c = 0;
+  const char *e = m;
+  while (*e && (c < cols || (*e & 0xC0) == 0x80)) { if ((*e & 0xC0) != 0x80) c++; e++; }
+  fprintf(stderr, "\r%.*s\033[K", (int)(e - m), m);
+  fflush(stderr);
+}
+/* "Encoding  ██████████░░░░░░░░░░  52 %  3.9 s, ~3.6 s left  12 stripes on 12 cores" */
+static void np_show(void) {
+  long s = 0, now = np_ms();
+  int i, pc, n;
+  char b[512];
+  double el;
+#ifdef __EMSCRIPTEN__
+  if (!np_label) return;
+#else
+  if (!np_label || !isatty(2)) return;
+#endif
+  for (i = 0; i < 64; i++) s += np_prog[i];
+#ifdef _WIN32
+  if (np_rn > 1) s *= np_rn;   /* ponytail: the others' progress estimated as this replica's share */
+#endif
+  pc = np_total > 0 ? s * 100 / np_total : 0;
+  if (pc > 100) pc = 100;
+#ifdef __EMSCRIPTEN__
+  /* The page (enc_worker.js) reads "\1<percent> <label>" lines from stderr as progress. */
+  if (pc != np_last) fprintf(stderr, "\1%d %s\n", pc, np_label);
+  np_last = pc;
+  return;
+#endif
+  if (pc == np_last && now - np_tlast < 500) return;
+  np_last = pc;
+  np_tlast = now;
+  el = (now - np_t0) / 1000.0;
+  n = snprintf(b, sizeof b, "%-9s ", np_label);
+  for (i = 0; i < 20; i++) n += snprintf(b + n, sizeof b - n, "%s", i < pc / 5 ? "\u2588" : "\u2591");
+  n += snprintf(b + n, sizeof b - n, " %3d %%  %.1f s", pc, el);
+  if (pc >= 3 && pc < 100) n += snprintf(b + n, sizeof b - n, ", ~%.0f s left", el * (100 - pc) / pc + 0.5);
+  snprintf(b + n, sizeof b - n, "  %s", np_info);
+  np_line(b);
+}
+/* One-line status (terminal only), replaced by the next status, progress or output line. */
+static void np_status(const char *m) {
+#ifdef __EMSCRIPTEN__
+  if (*m) fprintf(stderr, "\2%s\n", m);   /* the page shows it as the current step */
+  return;
+#endif
+  if (isatty(2)) np_line(m);
+}
+/* wait() for one child, showing the progress meanwhile. */
+static void np_wait(void) {
+  /* No progress line to refresh: block (polling costs up to 100 ms per job, a lot on small regions). */
+  if (!np_label || !isatty(2)) { waitpid(-1, 0, 0); return; }
+  while (waitpid(-1, 0, WNOHANG) == 0) {
+    np_show();
+    usleep(100000);
+  }
+}
+static void np_end(void) {
+  if (np_label && isatty(2)) { fprintf(stderr, "\r\033[K"); fflush(stderr); }
+  np_label = 0;
+}
+`;
+
+Public
+
+  // Zeroed memory shared with the children (MAP_NORESERVE: only touched pages cost RAM).
+  - shared_int32 n:Int :C_array Int32 <- `yaif_shared(@n * 4)`:C_array Int32
+
+  - shared_uint8 n:Int :C_array Uint8 <- `yaif_shared(@n)`:C_array Uint8
+
+  - free p:C_array Int32 size n:Int <- `yaif_unshare(@p, @n)`;
+
+  - free_u8 p:C_array Uint8 size n:Int <- `yaif_unshare(@p, @n)`;
+
+  - threads:Int <-
+  ( + result:Int
+    result := `yaif_cpus()`:Int
+    ((Environment.read_variable "YAIF_THREADS") != NULL).if {
+      result := (Environment.read_variable "YAIF_THREADS").to_string.to_int
+    }
+    (result < 1).if { result := 1 }
+    result
+  )
+
+  - running:Int
+
+  // Jobs started since `progress`; slot: index of the current job (its progress cell).
+  - started:Int
+
+  - slot:Int
+
+  - active:Boolean
+
+  - prog:C_array Int32
+
+  // Kept alive while the progress line shows it.
+  - info:String
+
+  - progress label:String of n:Int jobs ns:Int <-
+  // n work units in ns jobs; shown only for more than one job (small regions are instant).
+  ( + pe,pi:C_array Char
+    + pp:C_array Int32
+    started := 0
+    active := ns > 1
+    (active).if {
+      (prog = NULL).if { prog := shared_int32 64 }
+      0.to 63 do { i:Int prog.at i put 0 }
+      pp := prog
+      pe := label.to_external
+      info := ns.to_string + " stripes on " + (threads.min ns).to_string + " cores"
+      pi := info.to_external
+      `np_prog = (int *)@pp`;
+      `np_label = (char *)@pe`;
+      `np_info = (char *)@pi`;
+      `np_total = @n`;
+      `np_last = -1`;
+      `np_t0 = np_ms()`;
+      `np_show()`;
+    }
+  )
+
+  // Status line on the terminal ("Reading IMG_1398.CR3 (LibRaw)...").
+  - status msg:String <-
+  ( + pe:C_array Char
+    pe := msg.to_external
+    `np_status((char *)@pe)`;
+  )
+
+  // Clears the status line before normal output.
+  - clear <- `np_status("")`;
+
+  // In a job: d units of it done (cheap no-op outside a progress).
+  - tick d:Int <-
+  (
+    (active && {slot < 64}).if {
+      prog.at slot put (d.to_raw_int32)
+      ((threads = 1) || {`np_wasm()`:Int = 1}).if { `np_show()`; }
+    }
+  )
+
+  // Milliseconds since some fixed point (for the timings the CLI prints).
+  - ms:Int <- `np_ms()`:Int
+
+  // A terminal on standard input: the command may ask the user a question.
+  - interactive:Boolean <- `isatty(0)`:Int = 1
+
+  - start:Int <-
+  // Before a job: waits for a free slot, then forks. Returns 0 in the child (which runs the job
+  // then calls finish), > 0 in the parent, < 0 if fork failed (the parent runs the job itself).
+  ( + result:Int
+    result := -1
+    (`np_count()`:Int > 1).if {
+      // Replica (WebAssembly): -1 = run the job here, 1 = another replica runs it.
+      (`np_own()`:Int = 0).if { result := 1 }
+    }.elseif {threads > 1} then {
+      (running >= threads).if {
+        `np_wait()`;
+        running := running - 1
+      }
+      result := `fork()`:Int
+      (result > 0).if { running := running + 1 }
+    }
+    slot := started
+    started := started + 1
+    result
+  )
+
+  - finish <- `_exit(0)`;
+
+  - wait_all <-
+  (
+    `np_merge()`;
+    {running > 0}.while_do {
+      `np_wait()`;
+      running := running - 1
+    }
+    active := False
+    `np_end()`;
+  )

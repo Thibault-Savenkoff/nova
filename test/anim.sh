@@ -1,6 +1,6 @@
 #!/bin/bash
 # Animation round trip: 1-pixel delta, identical frame (empty delta), big rectangle, corner pixel.
-# Run from nova-lisaac/: test/anim.sh
+# Run from yaif-lisaac/: test/anim.sh
 set -e
 cd "$(dirname "$0")/.."
 T=$(mktemp -d)
@@ -23,9 +23,9 @@ im.putpixel((63, 47), (9, 9, 9)); frames.append(im.copy())     # 1x1 at the last
 for i, f in enumerate(frames):
     f.save(f"{t}/src_{i}.png")
 EOF
-./nova encode "$T"/src_{0..4}.png "$T/a.nova" -m lossless -d 50
-./nova info "$T/a.nova"
-./nova decode "$T/a.nova" "$T/out.png"
+./yaif encode "$T"/src_{0..4}.png "$T/a.yaif" -m lossless -d 50
+./yaif info "$T/a.yaif"
+./yaif decode "$T/a.yaif" "$T/out.png"
 uv run -q --with pillow python - "$T" <<'EOF'
 import sys
 from PIL import Image
@@ -37,8 +37,8 @@ for i in range(5):
     if a != b: sys.exit(1)
 EOF
 # Wavelet (level 5) animation: deltas coded over the reconstructed frames, so no drift (PSNR per frame).
-./nova encode "$T"/src_{0..4}.png "$T/w.nova" -m lossy -l 5 -q 90 -d 50
-./nova decode "$T/w.nova" "$T/w.png"
+./yaif encode "$T"/src_{0..4}.png "$T/w.yaif" -m lossy -l 5 -q 90 -d 50
+./yaif decode "$T/w.yaif" "$T/w.png"
 uv run -q --with pillow --with numpy python - "$T" <<'PYEOF'
 import sys
 import numpy as np

@@ -1,10 +1,10 @@
-// Runs one nova command in N wasm replicas in this process (docs/nova_enc.js, NOVA_REPLICA=r/N) and
+// Runs one yaif command in N wasm replicas in this process (docs/yaif_enc.js, YAIF_REPLICA=r/N) and
 // writes the output of replica 0: must equal the native output.
-// Usage: node test/replicas.js N in out [nova options...]
+// Usage: node test/replicas.js N in out [yaif options...]
 const fs = require('fs'), path = require('path');
-const NovaWasm = require('../docs/nova_enc.js');
+const YaifWasm = require('../docs/yaif_enc.js');
 const [n, src, dst, ...opts] = process.argv.slice(2), N = +n;
-const cmd = /\.nova$/i.test(dst) ? 'encode' : 'decode';
+const cmd = /\.yaif$/i.test(dst) ? 'encode' : 'decode';
 
 (async () => {
   const data = fs.readFileSync(src), t0 = Date.now();
@@ -24,7 +24,7 @@ const cmd = /\.nova$/i.test(dst) ? 'encode' : 'decode';
   const runs = [];
   for (let r = 0; r < N; r++) {
     runs.push(new Promise(async (done, fail) => {
-      const M = await NovaWasm({ sync: sync(r), print: () => {}, printErr: s => /replicas|rror/.test(s) && console.error(`[${r}] ${s}`), onExit: c => c ? fail(new Error('exit ' + c)) : done(M), preRun: [m => { m.ENV.NOVA_REPLICA = `${r}/${N}`; }] });
+      const M = await YaifWasm({ sync: sync(r), print: () => {}, printErr: s => /replicas|rror/.test(s) && console.error(`[${r}] ${s}`), onExit: c => c ? fail(new Error('exit ' + c)) : done(M), preRun: [m => { m.ENV.YAIF_REPLICA = `${r}/${N}`; }] });
       M.FS.writeFile('/in' + path.extname(src), data);
       try { M.callMain([cmd, '/in' + path.extname(src), '/out' + path.extname(dst), ...opts]); } catch (x) { if (x.status) fail(x); }
     }));

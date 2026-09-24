@@ -1,5 +1,5 @@
-// node test/js_dump.js x.nova out.raw [preview]: RGBA of every frame (or of the PREV), concatenated.
-const fs = require('fs'), N = require('../docs/nova_decode.js');
+// node test/js_dump.js x.yaif out.raw [preview]: RGBA of every frame (or of the PREV), concatenated.
+const fs = require('fs'), N = require('../docs/yaif_decode.js');
 (async () => {
   const d = new Uint8Array(fs.readFileSync(process.argv[2])), t0 = Date.now();
   let r;

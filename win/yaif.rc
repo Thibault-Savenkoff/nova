@@ -1,0 +1,43 @@
+// Icon and version information of yaif.exe and yaif_wic.dll (-DYAIF_DLL). yaif_version.h is written
+// from yaif.li by win/build.sh and plugins/wic/build.sh: YAIF_V "2.0.0-beta.5", YAIF_V4 2,0,0,5.
+#include <winver.h>
+#include "yaif_version.h"
+#ifdef YAIF_DLL
+#define YAIF_DESC "YAIF image codec for Windows (Explorer thumbnails and previews)"
+#define YAIF_FILE "yaif_wic.dll"
+#define YAIF_FT VFT_DLL
+#else
+#define YAIF_DESC "YAIF image codec (command line)"
+#define YAIF_FILE "yaif.exe"
+#define YAIF_FT VFT_APP
+#endif
+
+1 ICON "yaif.ico"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION YAIF_V4
+PRODUCTVERSION YAIF_V4
+FILEFLAGSMASK 0x3f
+FILEFLAGS 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE YAIF_FT
+FILESUBTYPE 0
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904b0"
+    BEGIN
+      VALUE "FileDescription", YAIF_DESC
+      VALUE "FileVersion", YAIF_V
+      VALUE "InternalName", YAIF_FILE
+      VALUE "OriginalFilename", YAIF_FILE
+      VALUE "ProductName", "YAIF"
+      VALUE "ProductVersion", YAIF_V
+      VALUE "LegalCopyright", "MIT License, github.com/Thibault-Savenkoff/yaif"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

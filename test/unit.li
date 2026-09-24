@@ -1,7 +1,7 @@
 Header
   + name := Unit
-  // Unit tests of the nova modules: CRC-32, range coder (Nova_model), 9/7 wavelet, frame coding
-  // (Nova_codec levels 0-4 and Nova_lossy level 5, round trips on odd and tiny regions inside a
+  // Unit tests of the yaif modules: CRC-32, range coder (Yaif_model), 9/7 wavelet, frame coding
+  // (Yaif_codec levels 0-4 and Yaif_lossy level 5, round trips on odd and tiny regions inside a
   // bigger buffer), zlib (deflate/inflate, PNG rows), corrupt streams (must not crash or hang).
   // One line per failure, then a summary; exit 1 on failure. Run from the repo: test/unit.sh
 
@@ -39,7 +39,7 @@ Public
   )
 
   //
-  // CRC-32 (Nova): the check value of "123456789", and a CRC run over two calls.
+  // CRC-32 (Yaif): the check value of "123456789", and a CRC run over two calls.
   //
 
   - test_crc <-
@@ -49,11 +49,11 @@ Public
     0.to 8 do { i:Int
       b.at i put ((49 + i).to_uint8)
     }
-    Nova.make_crc_table
-    check (((Nova.crc 0FFFFFFFFh of b from 0 until 9) ^ 0FFFFFFFFh) = 0CBF43926h) msg "crc32 of 123456789"
-    c := Nova.crc 0FFFFFFFFh of b from 0 until 4
-    check (((Nova.crc c of b from 4 until 9) ^ 0FFFFFFFFh) = 0CBF43926h) msg "crc32 in two parts"
-    check (((Nova.crc 0FFFFFFFFh of b from 0 until 0) ^ 0FFFFFFFFh) = 0) msg "crc32 of nothing"
+    Yaif.make_crc_table
+    check (((Yaif.crc 0FFFFFFFFh of b from 0 until 9) ^ 0FFFFFFFFh) = 0CBF43926h) msg "crc32 of 123456789"
+    c := Yaif.crc 0FFFFFFFFh of b from 0 until 4
+    check (((Yaif.crc c of b from 4 until 9) ^ 0FFFFFFFFh) = 0CBF43926h) msg "crc32 in two parts"
+    check (((Yaif.crc 0FFFFFFFFh of b from 0 until 0) ^ 0FFFFFFFFh) = 0) msg "crc32 of nothing"
   )
 
   //
@@ -86,17 +86,17 @@ Public
       ys.at i put y
       ps.at i put p
     }
-    Nova_codec.reset_out
-    Nova_model.start_encoder 64 level 1
+    Yaif_codec.reset_out
+    Yaif_model.start_encoder 64 level 1
     0.to (n - 1) do { i:Int
-      r := Nova_model.code_bit (ys.at i) prob (ps.at i)
+      r := Yaif_model.code_bit (ys.at i) prob (ps.at i)
     }
-    Nova_model.flush_encoder
-    Nova_model.start_decoder (copy (Nova_codec.out) size (Nova_codec.out_count)) from 0 size (Nova_codec.out_count) samples 64 level 1
+    Yaif_model.flush_encoder
+    Yaif_model.start_decoder (copy (Yaif_codec.out) size (Yaif_codec.out_count)) from 0 size (Yaif_codec.out_count) samples 64 level 1
     0.to (n - 1) do { i:Int
-      ((Nova_model.code_bit 0 prob (ps.at i)) != (ys.at i)).if { bad := bad + 1 }
+      ((Yaif_model.code_bit 0 prob (ps.at i)) != (ys.at i)).if { bad := bad + 1 }
     }
-    check ((bad = 0) && {! Nova_model.overrun}) msg ("range coder mode " + md.to_string + ", " + n.to_string + " bits: " + bad.to_string + " wrong")
+    check ((bad = 0) && {! Yaif_model.overrun}) msg ("range coder mode " + md.to_string + ", " + n.to_string + " bits: " + bad.to_string + " wrong")
   )
 
   //
@@ -113,13 +113,13 @@ Public
       p.at i put ((rnd * 2 - 32767).to_raw_int32)
       o.at i put (p.at i)
     }
-    Nova_wavelet.setup p size (w, h)
-    n := Nova_wavelet.levels.max lv
+    Yaif_wavelet.setup p size (w, h)
+    n := Yaif_wavelet.levels.max lv
     0.to (n - 1) do { k:Int
-      Nova_wavelet.level k inverse False
+      Yaif_wavelet.level k inverse False
     }
     (n - 1).downto 0 do { k:Int
-      Nova_wavelet.level k inverse True
+      Yaif_wavelet.level k inverse True
     }
     0.to (w * h - 1) do { i:Int
       ((p.at i) != (o.at i)).if { bad := bad + 1 }
@@ -194,12 +194,12 @@ Public
     org := copy src size (s * (h + 3) * 4)
     dst := C_array Uint8.create (s * (h + 3) * 4)
     0.to (s * (h + 3) * 4 - 1) do { j:Int dst.at j put (77.to_uint8) }
-    Nova_codec.reset_out
-    Nova_codec.encode src stride s region (2, 1, w, h) planes np level lv eps ep
-    n := Nova_codec.out_count
-    encoded := copy (Nova_codec.out) size n
+    Yaif_codec.reset_out
+    Yaif_codec.encode src stride s region (2, 1, w, h) planes np level lv eps ep
+    n := Yaif_codec.out_count
+    encoded := copy (Yaif_codec.out) size n
     encoded_size := n
-    ok := Nova_codec.decode encoded from 0 size n into dst stride s region (2, 1, w, h) planes np
+    ok := Yaif_codec.decode encoded from 0 size n into dst stride s region (2, 1, w, h) planes np
     // near-lossless: G (and alpha) within eps, R and B are G + (R - G): within 2 eps
     lim := 2 * ep
     0.to (h + 2) do { y:Int
@@ -245,7 +245,7 @@ Public
       } else {
         ((rnd % n) + 2).to (n - 1) do { j:Int d.at j put ((rnd & 255).to_uint8) }
       }
-      ok := Nova_codec.decode d from 0 size n into dst stride (w + 3) region (2, 1, w, h) planes np
+      ok := Yaif_codec.decode d from 0 size n into dst stride (w + 3) region (2, 1, w, h) planes np
     }
     tests := tests + 1
   )
@@ -301,13 +301,13 @@ Public
     0.to (n - 1) do { i:Int
       b.at i put (((i / 100) + (rnd & 3)).to_uint8)
     }
-    ok := Nova_zlib.deflate b size n
-    m := Nova_zlib.size
-    z := copy (Nova_zlib.data) size m
-    ok := ok && {Nova_zlib.inflate z from 0 size m max n} && {Nova_zlib.size = n}
+    ok := Yaif_zlib.deflate b size n
+    m := Yaif_zlib.size
+    z := copy (Yaif_zlib.data) size m
+    ok := ok && {Yaif_zlib.inflate z from 0 size m max n} && {Yaif_zlib.size = n}
     (ok).if {
       0.to (n - 1) do { i:Int
-        ((Nova_zlib.data.at i) != (b.at i)).if { bad := bad + 1 }
+        ((Yaif_zlib.data.at i) != (b.at i)).if { bad := bad + 1 }
       }
     }
     check (ok && {bad = 0}) msg ("zlib round trip of " + n.to_string + " bytes")
@@ -330,10 +330,10 @@ Public
     + ok:Boolean
     b := image 1 size (w, h)
     (np = 4).if { b := image 4 size (w, h) }
-    ok := (Nova_zlib.png b size (w, h) planes np) && {Nova_zlib.inflate (copy (Nova_zlib.data) size (Nova_zlib.size)) from 0 size (Nova_zlib.size) max (h * (1 + w * np))}
-    ok := ok && {Nova_zlib.size = h * (1 + w * np)}
+    ok := (Yaif_zlib.png b size (w, h) planes np) && {Yaif_zlib.inflate (copy (Yaif_zlib.data) size (Yaif_zlib.size)) from 0 size (Yaif_zlib.size) max (h * (1 + w * np))}
+    ok := ok && {Yaif_zlib.size = h * (1 + w * np)}
     (ok).if {
-      d := Nova_zlib.data
+      d := Yaif_zlib.data
       row := 1 + w * np
       // unfilter in place: filtered byte -> pixel byte
       0.to (h - 1) do { y:Int

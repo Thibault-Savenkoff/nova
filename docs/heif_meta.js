@@ -1,5 +1,5 @@
 // HEIF/HEIC/AVIF metadata of the primary image (EXIF, XMP, ICC), read from the container only:
-// no HEVC decoding here. Same blocks as nova's libheif path (nova_heic.li nh_metadata).
+// no HEVC decoding here. Same blocks as yaif's libheif path (yaif_heic.li nh_metadata).
 (function (root) {
   'use strict';
   const u16 = (d, p) => d[p] << 8 | d[p + 1];

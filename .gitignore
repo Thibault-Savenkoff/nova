@@ -1,6 +1,6 @@
-# Built by the Lisaac compiler (lisaac nova.li -boost)
-/nova
-/nova.c
+# Built by the Lisaac compiler (lisaac yaif.li -boost)
+/yaif
+/yaif.c
 test/img_probe
 test/img_probe.c
 test/unit
@@ -18,21 +18,21 @@ test/.ref_sizes
 # WebAssembly build cache (docs/build.sh)
 docs/.build/
 
-*.nova
-!docs/samples/*.nova
+*.yaif
+!docs/samples/*.yaif
 .DS_Store
 
-# libnovadec test tool (test/libnova.sh)
-libnova/novadec
+# libyaifdec test tool (test/libyaif.sh)
+libyaif/yaifdec
 plugins/qt/build/
 build-qt/
 build-kde/
 plugins/gdk-pixbuf/*.so
 plugins/glycin/target/
-nova.exe
+yaif.exe
 win/sys/
 win/dlfcn.h
 dist/
-plugins/wic/nova_wic.dll
-win/nova_rc.o
-win/nova_version.h
+plugins/wic/yaif_wic.dll
+win/yaif_rc.o
+win/yaif_version.h

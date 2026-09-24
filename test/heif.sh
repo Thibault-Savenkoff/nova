@@ -1,20 +1,20 @@
 #!/bin/bash
 # AVIF / HEIC output: each file of $@ (default: a HEIC photo with EXIF/ICC/XMP, a screenshot, an RGBA PNG)
-# goes to .nova (adaptive), then to .png, .avif and .heic, read back with heif-dec. Default mode: lossless
-# when the .nova frame is (visible pixels exact), else lossy with at least 44 dB (default quality);
+# goes to .yaif (adaptive), then to .png, .avif and .heic, read back with heif-dec. Default mode: lossless
+# when the .yaif frame is (visible pixels exact), else lossy with at least 44 dB (default quality);
 # EXIF values and XMP as in the PNG (exiv2), ICC kept (heif-info; a gain map AVIF: Display P3 by CICP).
 cd "$(dirname "$0")/.." || exit 1
 export LC_ALL=C UV_OFFLINE=1
 T=$(mktemp -d)
 trap 'rm -rf $T' EXIT
-[ $# -eq 0 ] && set -- ~/photos-nova/IMG_0577.HEIC test/photos/screenshot.png test/corpus/alpha.png
+[ $# -eq 0 ] && set -- ~/photos-yaif/IMG_0577.HEIC test/photos/screenshot.png test/corpus/alpha.png
 fail=0
 for f in "$@"; do
   b=$(basename "$f")
-  ./nova encode "$f" $T/t.nova >/dev/null 2>&1 && ./nova decode $T/t.nova $T/t.png >/dev/null 2>&1 || { echo "FAIL $b: nova"; fail=1; continue; }
+  ./yaif encode "$f" $T/t.yaif >/dev/null 2>&1 && ./yaif decode $T/t.yaif $T/t.png >/dev/null 2>&1 || { echo "FAIL $b: yaif"; fail=1; continue; }
   for x in avif heic; do
     rm -f $T/d*.png
-    ./nova decode $T/t.nova $T/t.$x >/dev/null 2>&1 && heif-dec $T/t.$x $T/d.png >/dev/null 2>&1 || { echo "FAIL $b $x: nova or heif-dec"; fail=1; continue; }
+    ./yaif decode $T/t.yaif $T/t.$x >/dev/null 2>&1 && heif-dec $T/t.$x $T/d.png >/dev/null 2>&1 || { echo "FAIL $b $x: yaif or heif-dec"; fail=1; continue; }
     r=$(uv run -q --with pillow --with numpy python -c "
 import numpy as np
 from PIL import Image

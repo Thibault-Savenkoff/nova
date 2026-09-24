@@ -1,0 +1,44 @@
+#compdef yaif
+# zsh completion for yaif. Install: copy into a directory of $fpath (see README.md).
+
+_yaif() {
+  local -a cmds
+  cmds=(
+    'encode:PNG, JPEG, HEIC, AVIF or RAW to .yaif'
+    'decode:.yaif to PNG, TIFF, JPEG, WebP, AVIF, HEIC, PAM'
+    'convert:any image to another format, in one step'
+    'preview:512 px thumbnail of a .yaif'
+    'info:chunks, size, level, frames of a .yaif'
+    'bench:lossless size of images, without writing'
+    'version:print the version'
+  )
+  if (( CURRENT == 2 )); then
+    _describe command cmds
+    return
+  fi
+  case $words[2] in
+    encode)
+      _arguments \
+        '-m[mode]:mode:(adaptive lossless lossy)' \
+        '-l[codec level]:level:(0 1 2 3 4 5)' \
+        '-q[wavelet quality 0-100]:quality' \
+        '-e[max error per sample 1-64]:eps' \
+        '-d[frame delay in ms]:ms' \
+        '-live[Live Photo video]:video:_files -g "*.(mov|MOV)"' \
+        '*:image:_files -g "*.(png|PNG|jpg|JPG|jpeg|JPEG|heic|HEIC|heif|HEIF|avif|AVIF|yaif|cr2|CR2|cr3|CR3|nef|NEF|arw|ARW|dng|DNG|raf|RAF|orf|ORF|rw2|RW2)(-.)"' ;;
+    decode|convert)
+      _arguments \
+        '-q[output quality 1-100]:quality' \
+        '-m[WebP, AVIF, HEIC]:mode:(lossy lossless)' \
+        '-fast[WebP about 4x faster]' \
+        '-hdr[HDR rendition]' \
+        '-look[RAW look]:look:(canon darktable)' \
+        '*:file:_files' ;;
+    preview|info)
+      _arguments '*:yaif file:_files -g "*.yaif(-.)"' ;;
+    bench)
+      _arguments '*:image:_files -g "*.(png|PNG|jpg|JPG|jpeg|JPEG)(-.)"' ;;
+  esac
+}
+
+_yaif "$@"

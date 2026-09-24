@@ -1,8 +1,8 @@
-// Metadata options applied to an encoded .nova: MDAT chunks ([kind u32][raw block]) are dropped or
-// have their location removed; the pixels are untouched. Needs NovaDecode (crc).
+// Metadata options applied to an encoded .yaif: MDAT chunks ([kind u32][raw block]) are dropped or
+// have their location removed; the pixels are untouched. Needs YaifDecode (crc).
 (function (root) {
   'use strict';
-  const ND = root.NovaDecode || (typeof require !== 'undefined' && require('./nova_decode.js'));
+  const ND = root.YaifDecode || (typeof require !== 'undefined' && require('./yaif_decode.js'));
   const u32 = (d, p) => (d[p] << 24 | d[p + 1] << 16 | d[p + 2] << 8 | d[p + 3]) >>> 0;
   const tag = s => u32(Uint8Array.from(s, c => c.charCodeAt(0)), 0);
   const MDAT = tag('MDAT'), APP1 = tag('APP1'), APP2 = tag('APP2'), EXIF = tag('eXIf'), ITXT = tag('iTXt'), CMT4 = tag('CMT4');
@@ -45,7 +45,7 @@
   }
 
   // XMP without its exif:GPS… properties (attributes or elements), or null if it has none.
-  // ponytail: uncompressed XMP only (what nova and cameras write).
+  // ponytail: uncompressed XMP only (what yaif and cameras write).
   function xmpNoGps(b) {
     const s = new TextDecoder().decode(b);
     const r = s.replace(/\s+exif:GPS\w+="[^"]*"/g, '').replace(/<exif:(GPS\w+)[\s>][\s\S]*?<\/exif:\1>\s*/g, '').replace(/<exif:GPS\w+\/>\s*/g, '');
@@ -53,12 +53,12 @@
   }
 
   // opts: {keep: false → only colour blocks stay, gps: true → location removed}.
-  function apply(nova, opts) {
-    if (opts.keep && !opts.gps) return nova;
-    const parts = [nova.subarray(0, 9)];
-    const f = ND.parse(nova);
+  function apply(yaif, opts) {
+    if (opts.keep && !opts.gps) return yaif;
+    const parts = [yaif.subarray(0, 9)];
+    const f = ND.parse(yaif);
     for (const c of f.chunks) {
-      let body = nova.subarray(c.pos, c.pos + c.len);
+      let body = yaif.subarray(c.pos, c.pos + c.len);
       if (c.type === MDAT && c.len >= 4) {
         const kind = u32(body, 0), raw = body.subarray(4);
         const colour = COLOUR.includes(kind) || (kind === APP2 && starts(raw, 'ICC_PROFILE'));

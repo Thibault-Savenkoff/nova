@@ -1,10 +1,10 @@
 /* RGBA (as decoded) -> BGRA for WIC, turned upright by the EXIF orientation (1-8).
    out holds w x h pixels; *ow x *oh is the upright size (w, h swapped for orientations 5-8). */
-#ifndef NOVA_UPRIGHT_H
-#define NOVA_UPRIGHT_H
+#ifndef YAIF_UPRIGHT_H
+#define YAIF_UPRIGHT_H
 #include <stdint.h>
 
-static void nova_upright_bgra(const uint8_t *in, int w, int h, int o, uint8_t *out, int *ow, int *oh) {
+static void yaif_upright_bgra(const uint8_t *in, int w, int h, int o, uint8_t *out, int *ow, int *oh) {
   int swap = o >= 5 && o <= 8, W = swap ? h : w, H = swap ? w : h, x, y;
   for (y = 0; y < H; y++)
     for (x = 0; x < W; x++) {

@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- YAIF for Windows, MSI (wixl from msitools, built by win/dist.sh from dist/yaif-windows/).
+     Same install as win/yaif.nsi, but the WIC codec keys are written here (the ones DllRegisterServer
+     writes in plugins/wic/yaif_wic.cpp: keep both in step), so Windows Installer removes them itself.
+     Refresh (a yaif_wic.dll export) tells Explorer the file types changed, after install and before the
+     codec is removed on uninstall. -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="YAIF image format" Version="$(var.Version)" Manufacturer="Thibault SAVENKOFF" Language="1033"
+           UpgradeCode="6C1D4E0B-8F7A-4C55-9B7E-2A1F3D5C7E90">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
+             Description="YAIF: yaif.exe and the Windows Imaging Component codec"/>
+    <!-- Removes an earlier install first (same UpgradeCode), NOVA's included (YAIF's name up to
+         2.0.0-beta.6). Same version too: ProductVersion holds 2.0.0 for every beta. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer YAIF is already installed."/>
+    <Media Id="1" Cabinet="yaif.cab" EmbedCab="yes"/>
+    <Icon Id="yaif.ico" SourceFile="win/yaif.ico"/>
+    <Property Id="ARPPRODUCTICON" Value="yaif.ico"/>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="YAIF">
+          <Component Id="Program" Guid="3A2B7C41-5D6E-4F80-9123-4B5C6D7E8F01" Win64="yes">
+            <File Id="yaif.exe" Source="dist/yaif-windows/yaif.exe" KeyPath="yes"/>
+            <File Id="zlib1.dll" Source="dist/yaif-windows/zlib1.dll"/>
+            <File Id="libwebp.dll" Source="dist/yaif-windows/libwebp-7.dll"/>
+            <File Id="libsharpyuv.dll" Source="dist/yaif-windows/libsharpyuv-0.dll"/>
+            <!-- Camera RAW. The soname is pinned the same way yaif_rawin.li pins .so.25:
+                 a LibRaw major bump needs a code change anyway, and wixl fails loudly here. -->
+            <File Id="libraw.dll" Source="dist/yaif-windows/libraw_r-25.dll"/>
+            <File Id="libgcc.dll" Source="dist/yaif-windows/libgcc_s_seh-1.dll"/>
+            <File Id="liblcms2.dll" Source="dist/yaif-windows/liblcms2-2.dll"/>
+            <File Id="libstdcxx.dll" Source="dist/yaif-windows/libstdc++-6.dll"/>
+            <File Id="libwinpthread.dll" Source="dist/yaif-windows/libwinpthread-1.dll"/>
+            <!-- HEIC reading, cross-compiled by win/deps.sh (no mingw64 package exists). -->
+            <File Id="libheif.dll" Source="dist/yaif-windows/libheif.dll"/>
+            <File Id="libde265.dll" Source="dist/yaif-windows/libde265.dll"/>
+            <!-- AVIF: aom both ways, libavif for the HDR gain map. win/dist.sh fails the build if
+                 a DLL it packages is missing from this list, since wixl itself would not. -->
+            <File Id="libaom.dll" Source="dist/yaif-windows/libaom.dll"/>
+            <File Id="libavif.dll" Source="dist/yaif-windows/libavif.dll"/>
+            <!-- Writing .heic: the HEVC encoder libheif links. -->
+            <File Id="libkvazaar.dll" Source="dist/yaif-windows/libkvazaar.dll"/>
+            <!-- Writing .heic with an HDR gain map: libheif + its gain-map PR (libheif-gainmap/). -->
+            <File Id="libyaif.heif.dll" Source="dist/yaif-windows/libyaif-heif.dll"/>
+            <File Id="yaif.completion.ps1" Source="dist/yaif-windows/yaif-completion.ps1"/>
+            <File Id="yaif.profile.ps1" Source="dist/yaif-windows/yaif-profile.ps1"/>
+            <File Id="readme.txt" Source="dist/yaif-windows/README.txt"/>
+            <!-- Tab completion needs a line in the user's PowerShell profile. RunCompletion below
+                 writes the installing user's right away; this covers every *other* user of a
+                 per-machine install: Active Setup runs the command once per user, in their own
+                 session, at their next logon. Same GUID as win/yaif.nsi so the two installers do
+                 not both register it. Uninstalling removes the key; a line already added to a
+                 profile goes away with `yaif-profile.ps1 -Remove`, and loads nothing once the
+                 file is gone. -->
+            <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Active Setup\Installed Components\{C041617A-3C51-4727-8351-E0BDF68C733B}">
+              <RegistryValue Type="string" Value="YAIF tab completion"/>
+              <RegistryValue Name="Version" Type="string" Value="1"/>
+              <RegistryValue Name="StubPath" Type="expandable" Value='"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "[INSTALLDIR]yaif-profile.ps1" -Script "[INSTALLDIR]yaif-completion.ps1"'/>
+            </RegistryKey>
+            <File Id="lic.yaif" Source="dist/yaif-windows/LICENSE-yaif.txt"/>
+            <File Id="lic.zlib" Source="dist/yaif-windows/LICENSE-zlib.txt"/>
+            <File Id="lic.webp" Source="dist/yaif-windows/LICENSE-libwebp.txt"/>
+            <File Id="lic.libraw" Source="dist/yaif-windows/LICENSE-libraw.txt"/>
+            <File Id="lic.libheif" Source="dist/yaif-windows/LICENSE-libheif.txt"/>
+            <File Id="lic.libde265" Source="dist/yaif-windows/LICENSE-libde265.txt"/>
+            <File Id="lic.libaom" Source="dist/yaif-windows/LICENSE-libaom.txt"/>
+            <File Id="lic.libavif" Source="dist/yaif-windows/LICENSE-libavif.txt"/>
+            <File Id="lic.kvazaar" Source="dist/yaif-windows/LICENSE-kvazaar.txt"/>
+            <Environment Id="Path" Name="PATH" Value="[INSTALLDIR]" Action="set" Part="last" System="yes" Permanent="no"/>
+          </Component>
+          <Component Id="Codec" Guid="7E8F9A0B-1C2D-4E3F-8A4B-5C6D7E8F9A12" Win64="yes">
+            <File Id="yaif_wic.dll" Source="dist/yaif-windows/yaif_wic.dll" KeyPath="yes"/>
+            <RegistryKey Root="HKCR" Key="CLSID\{9DC17227-1614-4248-BED2-BDE1F1365206}">
+              <RegistryValue Type="string" Value="YAIF Decoder"/>
+              <RegistryValue Name="FriendlyName" Type="string" Value="YAIF Decoder"/>
+              <RegistryValue Name="Author" Type="string" Value="YAIF"/>
+              <RegistryValue Name="Vendor" Type="string" Value="{307E9CB1-1596-49C5-B06B-B02D0511A851}"/>
+              <RegistryValue Name="Version" Type="string" Value="2.0.0"/>
+              <RegistryValue Name="ContainerFormat" Type="string" Value="{307E9CB1-1596-49C5-B06B-B02D0511A851}"/>
+              <RegistryValue Name="FileExtensions" Type="string" Value=".yaif"/>
+              <RegistryValue Name="MimeTypes" Type="string" Value="image/x-yaif"/>
+              <RegistryValue Name="SupportsAnimation" Type="integer" Value="1"/>
+              <RegistryValue Name="SupportsMultiframe" Type="integer" Value="1"/>
+              <RegistryValue Name="SupportsLossless" Type="integer" Value="1"/>
+              <RegistryValue Name="SupportsChromakey" Type="integer" Value="0"/>
+              <RegistryValue Name="ArbitrationPriority" Type="integer" Value="10"/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key="CLSID\{9DC17227-1614-4248-BED2-BDE1F1365206}\InprocServer32">
+              <RegistryValue Type="string" Value="[#yaif_wic.dll]"/>
+              <RegistryValue Name="ThreadingModel" Type="string" Value="Both"/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key="CLSID\{9DC17227-1614-4248-BED2-BDE1F1365206}\Formats\{6FDDC324-4E03-4BFE-B185-3D77768DC90F}">
+              <RegistryValue Type="string" Value=""/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key="CLSID\{9DC17227-1614-4248-BED2-BDE1F1365206}\Patterns\0">
+              <RegistryValue Name="Position" Type="integer" Value="0"/>
+              <RegistryValue Name="Length" Type="integer" Value="9"/>
+              <RegistryValue Name="Pattern" Type="binary" Value="89594149460D0A1A0A"/>
+              <RegistryValue Name="Mask" Type="binary" Value="FFFFFFFFFFFFFFFFFF"/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key="CLSID\{7ED96837-96F0-4812-B211-F13C24117ED3}\Instance\{9DC17227-1614-4248-BED2-BDE1F1365206}">
+              <RegistryValue Name="CLSID" Type="string" Value="{9DC17227-1614-4248-BED2-BDE1F1365206}"/>
+              <RegistryValue Name="FriendlyName" Type="string" Value="YAIF Decoder"/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key=".yaif">
+              <RegistryValue Type="string" Value="YAIF.Image"/>
+              <RegistryValue Name="Content Type" Type="string" Value="image/x-yaif"/>
+              <RegistryValue Name="PerceivedType" Type="string" Value="image"/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key=".yaif\OpenWithProgids">
+              <RegistryValue Name="YAIF.Image" Type="string" Value=""/>
+            </RegistryKey>
+            <!-- double-click: Windows Photo Viewer, which decodes through this codec (Photos opens .yaif blank) -->
+            <RegistryKey Root="HKCR" Key="YAIF.Image">
+              <RegistryValue Type="string" Value="YAIF image"/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key="YAIF.Image\DefaultIcon">
+              <RegistryValue Type="string" Value="[#yaif_wic.dll],0"/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key="YAIF.Image\shell\open\command">
+              <RegistryValue Type="expandable" Value='%SystemRoot%\System32\rundll32.exe "%ProgramFiles%\Windows Photo Viewer\PhotoViewer.dll", ImageView_Fullscreen %1'/>
+            </RegistryKey>
+            <RegistryKey Root="HKCR" Key=".yaif\ShellEx\{E357FCCD-A995-4576-B01F-234630154E96}">
+              <RegistryValue Type="string" Value="{C7657C4A-9F68-40FA-A4DF-96BC08EB3551}"/>
+            </RegistryKey>
+            <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\KindMap">
+              <RegistryValue Name=".yaif" Type="string" Value="picture"/>
+            </RegistryKey>
+          </Component>
+          <Directory Id="SAMPLES" Name="samples">
+            <Component Id="Samples" Guid="9B0C1D2E-3F4A-4B5C-8D6E-7F8091A2B3C4" Win64="yes">
+              <File Id="photo.yaif" Source="dist/yaif-windows/photo.yaif" KeyPath="yes"/>
+              <File Id="screenshot.yaif" Source="dist/yaif-windows/screenshot.yaif"/>
+              <File Id="animation.yaif" Source="dist/yaif-windows/animation.yaif"/>
+            </Component>
+          </Directory>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <!-- a copy of the codec DLL inside the MSI: Windows Installer calls Refresh from it -->
+    <Binary Id="YaifWic" SourceFile="dist/yaif-windows/yaif_wic.dll"/>
+    <CustomAction Id="RefreshInstall" BinaryKey="YaifWic" DllEntry="Refresh" Return="ignore"/>
+    <!-- Active Setup only reaches a user at their next logon. This runs the same script right away
+         for whoever is installing, which on a personal machine (UAC elevates the same account) is
+         the user who will actually type `yaif`. Immediate, and after InstallFinalize: a deferred
+         action resolves no property (so no [INSTALLDIR]), and anything sequenced earlier runs
+         before the files are on disk. The script is idempotent, so the two paths cannot double
+         the line. -->
+    <Property Id="PSEXE" Value="powershell.exe"/>
+    <CustomAction Id="RunCompletion" Property="PSEXE" Execute="immediate" Return="ignore"
+                  ExeCommand='-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "[INSTALLDIR]yaif-profile.ps1" -Script "[INSTALLDIR]yaif-completion.ps1"'/>
+    <!-- Immediate, not deferred: wixl ignores After= and numbers these in document order, so this
+         lands after InstallFinalize whatever it claims to follow, and a deferred action outside
+         the install transaction is error 2762 ("cannot write script record"). That is the dialog
+         an uninstall showed. Immediate is right here anyway: by then the keys are already gone,
+         which is what the shell is being told about. -->
+    <CustomAction Id="RefreshRemove" BinaryKey="YaifWic" DllEntry="Refresh" Return="ignore"/>
+    <InstallExecuteSequence>
+      <Custom Action="RefreshInstall" After="InstallFinalize">NOT REMOVE</Custom>
+      <Custom Action="RunCompletion" After="RefreshInstall">NOT REMOVE</Custom>
+      <Custom Action="RefreshRemove" After="RunCompletion">REMOVE="ALL"</Custom>
+    </InstallExecuteSequence>
+
+    <Feature Id="All" Level="1">
+      <ComponentRef Id="Program"/>
+      <ComponentRef Id="Codec"/>
+      <ComponentRef Id="Samples"/>
+    </Feature>
+  </Product>
+</Wix>

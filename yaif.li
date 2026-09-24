@@ -1,0 +1,1936 @@
+Header
+  + name := Yaif
+  // YAIF v2 image format: magic + chunks [type][length][data][crc32] (PNG-like order of fields
+  // differs: type first). Frames: Yaif_codec (levels 0-4, lossless or near-lossless) or Yaif_lossy
+  // (level 5, wavelet), or Yaif_raw (level 6, camera sensor frame, RAWH chunk). Alpha, animation by delta
+  // rectangles, unknown chunks skipped. MDAT = one source metadata block (EXIF, XMP, ICC...) kept raw,
+  // LIVE = optional Live Photo video. PREV = thumbnail (512 px long side) of the first frame, before
+  // the frames, so a viewer can show it at once (yaif preview).
+  // Run: lisaac yaif.li -boost && ./yaif encode in.png out.yaif   (without -boost: debug build, ~2x slower)
+
+Public
+
+  // Program version (install.sh, build.sh and the update check compare it with the release tags "v" + version).
+  - version:String := "2.0.0-beta.6"
+
+  - usage <-
+  (
+    ("YAIF " + version + "\n").print
+    "Usage:\n".print
+    // ponytail: lines <= 72 columns, so a small terminal does not wrap them
+    "  yaif encode <src...> [dst.yaif] [options]\n".print
+    "    sources: PNG, JPEG, HEIC/HEIF/AVIF (libheif), camera RAW (LibRaw)\n".print
+    "    without dst: the first source with .yaif, next to it\n".print
+    "    several sources = animation\n".print
+    "    -m adaptive|lossless|lossy  default adaptive: lossless for\n".print
+    "                                graphics, wavelet q 90 for photos\n".print
+    "    -l 0-5    codec level (default: the encoder tries them);\n".print
+    "              5 = lossy wavelet (photos)\n".print
+    "    -q 0-100  wavelet quality (default 90, ~45 dB: visually lossless;\n".print
+    "              a JPEG source keeps its own quality, 50 + Q/2 up to 90)\n".print
+    "    -e 1-64   lossy max error per sample (default 2)\n".print
+    "    -d ms     frame delay (animation)\n".print
+    "    -live f.mov  adds the Live Photo video\n".print
+    "    metadata (EXIF/GPS, XMP, ICC, text) of the first source are kept\n".print
+    "    RAW: sensor frame kept losslessly (level 6)\n".print
+    "\n".print
+    "  yaif decode <src.yaif> <dst> [options]\n".print
+    "    dst: .png .tif .jpg .webp .avif .heic (format from the extension)\n".print
+    "    -q 1-100  quality (default: JPEG/WebP 90, AVIF 85, HEIC 60: ~44 dB)\n".print
+    "    -m lossy|lossless  WebP/AVIF/HEIC (default: lossless if the\n".print
+    "                       .yaif is)\n".print
+    "    -fast     WebP: about 4x faster, files 2-6 % larger\n".print
+    "    -hdr      HDR rendition: PNG 16 bits, AVIF/HEIC 10 bits (PQ),\n".print
+    "              TIFF 16-bit float (linear)\n".print
+    "    HDR gain map (iPhone HEIC): .jpg is written Ultra HDR, a lossy\n".print
+    "    .avif with the gain map (libavif)\n".print
+    "    animation: dst_000.png, dst_001.png...\n".print
+    "\n".print
+    "  yaif decode <raw.yaif> <dst> [-look canon|darktable]\n".print
+    "    .dng: DNG; .png .tif .jpg .webp .avif .heic: developed with LibRaw\n".print
+    "    (TIFF 16 bits, others 8 bits); .pgm: bare sensor frame\n".print
+    "    -look  camera's look (canon, default) or darktable's\n".print
+    "\n".print
+    "  yaif convert <src> <dst> [options]\n".print
+    "    any source encode reads -> any dst decode writes, in one step,\n".print
+    "    with its metadata and HDR gain map; decode's options.\n".print
+    "    A lossy source stays lossy, a PNG/TIFF lossless (-m to choose)\n".print
+    "\n".print
+    "  yaif preview <src.yaif> <dst.png>  thumbnail only (512 px), instant\n".print
+    "  yaif info    <src.yaif>\n".print
+    "  yaif bench   <src.png|jpg...>\n".print
+    "  yaif --version\n".print
+  )
+
+  - fail msg:String <-
+  (
+    ("yaif: " + msg + "\n").print
+    System.exit 1
+  )
+
+  // Chunk types, as big-endian ASCII.
+  - t_ihdr:Int := 49484452h
+
+  - t_anim:Int := 414E494Dh
+
+  - t_fdat:Int := 46444154h
+
+  - t_fdlt:Int := 46444C54h
+
+  - t_iend:Int := 49454E44h
+
+  - t_idat:Int := 49444154h
+
+  - t_mdat:Int := 4D444154h
+
+  - t_live:Int := 4C495645h
+
+  - t_prev:Int := 50524556h
+
+  - t_rawh:Int := 52415748h
+
+  - t_gmap:Int := 474D4150h
+
+  - t_app1:Int := 41505031h
+
+  - t_app2:Int := 41505032h
+
+  //
+  // CRC-32 (zlib), over Yaif_codec.out or an input buffer.
+  //
+
+  - crc_table:C_array Int := C_array Int.create 256
+
+  - make_crc_table <-
+  ( + c:Int
+    0.to 255 do { n:Int
+      c := n
+      1.to 8 do { k:Int
+        ((c & 1) = 1).if { c := (c >> 1) ^ 0EDB88320h } else { c := c >> 1 }
+      }
+      crc_table.at n put c
+    }
+  )
+
+  - crc c:Int of buf:C_array Uint8 from lo:Int until hi:Int :Int <-
+  // Running CRC: start with FFFFFFFFh, xor the final value with FFFFFFFFh.
+  ( + r:Int
+    r := c
+    lo.to (hi - 1) do { i:Int
+      r := (crc_table.at ((r ^ (buf.at i).to_int) & 255)) ^ (r >> 8)
+    }
+    r
+  )
+
+  //
+  // Chunk writing into Yaif_codec.out
+  //
+
+  - chunk_start:Int
+
+  - begin_chunk t:Int <-
+  (
+    Yaif_codec.put_u32 t
+    Yaif_codec.put_u32 0
+    chunk_start := Yaif_codec.out_count
+  )
+
+  - end_chunk <-
+  ( + c:Int
+    Yaif_codec.set_u32 (Yaif_codec.out_count - chunk_start) at (chunk_start - 4)
+    c := crc (0FFFFFFFFh) of (Yaif_codec.out) from (chunk_start - 8) until (chunk_start - 4)
+    c := crc c of (Yaif_codec.out) from chunk_start until (Yaif_codec.out_count)
+    Yaif_codec.put_u32 (c ^ 0FFFFFFFFh)
+  )
+
+  - begin_png_chunk t:Int <-
+  (
+    Yaif_codec.put_u32 0
+    Yaif_codec.put_u32 t
+    chunk_start := Yaif_codec.out_count
+  )
+
+  - end_png_chunk <-
+  ( + c:Int
+    Yaif_codec.set_u32 (Yaif_codec.out_count - chunk_start) at (chunk_start - 8)
+    c := crc (0FFFFFFFFh) of (Yaif_codec.out) from (chunk_start - 4) until (Yaif_codec.out_count)
+    Yaif_codec.put_u32 (c ^ 0FFFFFFFFh)
+  )
+
+  - put_magic <-
+  (
+    Yaif_codec.put_byte 137
+    Yaif_codec.put_byte 89
+    Yaif_codec.put_byte 65
+    Yaif_codec.put_byte 73
+    Yaif_codec.put_byte 70
+    Yaif_codec.put_byte 13
+    Yaif_codec.put_byte 10
+    Yaif_codec.put_byte 26
+    Yaif_codec.put_byte 10
+  )
+
+  - save_buffer buf:C_array Uint8 size n:Int to name:String <-
+  ( + f:Pointer
+    f := File_utils.open_write name
+    (f = NULL).if { fail ("cannot write " + name) }
+    File_utils.write f buffer buf size n
+    File_utils.close f
+  )
+
+  - save_out name:String <-
+  ( + f:Pointer
+    f := File_utils.open_write name
+    (f = NULL).if { fail ("cannot write " + name) }
+    File_utils.write f buffer (Yaif_codec.out) size (Yaif_codec.out_count)
+    File_utils.close f
+  )
+
+  //
+  // Metadata: source file -> MDAT chunks, MDAT -> PNG chunks
+  //
+
+  - put_bytes (lo,hi:Int) <-
+  // data[lo,hi) -> Yaif_codec.out
+  (
+    lo.to (hi - 1) do { i:Int
+      Yaif_codec.put_byte (u8 i)
+    }
+  )
+
+  - put_str s:String <-
+  (
+    0.to (s.upper) do { i:Int
+      Yaif_codec.put_byte ((s.at i).to_uint8.to_int)
+    }
+  )
+
+  - starts (p,l:Int) with s:String :Boolean <-
+  // data[p..p+l) begins with s followed by a zero byte.
+  ( + result:Boolean
+    result := l > s.count
+    0.to (s.upper) do { i:Int
+      (result && {(u8 (p + i)) != (s.at i).to_uint8.to_int}).if { result := False }
+    }
+    result && {(u8 (p + s.count)) = 0}
+  )
+
+  - put_source_meta name:String <-
+  // One MDAT [kind][raw payload] per PNG ancillary chunk (kind = its type: eXIf, iCCP, iTXt...)
+  // or JPEG APPn/COM segment (kind "APP0".."APPF", "COM "). HEIC: EXIF, XMP, ICC from libheif,
+  // as the JPEG segments (APP1, APP2).
+  ( + pos,len,t,m,n:Int
+    + b:C_array Uint8
+    (is_heif name).if {
+      (Yaif_heic.load name pixels False).if {
+        b := Yaif_heic.meta
+        n := Yaif_heic.meta_size
+        pos := 0
+        {pos + 8 <= n}.while_do {
+          len := (((b.at (pos + 4)).to_int) << 24) | (((b.at (pos + 5)).to_int) << 16) | (((b.at (pos + 6)).to_int) << 8) | (b.at (pos + 7)).to_int
+          begin_chunk t_mdat
+          0.to 3 do { j:Int
+            Yaif_codec.put_byte ((b.at (pos + j)).to_int)
+          }
+          (pos + 8).to (pos + 8 + len - 1) do { j:Int
+            Yaif_codec.put_byte ((b.at j).to_int)
+          }
+          end_chunk
+          pos := pos + 8 + len
+        }
+      }
+    }.elseif {(data_size > 8) && {(u32 0) = 89504E47h}} then {
+      pos := 8
+      {pos + 12 <= data_size}.while_do {
+        len := u32 pos
+        t := u32 (pos + 4)
+        ((len < 0) || {len > data_size - pos - 12}).if {
+          pos := data_size
+        } else {
+          // Ancillary (lowercase first letter), except pixel structure: tRNS, acTL, fcTL, fdAT.
+          (((u8 (pos + 4)) >= 97) && {t != 74524E53h} && {t != 6163544Ch} && {t != 6663544Ch} && {t != 66644154h}).if {
+            put_meta t from (pos + 8) until (pos + 8 + len)
+          }
+          pos := pos + len + 12
+        }
+      }
+    }.elseif {(data_size > 4) && {(u16 0) = 0FFD8h}} then {
+      pos := 2
+      {pos + 4 <= data_size}.while_do {
+        m := u8 (pos + 1)
+        len := u16 (pos + 2)
+        // Metadata segments all come before the first scan (SOS, DAh).
+        (((u8 pos) != 255) || {m = 0DAh} || {len < 2} || {pos + 2 + len > data_size}).if {
+          pos := data_size
+        } else {
+          t := 0
+          ((m >= 0E0h) && {m <= 0EFh}).if {
+            t := 41505000h | ((m & 15) + 48 + (7 * ((m & 15) > 9).to_int))
+          }.elseif {m = 0FEh} then {
+            t := 434F4D20h
+          }
+          (t != 0).if { put_meta t from (pos + 4) until (pos + 2 + len) }
+          pos := pos + 2 + len
+        }
+      }
+    }
+  )
+
+  - jpeg_quality name:String :Int <-
+  // Quality of the JPEG file name (IJG scale, 1-100) estimated from its luminance table (DQT id 0) against
+  // the standard one (sum 3688), as ImageMagick does; 0: not a JPEG or no 8-bit table 0.
+  ( + pos,m,len,sum,scale,result:Int
+    load_file name
+    ((data_size > 4) && {(u16 0) = 0FFD8h}).if {
+      pos := 2
+      {pos + 4 <= data_size}.while_do {
+        m := u8 (pos + 1)
+        len := u16 (pos + 2)
+        (((u8 pos) != 255) || {m = 0DAh} || {len < 2} || {pos + 2 + len > data_size}).if {
+          pos := data_size
+        } else {
+          // First table of the segment only (id 0 comes first in practice).
+          ((m = 0DBh) && {len >= 67} && {(u8 (pos + 4)) = 0}).if {
+            sum := 0
+            0.to 63 do { i:Int sum := sum + u8 (pos + 5 + i) }
+            scale := (sum * 100 + 1844) / 3688
+            (scale <= 100).if { result := (200 - scale) / 2 } else { result := 5000 / scale }
+            (result < 1).if { result := 1 }
+            (result > 100).if { result := 100 }
+            pos := data_size
+          } else {
+            pos := pos + 2 + len
+          }
+        }
+      }
+    }
+    result
+  )
+
+  - put_meta kind:Int from lo:Int until hi:Int <-
+  (
+    begin_chunk t_mdat
+    Yaif_codec.put_u32 kind
+    put_bytes (lo, hi)
+    end_chunk
+  )
+
+  - meta_pos:Array Int := Array Int.create_with_capacity 16
+
+  - meta_len:Array Int := Array Int.create_with_capacity 16
+
+  - put_png_meta <-
+  // MDAT blocks of the .yaif being decoded -> PNG chunks: PNG kinds as they were, JPEG Exif -> eXIf,
+  // XMP -> iTXt, ICC (APP2 segments joined) -> iCCP, JFIF density -> pHYs. Other JPEG segments (MPF,
+  // maker APPn, COM) go to the private chunk nvMd [kind][raw], kept as is if the PNG is re-encoded.
+  ( + p,l,k,n,u,x,y:Int
+    + icc:C_array Uint8
+    0.to (meta_pos.upper) do { i:Int
+      p := meta_pos.at i + 4
+      l := meta_len.at i - 4
+      k := u32 (p - 4)
+      ((u8 (p - 4)) >= 97).if {
+        begin_png_chunk k
+        put_bytes (p, p + l)
+        end_png_chunk
+      }.elseif {(k & 0FFFFFF00h) = 434D5400h} then {
+        // CR3 CMT blocks: in the eXIf built from them (raw_exif), below.
+      }.elseif {(k = t_app1) && {starts (p, l) with "Exif"}} then {
+        begin_png_chunk 65584966h
+        put_bytes (p + 6, p + l)
+        end_png_chunk
+      }.elseif {(k = t_app1) && {starts (p, l) with "http://ns.adobe.com/xap/1.0/"}} then {
+        begin_png_chunk 69545874h
+        put_str "XML:com.adobe.xmp"
+        5.times { Yaif_codec.put_byte 0 }    // keyword end, uncompressed, method, empty language, empty translation
+        put_bytes (p + 29, p + l)
+        end_png_chunk
+      }.elseif {(k = t_app2) && {starts (p, l) with "ICC_PROFILE"} && {l > 14}} then {
+        n := n + l - 14
+      }.elseif {(k = 41505030h) && {starts (p, l) with "JFIF"} && {l >= 12}} then {
+        // units 1: dots per inch, 2: per cm, 0: aspect ratio only
+        u := u8 (p + 7)
+        x := u16 (p + 8)
+        y := u16 (p + 10)
+        (u = 1).if {
+          x := (x * 10000 + 127) / 254
+          y := (y * 10000 + 127) / 254
+        }.elseif {u = 2} then {
+          x := x * 100
+          y := y * 100
+        }
+        ((x > 0) && {y > 0}).if {
+          begin_png_chunk 70485973h
+          Yaif_codec.put_u32 x
+          Yaif_codec.put_u32 y
+          Yaif_codec.put_byte ((u != 0).to_int)
+          end_png_chunk
+        }
+      } else {
+        begin_png_chunk 6E764D64h
+        put_bytes (p - 4, p + l)
+        end_png_chunk
+      }
+    }
+    (n > 0).if {
+      icc := C_array Uint8.create n
+      n := 0
+      // ponytail: segments joined in file order (writers emit them in sequence order).
+      0.to (meta_pos.upper) do { i:Int
+        p := meta_pos.at i + 4
+        l := meta_len.at i - 4
+        (((u32 (p - 4)) = t_app2) && {starts (p, l) with "ICC_PROFILE"} && {l > 14}).if {
+          (p + 14).to (p + l - 1) do { j:Int
+            icc.at n put (data.at j)
+            n := n + 1
+          }
+        }
+      }
+      begin_png_chunk 69434350h
+      put_str "icc"
+      Yaif_codec.put_byte 0
+      Yaif_codec.put_byte 0
+      put_deflated icc size n
+      end_png_chunk
+    }
+    (raw_exif_n > 0).if {
+      begin_png_chunk 65584966h
+      0.to (raw_exif_n - 1) do { i:Int
+        Yaif_codec.put_byte ((raw_exif.at i).to_int)
+      }
+      end_png_chunk
+    }
+  )
+
+  // Metadata of the .yaif being decoded for other formats (TIFF...): EXIF TIFF stream and XMP
+  // packet in data, ICC profile joined in icc. Length 0: none.
+  - exif_pos:Int
+  - exif_len:Int
+  - xmp_pos:Int
+  - xmp_len:Int
+  - iccp:C_array Uint8
+  - iccp_n:Int
+
+  - collect_meta <-
+  // From JPEG segments (APP1 Exif / XMP, APP2 ICC) or PNG chunks (eXIf, iTXt XMP, iCCP).
+  // ponytail: compressed iTXt XMP is skipped (writers store it uncompressed).
+  ( + p,l,k,n,q:Int
+    + d:C_array Uint8
+    exif_len := 0
+    xmp_len := 0
+    iccp_n := 0
+    0.to (meta_pos.upper) do { i:Int
+      p := meta_pos.at i + 4
+      l := meta_len.at i - 4
+      k := u32 (p - 4)
+      ((k = t_app1) && {starts (p, l) with "Exif"} && {l > 14}).if {
+        exif_pos := p + 6
+        exif_len := l - 6
+      }.elseif {(k = 65584966h) && {l > 8}} then {
+        exif_pos := p
+        exif_len := l
+      }.elseif {(k = t_app1) && {starts (p, l) with "http://ns.adobe.com/xap/1.0/"}} then {
+        xmp_pos := p + 29
+        xmp_len := l - 29
+      }.elseif {(k = 69545874h) && {starts (p, l) with "XML:com.adobe.xmp"} && {l > 22} && {(u8 (p + 18)) = 0}} then {
+        // keyword, compression flag, method, language, translated keyword (both NUL-terminated)
+        q := p + 20
+        {(q < p + l) && {(u8 q) != 0}}.while_do { q := q + 1 }
+        q := q + 1
+        {(q < p + l) && {(u8 q) != 0}}.while_do { q := q + 1 }
+        q := q + 1
+        (q < p + l).if {
+          xmp_pos := q
+          xmp_len := p + l - q
+        }
+      }.elseif {(k = t_app2) && {starts (p, l) with "ICC_PROFILE"} && {l > 14}} then {
+        n := n + l - 14
+      }.elseif {k = 69434350h} then {
+        q := p
+        {(q < p + l) && {(u8 q) != 0}}.while_do { q := q + 1 }
+        ((q + 2 < p + l) && {Yaif_zlib.inflate data from (q + 2) size (p + l - q - 2) max 16777216}).if {
+          iccp_n := Yaif_zlib.size
+          iccp := C_array Uint8.create iccp_n
+          d := Yaif_zlib.data
+          0.to (iccp_n - 1) do { j:Int iccp.at j put (d.at j) }
+        }
+      }
+    }
+    (n > 0).if {
+      iccp := C_array Uint8.create n
+      0.to (meta_pos.upper) do { i:Int
+        p := meta_pos.at i + 4
+        l := meta_len.at i - 4
+        (((u32 (p - 4)) = t_app2) && {starts (p, l) with "ICC_PROFILE"} && {l > 14}).if {
+          (p + 14).to (p + l - 1) do { j:Int
+            iccp.at iccp_n put (data.at j)
+            iccp_n := iccp_n + 1
+          }
+        }
+      }
+    }
+  )
+
+  - heif_ext name:String :Boolean <- (name.as_lower.has_suffix ".avif") || {name.as_lower.has_suffix ".heic"} || {name.as_lower.has_suffix ".heif"}
+
+  - image_ext name:String :Boolean <-
+  ( + e:String_buffer
+    + r:Boolean
+    e := name.as_lower
+    r := (e.has_suffix ".png") || {e.has_suffix ".pam"} || {e.has_suffix ".tif"} || {e.has_suffix ".tiff"}
+    r || {e.has_suffix ".jpg"} || {e.has_suffix ".jpeg"} || {e.has_suffix ".webp"} || {heif_ext name}
+  )
+
+  - write_image buf:C_array Uint8 planes np:Int to name:String <-
+  // Output format from the extension: .tif/.tiff, .jpg/.jpeg (quality opt_q), .webp, .avif/.heic/.heif,
+  // .pam (RGBA, for the web viewer), else PNG.
+  ( + ok,ll,av:Boolean
+    + q,gain:Int
+    (((name.as_lower.has_suffix ".tif") || {name.as_lower.has_suffix ".tiff"}) && {opt_hdr} && {hdr_ok np}).if {
+      write_tiff_hdr buf to name
+    }.elseif {(name.as_lower.has_suffix ".tif") || {name.as_lower.has_suffix ".tiff"}} then {
+      collect_meta
+      Yaif_tiff.write_image name pixels buf bits 8 planes np size (width, height) data data exif (exif_pos, exif_len) icc (iccp, iccp_n) xmp (xmp_pos, xmp_len)
+    }.elseif {((name.as_lower.has_suffix ".jpg") || {name.as_lower.has_suffix ".jpeg"}) && {hdr_ok np}} then {
+      write_ultrahdr buf to name
+    }.elseif {opt_hdr && {name.as_lower.has_suffix ".png"} && {hdr_ok np}} then {
+      write_png_hdr buf to name
+    }.elseif {opt_hdr && {heif_ext name} && {hdr_ok np}} then {
+      // HDR AVIF/HEIC: lossy 10 bits (default quality as below).
+      collect_meta
+      av := name.as_lower.has_suffix ".avif"
+      q := opt_q
+      (opt_q_set).if { }.elseif {av} then { q := 85 } else { q := 60 }
+      Yaif_par.status ("Applying the gain map (" + width.to_string + "x" + height.to_string + ")...")
+      Yaif_hdr.apply buf size (width, height) gain_map gm gain_size (gm_w, gm_h) png False
+      ok := Yaif_heic.export_hdr name pq (Yaif_hdr.data) size (width, height) primaries icc_primaries avif av quality q meta (data, exif_pos, exif_len, data, xmp_pos, xmp_len)
+      (ok).if { } else { fail ("HEIF: " + Yaif_heic.message) }
+    }.elseif {(name.as_lower.has_suffix ".jpg") || {name.as_lower.has_suffix ".jpeg"}} then {
+      (raw_exif_n > 0).if {
+        // Developed RAW: EXIF built from the CMT blocks, no ICC (sRGB) or XMP.
+        ok := Yaif_jpeg.encode buf size (width, height) quality opt_q exif (raw_exif, 0, raw_exif_n) icc (raw_exif, 0, 0) xmp (raw_exif, 0, 0)
+      } else {
+        collect_meta
+        ok := Yaif_jpeg.encode buf size (width, height) quality opt_q exif (data, exif_pos, exif_len) icc (iccp, 0, iccp_n) xmp (data, xmp_pos, xmp_len)
+      }
+      (ok).if { } else { fail "JPEG encoding failed (out of memory)" }
+      save_buffer (Yaif_jpeg.data) size (Yaif_jpeg.size) to name
+    }.elseif {name.as_lower.has_suffix ".webp"} then {
+      // Default: lossless when the .yaif frame is (graphics), lossy for photos and developed RAWs.
+      ll := (opt_webp = 2) || {(opt_webp = 0) && {! Yaif_codec.lossy_seen} && {raw_exif_n = 0}}
+      (raw_exif_n > 0).if {
+        ok := Yaif_webp.encode buf size (width, height) planes np lossless ll quality opt_q exif (raw_exif, 0, raw_exif_n) icc (raw_exif, 0, 0) xmp (raw_exif, 0, 0)
+      } else {
+        collect_meta
+        ok := Yaif_webp.encode buf size (width, height) planes np lossless ll quality opt_q exif (data, exif_pos, exif_len) icc (iccp, 0, iccp_n) xmp (data, xmp_pos, xmp_len)
+      }
+      (ok).if { } else { fail ("WebP: " + Yaif_webp.message) }
+      save_buffer (Yaif_webp.data) size (Yaif_webp.size) to name
+    }.elseif {heif_ext name} then {
+      // Default quality: about the fidelity of JPEG q 90 (~44 dB on a 24 Mpx photo): AVIF 85, HEIC 60.
+      av := name.as_lower.has_suffix ".avif"
+      q := opt_q
+      (opt_q_set).if { }.elseif {av} then { q := 85 } else { q := 60 }
+      ll := (opt_webp = 2) || {(opt_webp = 0) && {! Yaif_codec.lossy_seen} && {raw_exif_n = 0}}
+      gain := -1
+      ((! ll) && {hdr_ok np}).if {
+        // Lossy: SDR + HDR gain map, as the Ultra HDR JPEG -- AVIF through libavif, HEIC through
+        // libyaif-heif; a plain AVIF/HEIC when that library is missing.
+        collect_meta
+        Yaif_par.status ("Writing " + (short_name name) + " with its gain map...")
+        (av).if {
+          gain := Yaif_heic.export_gain_map name px buf size (width, height) gain (gm, gm_w, gm_h) iso (data, gm_meta_pos, gm_meta_n) prim icc_primaries q q meta (data, exif_pos, exif_len, iccp, iccp_n, data, xmp_pos, xmp_len)
+        } else {
+          gain := Yaif_heic.export_heic_gain_map name px buf size (width, height) gain (gm, gm_w, gm_h) iso (data, gm_meta_pos, gm_meta_n) prim icc_primaries q q meta (data, exif_pos, exif_len, iccp, iccp_n, data, xmp_pos, xmp_len)
+        }
+        ok := gain = 1
+      }
+      (gain >= 0).if {
+      }.elseif {raw_exif_n > 0} then {
+        ok := Yaif_heic.export name pixels buf size (width, height) planes np avif av lossless ll quality q meta (raw_exif, 0, raw_exif_n, raw_exif, 0, raw_exif, 0, 0)
+      } else {
+        collect_meta
+        ok := Yaif_heic.export name pixels buf size (width, height) planes np avif av lossless ll quality q meta (data, exif_pos, exif_len, iccp, iccp_n, data, xmp_pos, xmp_len)
+      }
+      (ok).if { } else { fail ("HEIF: " + Yaif_heic.message) }
+    }.elseif {name.as_lower.has_suffix ".pam"} then {
+      write_pam buf to name
+    }.elseif {name.as_lower.has_suffix ".png"} then {
+      write_png buf planes np to name
+    } else {
+      fail ("unsupported output extension: " + name + " (.png .tif .jpg .webp .avif .heic .heif .pam)")
+    }
+  )
+
+  - hdr_ok np:Int :Boolean <-
+  // The .yaif has a gain map that applies to this image (still, opaque, known metadata version).
+    (gm_w > 0) && {np = 3} && {raw_exif_n = 0} && {Yaif_hdr.parse data from gm_meta_pos size gm_meta_n}
+
+  - copy_bytes src:C_array Uint8 size n:Int :C_array Uint8 <-
+  ( + result:C_array Uint8
+    result := C_array Uint8.create (n + 1)
+    0.to (n - 1) do { i:Int result.at i put (src.at i) }
+    result
+  )
+
+  - write_ultrahdr buf:C_array Uint8 to name:String <-
+  // Ultra HDR JPEG: the SDR image (quality opt_q) whose XMP points to the gain map JPEG (q 85)
+  // appended after it, both indexed by an MPF segment. SDR viewers show the SDR image.
+  // EXIF, ICC and XMP are kept (the Ultra HDR description joins the source's XMP packet).
+  ( + x,g:C_array Uint8
+    + xn,gn:Int
+    collect_meta
+    Yaif_hdr.gain_map_xmp
+    xn := Yaif_hdr.size
+    x := copy_bytes (Yaif_hdr.data) size xn
+    (Yaif_jpeg.encode gm size (gm_w, gm_h) quality 85 exif (x, 0, 0) icc (x, 0, 0) xmp (x, 0, xn)).if { } else { fail "JPEG encoding failed (out of memory)" }
+    gn := Yaif_jpeg.size
+    g := copy_bytes (Yaif_jpeg.data) size gn
+    Yaif_hdr.primary_xmp gn source (data, xmp_pos, xmp_len)
+    xn := Yaif_hdr.size
+    x := copy_bytes (Yaif_hdr.data) size xn
+    (Yaif_jpeg.encode buf size (width, height) quality opt_q exif (data, exif_pos, exif_len) icc (iccp, 0, iccp_n) xmp (x, 0, xn)).if { } else { fail "JPEG encoding failed (out of memory)" }
+    Yaif_hdr.ultrahdr (Yaif_jpeg.data, Yaif_jpeg.size) gain_map (g, gn)
+    save_buffer (Yaif_hdr.data) size (Yaif_hdr.size) to name
+  )
+
+  - icc_primaries:Int <-
+  // cICP colour primaries of the collected ICC profile: 12 (Display P3) when its name says P3
+  // (ASCII or UTF-16), else 1 (BT.709). ponytail: by name, not by the profile's primaries.
+  ( + result:Int
+    result := 1
+    0.to (iccp_n - 3) do { i:Int
+      (((iccp.at i).to_int = 80) && {((iccp.at (i + 1)).to_int = 51) || {((iccp.at (i + 1)).to_int = 0) && {(iccp.at (i + 2)).to_int = 51}}}).if { result := 12 }
+    }
+    result
+  )
+
+  - write_tiff_hdr buf:C_array Uint8 to name:String <-
+  // HDR TIFF: the HDR rendition as 16-bit floats, linear, 1.0 = SDR white (203 nits), BT.709
+  // primaries (what HDR editors read as scene-linear, as EXR). EXIF and XMP kept; no ICC profile
+  // (the source's one describes the SDR pixels).
+  (
+    collect_meta
+    Yaif_par.status ("Applying the gain map (" + width.to_string + "x" + height.to_string + ")...")
+    Yaif_hdr.apply_linear buf size (width, height) gain_map gm gain_size (gm_w, gm_h) p3 (icc_primaries = 12)
+    Yaif_tiff.set_float True
+    Yaif_tiff.write_image name pixels (Yaif_hdr.data) bits 16 planes 3 size (width, height) data data exif (exif_pos, exif_len) icc (iccp, 0) xmp (xmp_pos, xmp_len)
+    Yaif_tiff.set_float False
+  )
+
+  - write_png_hdr buf:C_array Uint8 to name:String <-
+  // HDR PNG: the HDR rendition, 16-bit RGB, PQ, tagged with cICP.
+  // ponytail: no other metadata (an ICC profile would contradict cICP); rows unfiltered.
+  ( + p:Int
+    collect_meta
+    p := icc_primaries
+    Yaif_par.status ("Applying the gain map (" + width.to_string + "x" + height.to_string + ")...")
+    Yaif_hdr.apply buf size (width, height) gain_map gm gain_size (gm_w, gm_h) png True
+    Yaif_codec.reset_out
+    Yaif_codec.put_u32 89504E47h
+    Yaif_codec.put_u32 0D0A1A0Ah
+    begin_png_chunk t_ihdr
+    Yaif_codec.put_u32 width
+    Yaif_codec.put_u32 height
+    Yaif_codec.put_byte 16
+    Yaif_codec.put_byte 2
+    3.times { Yaif_codec.put_byte 0 }
+    end_png_chunk
+    begin_png_chunk 63494350h      // cICP: primaries, transfer 16 (PQ), matrix 0 (RGB), full range
+    Yaif_codec.put_byte p
+    Yaif_codec.put_byte 16
+    Yaif_codec.put_byte 0
+    Yaif_codec.put_byte 1
+    end_png_chunk
+    begin_png_chunk t_idat
+    put_deflated (Yaif_hdr.data) size (Yaif_hdr.size)
+    end_png_chunk
+    begin_png_chunk t_iend
+    end_png_chunk
+    save_out name
+  )
+
+  //
+  // Encoder
+  //
+
+  - frames:Array (C_array Uint8) := Array (C_array Uint8).create_with_capacity 16
+
+  - width:Int
+
+  - height:Int
+
+  - is_heif name:String :Boolean <-
+  // HEIF family (HEIC, AVIF): ISO BMFF, ftyp box first (Canon CR3 too: brand "crx ", a RAW).
+  (
+    load_file name
+    (data_size >= 12) && {(u32 4) = 66747970h} && {(u32 8) != 63727820h}
+  )
+
+  - is_raw name:String :Boolean <-
+  // Camera RAW: CR3 by its brand; any other file that is not PNG/JPEG/HEIF and that LibRaw opens.
+  ( + bmff,known:Boolean
+    load_file name
+    bmff := (data_size >= 12) && {(u32 4) = 66747970h}
+    known := bmff || {(data_size >= 8) && {(u32 0) = 89504E47h}} || {(data_size >= 2) && {(u16 0) = 0FFD8h}}
+    (bmff && {(u32 8) = 63727820h}) || {(! known) && {Yaif_rawin.is_raw name}}
+  )
+
+  - encode_raw name:String <-
+  // Sensor frame as is (level 6, lossless), RAWH (CFA pattern, levels, colour), EXIF blocks as MDAT.
+  ( + b:C_array Uint8
+    + n,pos,len:Int
+    (Yaif_rawin.load name).if { } else { fail ("cannot read RAW " + name + ": " + Yaif_rawin.message) }
+    width := Yaif_rawin.width
+    height := Yaif_rawin.height
+    Yaif_par.clear
+    ((short_name name) + ": " + (raw_camera (Yaif_rawin.head)) + ", " + width.to_string + "x" + height.to_string + " sensor frame (" + (raw_u32 9 of (Yaif_rawin.head)).to_string + "x" + (raw_u32 13 of (Yaif_rawin.head)).to_string + " visible)\n").print
+    ((width > 65535) || {height > 65535}).if { fail "RAW frame too large" }
+    Yaif_codec.reset_out
+    put_magic
+    begin_chunk t_ihdr
+    Yaif_codec.put_u32 width
+    Yaif_codec.put_u32 height
+    Yaif_codec.put_byte 16         // bits per sample
+    Yaif_codec.put_byte 1          // one plane: CFA samples
+    Yaif_codec.put_byte 2          // format version
+    Yaif_codec.put_byte 8          // flags: 8 = sensor frame, RAWH gives its layout
+    end_chunk
+    b := Yaif_rawin.head
+    begin_chunk t_rawh
+    0.to (Yaif_rawin.head_size - 1) do { j:Int
+      Yaif_codec.put_byte ((b.at j).to_int)
+    }
+    end_chunk
+    Yaif_raw.setup (width, height) black (raw_black b)
+    b := Yaif_rawin.meta
+    n := Yaif_rawin.meta_size
+    {pos + 8 <= n}.while_do {
+      len := (((b.at (pos + 4)).to_int) << 24) | (((b.at (pos + 5)).to_int) << 16) | (((b.at (pos + 6)).to_int) << 8) | (b.at (pos + 7)).to_int
+      begin_chunk t_mdat
+      0.to 3 do { j:Int
+        Yaif_codec.put_byte ((b.at (pos + j)).to_int)
+      }
+      (pos + 8).to (pos + 8 + len - 1) do { j:Int
+        Yaif_codec.put_byte ((b.at j).to_int)
+      }
+      end_chunk
+      pos := pos + 8 + len
+    }
+    // convert: the preview only serves as a DNG's thumbnail.
+    ((convert_to = NULL) || {convert_to.as_lower.has_suffix ".dng"}).if { raw_preview name }
+    0.to (width * height - 1) do { i:Int
+      Yaif_raw.put (Yaif_rawin.sample i) at i
+    }
+    begin_chunk t_fdat
+    // convert: an empty FDAT, the samples stay in Yaif_raw for read_yaif.
+    (convert_to = NULL).if { Yaif_raw.encode }
+    end_chunk
+    mode_name := "lossless, level 6 RAW"
+  )
+
+  - raw_preview name:String <-
+  // PREV of a RAW: LibRaw half-size development (8 bits), then the usual 512 px thumbnail.
+  ( + w,h:Int
+    Yaif_par.status "Building the 512 px preview (LibRaw, half size)..."
+    (Yaif_rawin.develop name bits 8 half True).if {
+      w := width
+      h := height
+      width := Yaif_rawin.image_width
+      height := Yaif_rawin.image_height
+      frames.clear
+      frames.add_last (Yaif_rawin.image)
+      put_preview 3
+      frames.clear
+      width := w
+      height := h
+    }
+  )
+
+  - raw_u32 p:Int of b:C_array Uint8 :Int <-
+  ( + v:Int
+    0.to 3 do { i:Int
+      v := (v << 8) | (b.at (p + i)).to_int
+    }
+    v
+  )
+
+  - raw_camera b:C_array Uint8 :String <-
+  // "Canon EOS 250D": make and model strings at the end of RAWH.
+  ( + o,n:Int
+    + s:String_buffer
+    s := String_buffer.create 64
+    o := 41 + 4 * (raw_u32 37 of b) + 148
+    n := (b.at o).to_int
+    (o + 1).to (o + n) do { i:Int s.add_last ((b.at i).to_char) }
+    s.add_last ' '
+    o := o + 1 + n
+    n := (b.at o).to_int
+    (o + 1).to (o + n) do { i:Int s.add_last ((b.at i).to_char) }
+    s.to_string
+  )
+
+  - raw_black b:C_array Uint8 :Int <-
+  // RAWH black + cblack[0] (bytes 29 and 41): where the brightness contexts of level 6 start.
+  ( + v,c:Int
+    0.to 3 do { i:Int
+      v := (v << 8) | (b.at (29 + i)).to_int
+      c := (c << 8) | (b.at (41 + i)).to_int
+    }
+    v + c
+  )
+
+  // EXIF TIFF stream of a developed RAW (PNG eXIf, TIFF tags).
+  - raw_exif:C_array Uint8
+  - raw_exif_n:Int
+
+  - develop_raw name:String rawh rh:Int <-
+  // Decoded sensor frame -> DNG in memory -> LibRaw development -> PNG (8 bits) or TIFF (16 bits).
+  ( + look:String
+    + bits,n:Int
+    + tif:Boolean
+    + o:C_array Uint8
+    Yaif_tiff.exif_of data metas (meta_pos, meta_len)
+    n := Yaif_codec.out_count
+    o := Yaif_codec.out
+    raw_exif := C_array Uint8.create n
+    0.to (n - 1) do { i:Int raw_exif.at i put (o.at i) }
+    raw_exif_n := n
+    Yaif_tiff.write_dng NULL data data rawh rh metas (meta_pos, meta_len) size (width, height) thumb (NULL, 0, 0, 0)
+    tif := (name.as_lower.has_suffix ".tif") || {name.as_lower.has_suffix ".tiff"}
+    bits := 8
+    (tif).if { bits := 16 }
+    (opt_look = 0).if { look := "camera look" } else { look := "darktable look" }
+    Yaif_par.status ("Developing the RAW with LibRaw (" + bits.to_string + " bits, camera white balance, " + look + ")...")
+    (Yaif_rawin.develop_buffer (Yaif_codec.out) size (Yaif_codec.out_count) rawh (data, rh) bits bits look opt_look).if { } else { fail ("RAW development failed: " + Yaif_rawin.message) }
+    width := Yaif_rawin.image_width
+    height := Yaif_rawin.image_height
+    Yaif_par.status ("Writing " + (short_name name) + " (" + width.to_string + "x" + height.to_string + ")...")
+    (tif).if {
+      Yaif_tiff.write_image name pixels (Yaif_rawin.image) bits 16 planes 3 size (width, height) data raw_exif exif (0, n) icc (raw_exif, 0) xmp (0, 0)
+    } else {
+      write_image (Yaif_rawin.image) planes 3 to name
+    }
+  )
+
+  - write_pam buf:C_array Uint8 to name:String <-
+  // RGBA pixels as a PAM (netpbm P7) file: a text header, then buf as it is. For the web viewer,
+  // which shows a developed RAW without compressing it to PNG first.
+  ( + f:Pointer
+    Yaif_codec.reset_out
+    put_str ("P7\nWIDTH " + width.to_string + "\nHEIGHT " + height.to_string + "\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n")
+    f := File_utils.open_write name
+    (f = NULL).if { fail ("cannot write " + name) }
+    File_utils.write f buffer (Yaif_codec.out) size (Yaif_codec.out_count)
+    File_utils.write f buffer buf size (width * height * 4)
+    File_utils.close f
+  )
+
+  - write_pgm name:String <-
+  // Sensor frame of Yaif_raw as a 16-bit PGM (like dcraw -D).
+  (
+    Yaif_codec.reset_out
+    put_str ("P5\n" + width.to_string + " " + height.to_string + "\n65535\n")
+    0.to (width * height - 1) do { i:Int
+      Yaif_codec.put_u16 (Yaif_raw.value i)
+    }
+    save_out name
+  )
+
+  - load_sources (first,last:Int) <-
+  // Loads Command_args first..last as RGBA frames of the same size (PNG, JPEG..., HEIC via libheif).
+  ( + name:String
+    + iw,ih:Int
+    + f,src:C_array Uint8
+    frames.clear
+    first.to last do { i:Int
+      name := Command_args.at i
+      Yaif_par.status ("Reading " + (short_name name) + "...")
+      // Image.init crashes on a missing file.
+      (File_utils.file_exists name).if { } else { fail ("cannot read " + name) }
+      (is_heif name).if {
+        (Yaif_heic.load name pixels True).if { } else { fail ("cannot read HEIC " + name + ": " + Yaif_heic.message) }
+        iw := Yaif_heic.width
+        ih := Yaif_heic.height
+        src := Yaif_heic.rgba
+        f := C_array Uint8.create (iw * ih * 4)
+        0.to (iw * ih * 4 - 1) do { j:Int
+          f.at j put (src.at j)
+        }
+        frames.add_last f
+      }.elseif {Image.init name} then {
+        // Copied, not stored as-is: some coders (the JPEG one) reuse one shared output buffer
+        // across loads, which would make every animation frame alias the last one decoded.
+        src := Image.load (Image.rgb_alpha)
+        iw := Image.img_x
+        ih := Image.img_y
+        f := C_array Uint8.create (iw * ih * 4)
+        0.to (iw * ih * 4 - 1) do { j:Int
+          f.at j put (src.at j)
+        }
+        frames.add_last f
+      } else {
+        fail ("cannot read image " + name)
+      }
+      (i = first).if {
+        width := iw
+        height := ih
+      }.elseif {(iw != width) || {ih != height}} then {
+        fail ("all frames must have the same size: " + name)
+      }
+    }
+  )
+
+  - has_alpha:Boolean <-
+  ( + result:Boolean
+    0.to (frames.upper) do { f:Int
+      0.to (width * height - 1) do { i:Int
+        ((frames.at f).at (i * 4 + 3) != 255).if { result := True }
+      }
+    }
+    result
+  )
+
+  - bx0:Int
+
+  - by0:Int
+
+  - bx1:Int
+
+  - by1:Int
+
+  - diff_box (a,b:C_array Uint8) <-
+  // Bounding box [bx0,bx1) x [by0,by1) of changed pixels; empty when bx1 = 0.
+  ( + i:Int
+    bx0 := width
+    by0 := height
+    bx1 := 0
+    by1 := 0
+    0.to (height - 1) do { y:Int
+      0.to (width - 1) do { x:Int
+        i := (y * width + x) * 4
+        (((a.at i) != (b.at i)) || {(a.at (i + 1)) != (b.at (i + 1))} || {(a.at (i + 2)) != (b.at (i + 2))} || {(a.at (i + 3)) != (b.at (i + 3))}).if {
+          (x < bx0).if { bx0 := x }
+          (y < by0).if { by0 := y }
+          (x + 1 > bx1).if { bx1 := x + 1 }
+          (y + 1 > by1).if { by1 := y + 1 }
+        }
+      }
+    }
+  )
+
+  - repeat_percent:Int <-
+  // Share of pixels equal to their left neighbour in the first frame: high for graphics.
+  ( + f:C_array Uint8
+    + i,n:Int
+    f := frames.first
+    0.to (height - 1) do { y:Int
+      1.to (width - 1) do { x:Int
+        i := (y * width + x) * 4
+        (((f.at i) = (f.at (i - 4))) && {(f.at (i + 1)) = (f.at (i - 3))} && {(f.at (i + 2)) = (f.at (i - 2))}).if { n := n + 1 }
+      }
+    }
+    (n * 100) / (width * height)
+  )
+
+  - pick_level np:Int eps ep:Int :Int <-
+  // Tries levels 1..3 (4 from 16 Mpx) on the central 512x512 of the first frame, and level 0
+  // when the image fits a palette. Leaving the fast level 1 must save 3 %; above it, the smallest wins.
+  ( + tw,th,best,bsize,sz,top:Int
+    top := 3
+    // Level 4 (slowest) only for large photos, where each % is megabytes.
+    (width * height >= 16000000).if { top := 4 }
+    tw := width
+    th := height
+    (tw > 512).if { tw := 512 }
+    (th > 512).if { th := 512 }
+    best := 1
+    bsize := Yaif_codec.trial (frames.first) stride width region ((width - tw) / 2, (height - th) / 2, tw, th) planes np level 1 eps ep
+    2.to top do { lv:Int
+      sz := Yaif_codec.trial (frames.first) stride width region ((width - tw) / 2, (height - th) / 2, tw, th) planes np level lv eps ep
+      (((best = 1) && {sz * 100 < bsize * 97}) || {(best > 1) && {sz < bsize}}).if {
+        best := lv
+        bsize := sz
+      }
+    }
+    // Palette: compared on the whole first frame (it only applies when all of it fits).
+    (Yaif_codec.palette_fits (frames.first) stride width region (0, 0, width, height)).if {
+      sz := Yaif_codec.trial (frames.first) stride width region (0, 0, width, height) planes np level 0 eps 0
+      (sz * tw * th <= bsize * width * height).if { best := 0 }
+    }
+    best
+  )
+
+  - central np:Int level lv:Int eps ep:Int :Int <-
+  // Trial size on the central 512x512 of the first frame.
+  ( + tw,th:Int
+    tw := width
+    th := height
+    (tw > 512).if { tw := 512 }
+    (th > 512).if { th := 512 }
+    Yaif_codec.trial (frames.first) stride width region ((width - tw) / 2, (height - th) / 2, tw, th) planes np level lv eps ep
+  )
+
+  - mode_name:String
+
+  - encode_frames d:Int mode md:Int level lv:Int eps ep:Int <-
+  // Frames -> Yaif_codec.out. md: 0 adaptive, 1 lossless, 2 lossy. lv: 0 pick, -1 level 0, else the level.
+  // Frames are coded from `work`, which holds the reconstructed image (lossy changes pixels):
+  // a delta is coded on top of the previous reconstructed frame, as the decoder will see it.
+  ( + np,e,lvl,q,lossless_lv:Int
+    + animated,photo:Boolean
+    + work,next:C_array Uint8
+    np := 3
+    (has_alpha).if { np := 4 }
+    animated := frames.count > 1
+    // Measured: photos 0-45 % (smooth iPhone shots of screens up to 45 %), text/UI/screenshots 78-96 %.
+    Yaif_par.status "Analysing the image (photo or graphics, best level)..."
+    photo := repeat_percent < 65
+    e := 0
+    (md = 2).if { e := ep }
+    lvl := lv
+    // Photos without a forced level: wavelet (level 5, alpha kept exact) in adaptive and lossy
+    // modes. Graphics: lossless (adaptive) or near-lossless (lossy).
+    ((md != 1) && {lvl = 0} && {photo}).if { lvl := 5 }
+    // A level 1-4 forced on a photo in adaptive mode: near-lossless (eps 1).
+    ((md = 0) && {photo} && {lvl >= 1} && {lvl <= 4}).if { e := 1 }
+    // Level 5 carries a quality instead of eps.
+    (lvl = 5).if {
+      (md = 1).if { fail "level 5 is lossy only (-m lossy or adaptive)" }
+      e := opt_q
+      // JPEG source without -q: a quality matching the JPEG's, so the .yaif does not spend bits on its
+      // artefacts (50 + Q / 2, at most 90: JPEG q 50 -> 75, q 70 -> 85, measured to add <= 0.6 dB of
+      // loss; q 90 was 115-167 % of low-quality JPEGs).
+      ((! opt_q_set) && {! animated} && {meta_src != NULL}).if {
+        q := jpeg_quality meta_src
+        (q > 0).if { e := (50 + q / 2).min 90 }
+      }
+      // Adaptive: smooth synthetic images pass the photo test but code smaller losslessly
+      // (best lossless level, as pick_level would choose it). Lossy must save >= 10 % to be worth it.
+      ((md = 0) && {lv = 0}).if {
+        lossless_lv := pick_level np eps 0
+        ((central np level lossless_lv eps 0) * 9 <= (central np level 5 eps e) * 10).if {
+          lvl := lossless_lv
+          e := 0
+        }
+      }
+    }
+    (lvl = 0).if {
+      lvl := pick_level np eps e
+    }
+    (lvl = -1).if {
+      lvl := 0
+      (Yaif_codec.palette_fits (frames.first) stride width region (0, 0, width, height)).if { } else { fail "level 0 needs an image of 256 colours or less" }
+    }
+    (e = 0).if { mode_name := "lossless" }.elseif {lvl = 5} then { mode_name := "lossy q " + e.to_string } else { mode_name := "lossy eps " + e.to_string }
+    mode_name := mode_name + ", level " + lvl.to_string
+    Yaif_codec.reset_out
+    put_magic
+    begin_chunk t_ihdr
+    Yaif_codec.put_u32 width
+    Yaif_codec.put_u32 height
+    Yaif_codec.put_byte 8          // bits per sample
+    Yaif_codec.put_byte np         // planes: 3 RGB, 4 RGBA
+    Yaif_codec.put_byte 2          // format version
+    (animated).if { Yaif_codec.put_byte 4 } else { Yaif_codec.put_byte 0 }
+    end_chunk
+    (meta_src != NULL).if { put_source_meta meta_src }
+    (animated).if {
+      begin_chunk t_anim
+      Yaif_codec.put_u32 (frames.count)
+      Yaif_codec.put_u16 d
+      Yaif_codec.put_u16 0         // loop count, 0 = forever
+      end_chunk
+    }
+    Yaif_par.status "Building the 512 px preview..."
+    put_preview np
+    // Before FDAT: the decoder has the gain map when it writes the frame (Ultra HDR JPEG).
+    ((! animated) && {Yaif_heic.gain_width > 0}).if { put_gain_map e }
+    // A still image is coded in place (lossy overwrites it with the reconstruction, unused after).
+    (animated).if { work := copy_frame (frames.first) } else { work := frames.first }
+    begin_chunk t_fdat
+    Yaif_codec.encode work stride width region (0, 0, width, height) planes np level (region_level lvl at (0, 0, width, height) of work) eps e
+    end_chunk
+    recon := work
+    recon_np := np
+    1.to (frames.upper) do { f:Int
+      diff_box (frames.at (f - 1), frames.at f)
+      begin_chunk t_fdlt
+      (bx1 = 0).if {
+        4.times { Yaif_codec.put_u32 0 }
+      } else {
+        Yaif_codec.put_u32 bx0
+        Yaif_codec.put_u32 by0
+        Yaif_codec.put_u32 (bx1 - bx0)
+        Yaif_codec.put_u32 (by1 - by0)
+        next := frames.at f
+        by0.to (by1 - 1) do { y:Int
+          ((y * width + bx0) * 4).to ((y * width + bx1) * 4 - 1) do { i:Int
+            work.at i put (next.at i)
+          }
+        }
+        Yaif_codec.encode work stride width region (bx0, by0, bx1 - bx0, by1 - by0) planes np level (region_level lvl at (bx0, by0, bx1 - bx0, by1 - by0) of work) eps e
+      }
+      end_chunk
+    }
+    (live_src != NULL).if {
+      load_file live_src
+      begin_chunk t_live
+      put_bytes (0, data_size)
+      end_chunk
+    }
+    // ponytail: no IEND (12 bytes). Each chunk has a length and CRC, and the decoder checks the
+    // frame count, so a truncated file is still detected; IEND is accepted when present.
+  )
+
+  - put_gain_map e:Int <-
+  // GMAP chunk (HDR): [u16 w][u16 h][planes 3][u16 n][ISO 21496-1 metadata, n bytes][coded region].
+  // The frame's mode: lossless level 2 (e = 0), else wavelet at the frame's quality.
+  // ponytail: a gray gain map is coded as RGB (equal planes cost next to nothing).
+  ( + n:Int
+    + m:C_array Uint8
+    n := Yaif_heic.gain_meta_size
+    m := Yaif_heic.gain_meta
+    begin_chunk t_gmap
+    Yaif_codec.put_u16 (Yaif_heic.gain_width)
+    Yaif_codec.put_u16 (Yaif_heic.gain_height)
+    Yaif_codec.put_byte 3
+    Yaif_codec.put_u16 n
+    0.to (n - 1) do { i:Int
+      Yaif_codec.put_byte ((m.at i).to_int)
+    }
+    (e = 0).if {
+      Yaif_codec.encode (Yaif_heic.gain_map) stride (Yaif_heic.gain_width) region (0, 0, Yaif_heic.gain_width, Yaif_heic.gain_height) planes 3 level 2 eps 0
+    } else {
+      Yaif_codec.encode (Yaif_heic.gain_map) stride (Yaif_heic.gain_width) region (0, 0, Yaif_heic.gain_width, Yaif_heic.gain_height) planes 3 level 5 eps e
+    }
+    end_chunk
+  )
+
+  - put_preview np:Int <-
+  // PREV chunk: [u16 w][u16 h][planes][coded region], only when the long side is > 1024 and the
+  // image is over 2 Mpx (below, the image itself decodes in about a second: a 1428x910 screenshot's
+  // 6.5 KB preview was 16 % of its file). Box-filtered to 512 px, wavelet q 75 or less (alpha exact).
+  ( + tw,th,m,sx0,sx1,sy0,sy1,n,start,q:Int
+    + done:Boolean
+    + t,u:C_array Uint8
+    + sum:C_array Int
+    m := width.max height
+    ((m > 1024) && {width * height > 2000000}).if {
+      tw := ((width * 512) / m).max 1
+      th := ((height * 512) / m).max 1
+      t := C_array Uint8.create (tw * th * 4)
+      sum := C_array Int.create 4
+      0.to (th - 1) do { y:Int
+        sy0 := (y * height) / th
+        sy1 := ((y + 1) * height) / th
+        0.to (tw - 1) do { x:Int
+          sx0 := (x * width) / tw
+          sx1 := ((x + 1) * width) / tw
+          0.to 3 do { c:Int sum.at c put 0 }
+          sy0.to (sy1 - 1) do { yy:Int
+            sx0.to (sx1 - 1) do { xx:Int
+              0.to 3 do { c:Int
+                sum.at c put ((sum.at c) + ((frames.first).at ((yy * width + xx) * 4 + c)).to_int)
+              }
+            }
+          }
+          n := (sy1 - sy0) * (sx1 - sx0)
+          0.to 3 do { c:Int
+            t.at ((y * tw + x) * 4 + c) put ((((sum.at c) + n / 2) / n).to_uint8)
+          }
+        }
+      }
+      // Budget: 1 byte per 128 pixels of the image (1080p: 16 KB), else lower q: a screenshot's
+      // text costs ~21 KB at q 75, a third of the file. Photos stay at q 75. Floor q 56 (below,
+      // the thumbnail stops looking like the image; it is then over budget).
+      u := C_array Uint8.create (tw * th * 4)
+      start := Yaif_codec.out_count
+      q := 75
+      done := False
+      {! done}.while_do {
+        Yaif_codec.truncate_out start
+        0.to (tw * th * 4 - 1) do { i:Int u.at i put (t.at i) }   // encode overwrites its input
+        begin_chunk t_prev
+        Yaif_codec.put_u16 tw
+        Yaif_codec.put_u16 th
+        Yaif_codec.put_byte np
+        Yaif_codec.encode u stride tw region (0, 0, tw, th) planes np level 5 eps q
+        end_chunk
+        q := (q * 3) / 4
+        done := (Yaif_codec.out_count - start <= (width * height) / 128) || {q < 50}
+      }
+    }
+  )
+
+  - region_level lv:Int at (x0,y0,rw,rh:Int) of buf:C_array Uint8 :Int <-
+  // Level 0 needs the region to fit in a palette (a later frame can bring new colours).
+  ( + result:Int
+    result := lv
+    ((lv = 0) && {! (Yaif_codec.palette_fits buf stride width region (x0, y0, rw, rh))}).if {
+      result := 2
+    }
+    result
+  )
+
+  - copy_frame src:C_array Uint8 :C_array Uint8 <-
+  ( + result:C_array Uint8
+    result := C_array Uint8.create (width * height * 4)
+    0.to (width * height * 4 - 1) do { i:Int
+      result.at i put (src.at i)
+    }
+    result
+  )
+
+  //
+  // PNG writer (uncompressed deflate): output of `decode`.
+  //
+
+  - put_zlib raw:C_array Uint8 size len:Int <-
+  // zlib stream of stored deflate blocks.
+  ( + j,n,b,s1,s2:Int
+    Yaif_codec.put_byte 78h
+    Yaif_codec.put_byte 01h
+    s1 := 1
+    s2 := 0
+    j := 0
+    {j < len}.while_do {
+      (j % 65535 = 0).if {
+        n := len - j
+        (n > 65535).if { n := 65535 }
+        (j + n = len).if { Yaif_codec.put_byte 1 } else { Yaif_codec.put_byte 0 }
+        Yaif_codec.put_byte n
+        Yaif_codec.put_byte (n >> 8)
+        Yaif_codec.put_byte (n ^ 0FFFFh)
+        Yaif_codec.put_byte ((n ^ 0FFFFh) >> 8)
+      }
+      b := (raw.at j).to_int
+      Yaif_codec.put_byte b
+      s1 := (s1 + b) % 65521
+      s2 := (s2 + s1) % 65521
+      j := j + 1
+    }
+    (len = 0).if {
+      // empty final stored block
+      Yaif_codec.put_byte 1
+      Yaif_codec.put_u16 0000FFh
+      Yaif_codec.put_u16 0FF00h
+    }
+    Yaif_codec.put_u32 ((s2 << 16) | s1)
+  )
+
+  - raw_black_at p:Int :Int <- (u32 (p + 29)) + (u32 (p + 41))
+
+  - put_zlib_output <-
+  ( + d:C_array Uint8
+    d := Yaif_zlib.data
+    0.to (Yaif_zlib.size - 1) do { i:Int
+      Yaif_codec.put_byte ((d.at i).to_int)
+    }
+  )
+
+  - put_deflated raw:C_array Uint8 size len:Int <-
+  // zlib stream of raw: deflated with zlib when present, else stored blocks.
+  (
+    (Yaif_zlib.deflate raw size len).if { put_zlib_output } else { put_zlib raw size len }
+  )
+
+  - write_png buf:C_array Uint8 planes np:Int to name:String <-
+  ( + row,len,n:Int
+    + raw:C_array Uint8
+    Yaif_codec.reset_out
+    Yaif_codec.put_u32 89504E47h
+    Yaif_codec.put_u32 0D0A1A0Ah
+    begin_png_chunk t_ihdr
+    Yaif_codec.put_u32 width
+    Yaif_codec.put_u32 height
+    Yaif_codec.put_byte 8
+    (np = 4).if { Yaif_codec.put_byte 6 } else { Yaif_codec.put_byte 2 }
+    Yaif_codec.put_byte 0
+    Yaif_codec.put_byte 0
+    Yaif_codec.put_byte 0
+    end_png_chunk
+    put_png_meta
+    begin_png_chunk t_idat
+    (Yaif_zlib.png buf size (width, height) planes np).if {
+      put_zlib_output
+    } else {
+      // No zlib: stored blocks, big files that any viewer opens.
+      row := 1 + width * np
+      len := row * height
+      raw := C_array Uint8.create len
+      0.to (len - 1) do { j:Int
+        n := j % row
+        (n = 0).if {
+          raw.at j put 0
+        } else {
+          raw.at j put (buf.at (((j / row) * width + (n - 1) / np) * 4 + (n - 1) % np))
+        }
+      }
+      put_zlib raw size len
+    }
+    end_png_chunk
+    begin_png_chunk t_iend
+    end_png_chunk
+    save_out name
+  )
+
+  //
+  // Decoder / info
+  //
+
+  - data:C_array Uint8
+
+  - data_size:Int
+
+  // Set by convert: data already holds the .yaif, encoded in memory (a RAW's FDAT is then empty:
+  // Yaif_raw already holds the sensor frame).
+  - in_memory:Boolean
+
+  // Set by convert before encode_raw: the destination.
+  - convert_to:String
+
+  - load_file name:String <-
+  ( + f:Pointer
+    f := File_utils.open_read name
+    (f = NULL).if { fail ("cannot read " + name) }
+    data_size := File_utils.size f
+    data := C_array Uint8.create (data_size + 1)
+    File_utils.read_raw f in data size data_size
+    File_utils.close f
+  )
+
+  - u8 pos:Int :Int <- (data.at pos).to_int
+
+  - u16 pos:Int :Int <- ((u8 pos) << 8) | (u8 (pos + 1))
+
+  - u32 pos:Int :Int <- ((u16 pos) << 16) | (u16 (pos + 2))
+
+  - frame_name (base:String, idx:Int, animated:Boolean) :String <-
+  ( + result,ext:String
+    result := base
+    (animated).if {
+      // "out.png" -> out_000.png (same for .tif, .tiff; other names get .png)
+      ext := ".png"
+      (base.as_lower.has_suffix ".tif").if { ext := ".tif" }
+      (base.as_lower.has_suffix ".tiff").if { ext := ".tiff" }
+      (base.as_lower.has_suffix ".jpg").if { ext := ".jpg" }
+      (base.as_lower.has_suffix ".jpeg").if { ext := ".jpeg" }
+      (base.as_lower.has_suffix ".webp").if { ext := ".webp" }
+      (base.as_lower.has_suffix ".avif").if { ext := ".avif" }
+      (base.as_lower.has_suffix ".heic").if { ext := ".heic" }
+      (base.as_lower.has_suffix ".heif").if { ext := ".heif" }
+      (base.as_lower.has_suffix ext).if { result := base.substring 0 to (base.upper - ext.count) }
+      result := result + "_"
+      (idx < 100).if { result := result + "0" }
+      (idx < 10).if { result := result + "0" }
+      result := result + idx.to_string + ext
+    }
+    result
+  )
+
+  - read_yaif name:String decode_to dst:String <-
+  // dst = NULL: print the chunk list (info). Else write each frame as PNG.
+  ( + pos,t,len,c,np,x0,y0,dw,dh,count,flags,nframes,live_pos,live_len,rawh,n,tw,th,tn:Int
+    + done,animated,raw,have_thumb:Boolean
+    + cur,next,tb:C_array Uint8
+    + base:String
+    meta_pos.clear
+    meta_len.clear
+    (dst != NULL).if { Yaif_par.status ("Reading " + (short_name name) + "...") }
+    (in_memory).if { } else { load_file name }
+    (data_size < 9).if { fail "not a YAIF file" }
+    (((u32 0) != 89594149h) || {(u32 4) != 460D0A1Ah} || {(u8 8) != 0Ah}).if { fail "not a YAIF file" }
+    pos := 9
+    {(! done) && {pos < data_size}}.while_do {
+      (pos + 12 > data_size).if { fail "truncated file" }
+      t := u32 pos
+      len := u32 (pos + 4)
+      (len > data_size - pos - 12).if { fail "truncated file" }
+      c := crc (0FFFFFFFFh) of data from pos until (pos + 4)
+      c := crc c of data from (pos + 8) until (pos + 8 + len)
+      ((c ^ 0FFFFFFFFh) != (u32 (pos + 8 + len))).if { fail "CRC mismatch" }
+      (dst = NULL).if {
+        "  ".print
+        0.to 3 do { i:Int
+          (data.at (pos + i)).to_char.print
+        }
+        ("  " + len.to_string + " bytes\n").print
+      }
+      pos := pos + 8
+      (t = t_ihdr).if {
+        (len < 12).if { fail "bad IHDR" }
+        width := u32 pos
+        height := u32 (pos + 4)
+        np := u8 (pos + 9)
+        flags := u8 (pos + 11)
+        animated := (flags & 4) != 0
+        raw := (flags & 8) != 0
+        ((u8 (pos + 10)) != 2).if { fail "unsupported YAIF version (only v2)" }
+        (raw).if {
+          (((u8 (pos + 8)) != 16) || {np != 1} || {animated}).if { fail "bad RAW frame header" }
+        } else {
+          ((u8 (pos + 8)) != 8).if { fail "unsupported bit depth" }
+          ((np != 3) && {np != 4}).if { fail "bad plane count" }
+        }
+        ((width = 0) || {height = 0} || {width > 65535} || {height > 65535}).if { fail "bad size" }
+        ((dst != NULL) && {! in_memory}).if {
+          Yaif_par.clear
+          ((short_name name) + ": " + width.to_string + "x" + height.to_string).print
+          (raw).if { " RAW sensor frame\n".print }.elseif {np = 4} then { " RGBA\n".print } else { " RGB\n".print }
+        }
+        (dst = NULL).if {
+          (raw).if {
+            ("  " + width.to_string + "x" + height.to_string + ", RAW sensor frame (CFA), 16 bits").print
+          } else {
+            ("  " + width.to_string + "x" + height.to_string + ", " + np.to_string + " planes, 8 bits").print
+          }
+          (animated).if { ", animated".print }
+          '\n'.print
+        }
+      }.elseif {(t = t_fdat) || {t = t_fdlt}} then {
+        (width = 0).if { fail "frame before IHDR" }
+        (raw && {dst != NULL}).if {
+          (t != t_fdat).if { fail "RAW files have one frame" }
+          (rawh = 0).if { fail "RAW frame without RAWH" }
+          ((dst.as_lower.has_suffix ".dng") || {dst.as_lower.has_suffix ".pgm"} || {image_ext dst}).if { } else { fail "a RAW frame decodes to .dng, .png, .tif, .jpg (or .pgm: bare sensor frame)" }
+          Yaif_raw.setup (width, height) black (raw_black_at rawh)
+          ((in_memory && {len = 0}) || {Yaif_raw.decode data from pos size len}).if { } else { fail "corrupt frame" }
+          // MDAT blocks after FDAT are not seen; the encoder writes them before.
+          (dst.as_lower.has_suffix ".pgm").if {
+            Yaif_par.status ("Writing " + (short_name dst) + "...")
+            write_pgm dst
+          }.elseif {dst.as_lower.has_suffix ".dng"} then {
+            tn := 0
+            (have_thumb).if {
+              (Yaif_jpeg.encode next size (tw, th) quality 85 exif (next, 0, 0) icc (next, 0, 0) xmp (next, 0, 0)).if {
+                tn := Yaif_jpeg.size
+                tb := copy_bytes (Yaif_jpeg.data) size tn
+              }
+            }
+            Yaif_par.status ("Writing " + (short_name dst) + "...")
+            Yaif_tiff.write_dng dst data data rawh rawh metas (meta_pos, meta_len) size (width, height) thumb (tb, tn, tw, th)
+          } else {
+            develop_raw dst rawh rawh
+          }
+          done := preview_only
+        }.elseif {dst != NULL} then {
+          (t = t_fdat).if {
+            next := C_array Uint8.create (width * height * 4)
+            0.to (width * height - 1) do { i:Int next.at (i * 4 + 3) put 255 }
+            (Yaif_codec.decode data from pos size len into next stride width region (0, 0, width, height) planes np).if {
+            } else {
+              fail "corrupt frame"
+            }
+          } else {
+            (cur = NULL).if { fail "delta frame before full frame" }
+            (len < 16).if { fail "bad FDLT" }
+            next := C_array Uint8.create (width * height * 4)
+            0.to (width * height * 4 - 1) do { i:Int next.at i put (cur.at i) }
+            x0 := u32 pos
+            y0 := u32 (pos + 4)
+            dw := u32 (pos + 8)
+            dh := u32 (pos + 12)
+            ((dw > 0) && {dh > 0}).if {
+              ((x0 + dw > width) || {y0 + dh > height}).if { fail "bad FDLT region" }
+              (Yaif_codec.decode data from (pos + 16) size (len - 16) into next stride width region (x0, y0, dw, dh) planes np).if {
+              } else {
+                fail "corrupt frame"
+              }
+            }
+          }
+          (preview_only).if {
+            write_image next planes np to dst
+            done := True
+            nframes := 0
+          } else {
+            Yaif_par.status ("Writing " + (short_name (frame_name (dst, count, animated))) + "...")
+            write_image next planes np to (frame_name (dst, count, animated))
+          }
+          cur := next
+        }
+        count := count + 1
+      }.elseif {(t = t_prev) && {len >= 5}} then {
+        (dst = NULL).if {
+          ("        " + (u16 pos).to_string + "x" + (u16 (pos + 2)).to_string + " thumbnail\n").print
+        }.elseif {preview_only} then {
+          width := u16 pos
+          height := u16 (pos + 2)
+          np := u8 (pos + 4)
+          ((width = 0) || {height = 0} || {(np != 3) && {np != 4}}).if { fail "bad PREV" }
+          next := C_array Uint8.create (width * height * 4)
+          0.to (width * height - 1) do { i:Int next.at (i * 4 + 3) put 255 }
+          (Yaif_codec.decode data from (pos + 5) size (len - 5) into next stride width region (0, 0, width, height) planes np).if { } else { fail "corrupt PREV" }
+          write_image next planes np to dst
+          count := 1
+          nframes := 0
+          done := True
+        }.elseif {raw && {dst.as_lower.has_suffix ".dng"}} then {
+          // Kept for write_dng below: an Exif-style JPEG thumbnail, from the RAW's own 512 px
+          // preview (already a real LibRaw half-size development, not the bare sensor).
+          tw := u16 pos
+          th := u16 (pos + 2)
+          np := u8 (pos + 4)
+          ((tw > 0) && {th > 0} && {(np = 3) || {np = 4}}).if {
+            next := C_array Uint8.create (tw * th * 4)
+            0.to (tw * th - 1) do { i:Int next.at (i * 4 + 3) put 255 }
+            (Yaif_codec.decode data from (pos + 5) size (len - 5) into next stride tw region (0, 0, tw, th) planes np).if { have_thumb := True }
+          }
+        }
+      }.elseif {(t = t_gmap) && {len >= 7}} then {
+        gm_w := u16 pos
+        gm_h := u16 (pos + 2)
+        gm_meta_n := u16 (pos + 5)
+        gm_meta_pos := pos + 7
+        ((gm_w = 0) || {gm_h = 0} || {(u8 (pos + 4)) != 3} || {7 + gm_meta_n > len}).if { fail "bad GMAP" }
+        (dst = NULL).if {
+          ("        " + gm_w.to_string + "x" + gm_h.to_string + " HDR gain map").print
+          (Yaif_hdr.parse data from gm_meta_pos size gm_meta_n).if {
+            n := Yaif_hdr.headroom_centistops
+            (", headroom " + (n / 100).to_string + "." + ((n % 100) + 100).to_string.substring 1 to 2 + " stops").print
+          }
+          '\n'.print
+          gm_w := 0
+        }.elseif {preview_only} then {
+          gm_w := 0
+        } else {
+          gm := C_array Uint8.create (gm_w * gm_h * 4)
+          0.to (gm_w * gm_h - 1) do { i:Int gm.at (i * 4 + 3) put 255 }
+          (Yaif_codec.decode data from (pos + 7 + gm_meta_n) size (len - 7 - gm_meta_n) into gm stride gm_w region (0, 0, gm_w, gm_h) planes 3).if { } else { fail "corrupt GMAP" }
+        }
+      }.elseif {t = t_rawh} then {
+        ((len < 45) || {(u8 pos) != 1}).if { fail "unsupported RAWH version" }
+        rawh := pos
+      }.elseif {(t = t_mdat) && {len >= 4}} then {
+        meta_pos.add_last pos
+        meta_len.add_last len
+        (dst = NULL).if {
+          "        ".print
+          0.to 3 do { i:Int
+            (data.at (pos + i)).to_char.print
+          }
+          '\n'.print
+        }
+      }.elseif {t = t_live} then {
+        live_pos := pos
+        live_len := len
+      }.elseif {(t = t_anim) && {len >= 4}} then {
+        nframes := u32 pos
+      }.elseif {t = t_iend} then {
+        done := True
+      }
+      pos := pos + len + 4
+    }
+    ((count = 0) || {(nframes > 0) && {count < nframes}}).if { fail "truncated file (missing frames)" }
+    (width = 0).if { fail "no IHDR" }
+    (dst = NULL).if {
+      ("  " + count.to_string + " frame(s), " + data_size.to_string + " bytes, " + ((data_size * 8 * 1000) / (width * height)).to_string + " mbit/pixel\n").print
+    } else {
+      Yaif_par.clear
+      (count = 1).if {
+        ("Done: wrote " + (short_name dst) + " in " + elapsed).print
+      } else {
+        ("Done: wrote " + count.to_string + " frames (" + (short_name (frame_name (dst, 0, True))) + "...) in " + elapsed).print
+      }
+      ((live_len > 0) && {! preview_only}).if {
+        base := no_ext dst
+        Yaif_codec.reset_out
+        put_bytes (live_pos, live_pos + live_len)
+        save_out (base + ".mov")
+        (" + " + base + ".mov").print
+      }
+      '\n'.print
+    }
+  )
+
+  //
+  // Entry
+  //
+
+  // encode options
+  - opt_m:Int
+
+  - opt_l:Int
+
+  - opt_e:Int
+
+  - opt_d:Int
+
+  - opt_q:Int
+
+  - last_src:Int
+
+  - dst_name:String
+
+  - meta_src:String
+
+  - live_src:String
+
+  - preview_only:Boolean
+
+  // HDR gain map of the .yaif being decoded (gm_w 0: none); its metadata is data[gm_meta_pos, + gm_meta_n).
+  - gm:C_array Uint8
+  - gm_w:Int
+  - gm_h:Int
+  - gm_meta_pos:Int
+  - gm_meta_n:Int
+
+  // -hdr: PNG, AVIF and HEIC get the HDR rendition (PQ) instead of the SDR image.
+  - opt_hdr:Boolean
+
+  // Still image as the decoder will rebuild it (test hook, see YAIF_RECON in main).
+  - recon:C_array Uint8
+
+  - recon_np:Int
+
+  - parse_encode_args n:Int <-
+  // Sources and destination first, then options: -m mode, -l level, -e eps, -d ms.
+  ( + i:Int
+    + a,v:String
+    opt_m := 0
+    opt_l := 0
+    opt_e := 2
+    opt_d := 100
+    opt_q := 90
+    i := 2
+    {(i < n) && {((Command_args.at i).first) != '-'}}.while_do { i := i + 1 }
+    // The last name is the destination when it ends in .yaif or is no readable source;
+    // with no destination at all, it is made from the first source.
+    ((i > 2) && {((Command_args.at (i - 1)).as_lower.has_suffix ".yaif") || {! (File_utils.file_exists (Command_args.at (i - 1)))}}).if {
+      last_src := i - 2
+      dst_name := Command_args.at (i - 1)
+    } else {
+      last_src := i - 1
+      dst_name := default_dst (Command_args.at 2)
+    }
+    (last_src < 2).if { fail "encode needs at least one source" }
+    dst_name := keep_or_rename dst_name
+    {i < n}.while_do {
+      a := Command_args.at i
+      (i + 1 >= n).if { fail ("missing value after " + a) }
+      v := Command_args.at (i + 1)
+      (a == "-m").if {
+        (v == "adaptive").if { opt_m := 0 }.elseif {v == "lossless"} then { opt_m := 1 }.elseif {v == "lossy"} then { opt_m := 2 } else { fail ("unknown mode " + v) }
+      }.elseif {a == "-l"} then {
+        opt_l := v.to_int
+        ((opt_l < 0) || {opt_l > Yaif_codec.max_level}).if { fail ("level must be 0.." + Yaif_codec.max_level.to_string) }
+        (opt_l = 0).if { opt_l := -1 }
+      }.elseif {a == "-e"} then {
+        opt_e := v.to_int
+        ((opt_e < 1) || {opt_e > 64}).if { fail "eps must be 1..64" }
+      }.elseif {a == "-q"} then {
+        opt_q := v.to_int
+        opt_q_set := True
+        ((opt_q < 0) || {opt_q > 100}).if { fail "quality must be 0..100" }
+      }.elseif {a == "-d"} then {
+        opt_d := v.to_int
+      }.elseif {a == "-live"} then {
+        live_src := v
+        (File_utils.file_exists v).if { } else { fail ("cannot read " + v) }
+      } else {
+        fail ("unknown option " + a)
+      }
+      i := i + 2
+    }
+  )
+
+  - t0:Int
+
+  // "photo.jpg" -> "photo.yaif", next to the source: the destination of an encode without one.
+  - default_dst src:String :String <- (no_ext src) + ".yaif"
+
+  // "dir/photo.jpg" -> "dir/photo" (a dot in a directory name is not an extension)
+  - no_ext name:String :String <-
+  ( + i:Int
+    + result:String
+    i := name.upper
+    {(i >= 0) && {(name.at i) != '.'} && {(name.at i) != '/'}}.while_do { i := i - 1 }
+    result := name
+    ((i > 0) && {(name.at i) = '.'}).if { result := name.substring 0 to (i - 1) }
+    result
+  )
+
+  // "photo.yaif" taken -> the first free "photo-1.yaif", "photo-2.yaif"...
+  // name-1.ext, name-2.ext... the first that does not exist. Any extension: decode uses it too.
+  - free_name name:String :String <-
+  ( + base,ext,result:String
+    + i,dot:Int
+    dot := name.last_index_of '.'
+    (dot > name.last_path_separator).if {
+      base := name.substring 0 to (dot - 1)
+      ext := name.substring dot to (name.upper)
+    } else {
+      base := name
+      ext := ""
+    }
+    i := 1
+    result := base + "-1" + ext
+    {File_utils.file_exists result}.while_do {
+      i := i + 1
+      result := base + "-" + i.to_string + ext
+    }
+    result
+  )
+
+  // Destination that already exists: ask on a terminal, overwrite in a script (as before).
+  // Used by encode, decode and preview alike.
+  - keep_or_rename name:String :String <-
+  ( + result,answer:String
+    + c:Char
+    result := name
+    ((File_utils.file_exists name) && {Yaif_par.interactive}).if {
+      ((short_name name) + " exists. [r] replace, [n] new name, [c] cancel: ").print
+      Stdin.read_line
+      // The time spent answering is not the command's: "Done ... in" starts from here.
+      t0 := Yaif_par.ms
+      answer := Stdin.last_string.to_string
+      c := 'c'
+      (answer.count > 0).if { c := (answer.at 0).to_lower }
+      (c = 'r').if {
+      }.elseif {c = 'n'} then {
+        result := free_name name
+        ("Writing " + (short_name result) + "\n").print
+      } else {
+        "Cancelled.\n".print
+        System.exit 0
+      }
+    }
+    result
+  )
+
+  // "/a/b/IMG_1398.CR3" -> "IMG_1398.CR3"
+  - short_name name:String :String <-
+  ( + i:Int
+    i := name.upper
+    {(i >= name.lower) && {(name.at i) != '/'}}.while_do { i := i - 1 }
+    name.substring (i + 1) to (name.upper)
+  )
+
+  // 26050253 -> "26,050,253"
+  - group n:Int :String <-
+  ( + result:String
+    (n < 1000).if {
+      result := n.to_string
+    } else {
+      result := (group (n / 1000)) + "," + ((n % 1000) + 1000).to_string.substring 1 to 3
+    }
+    result
+  )
+
+  - file_size name:String :Int <-
+  ( + f:Pointer
+    + result:Int
+    f := File_utils.open_read name
+    (f != NULL).if {
+      result := File_utils.size f
+      File_utils.close f
+    }
+    result
+  )
+
+  - done_line src:Int <-
+  // "Done: 26,050,253 bytes, 80.6 % of the source (lossless, level 6 (RAW)) in 7.5 s"
+  ( + r,n:Int
+    + s:String
+    Yaif_par.clear
+    s := "Done: " + (group (Yaif_codec.out_count)) + " bytes"
+    n := src
+    // The Live Photo video is in the .yaif: count it in the source too.
+    ((src > 0) && {live_src != NULL}).if { n := n + (file_size live_src) }
+    (n > 0).if {
+      r := (Yaif_codec.out_count * 1000 + n / 2) / n
+      s := s + ", " + (r / 10).to_string + "." + (r % 10).to_string + " % of the source"
+    }
+    (s + " (" + mode_name + ") in " + elapsed + "\n").print
+  )
+
+  // Time since the start of main, "7.6 s".
+  - elapsed:String <-
+  ( + d:Int
+    d := (Yaif_par.ms - t0 + 50) / 100
+    (d / 10).to_string + "." + (d % 10).to_string + " s"
+  )
+
+  // Look of developed RAWs: 0 canon (the camera JPEG), 1 darktable (its default render).
+  - opt_look:Int
+
+  // WebP/AVIF/HEIC mode: 0 auto (lossless if the .yaif frame is), 1 lossy, 2 lossless.
+  - opt_webp:Int
+
+  // -q given on the decode command line (else each format's default).
+  - opt_q_set:Boolean
+
+  - parse_decode_args n:Int <-
+  // yaif decode src dst [-q 1-100] [-look canon|darktable] [-m lossy|lossless] [-fast] [-hdr]
+  ( + i:Int
+    + a,v:String
+    opt_q := 90
+    opt_look := 0
+    i := 4
+    {i < n}.while_do {
+      a := Command_args.at i
+      (a == "-fast").if {
+        Yaif_webp.set_fast
+        i := i + 1
+      }.elseif {a == "-hdr"} then {
+        opt_hdr := True
+        i := i + 1
+      } else {
+        (i + 1 < n).if { } else { fail (a + ": value missing") }
+        v := Command_args.at (i + 1)
+        parse_decode_pair (a, v)
+        i := i + 2
+      }
+    }
+  )
+
+  - parse_decode_pair (a,v:String) <-
+  (
+    (a == "-q").if {
+      opt_q := v.to_int
+      opt_q_set := True
+      ((opt_q < 1) || {opt_q > 100}).if { fail "quality must be 1..100" }
+    }.elseif {a == "-m"} then {
+      (v == "lossy").if { opt_webp := 1 }.elseif {v == "lossless"} then { opt_webp := 2 } else { fail "-m: lossy or lossless" }
+    }.elseif {a == "-look"} then {
+      (v == "canon").if { opt_look := 0 }.elseif {v == "darktable"} then { opt_look := 1 } else { fail "-look: canon or darktable" }
+    } else {
+      fail ("unknown decode option " + a)
+    }
+  )
+
+  - convert n:Int <-
+  // yaif convert src dst [decode options]: the source's pixels, metadata (as the MDAT chunks encode
+  // would write) and HDR gain map go straight to write_image, with no .yaif codec in between (about
+  // 2 s of the 3.3 s a 7.7 Mpx JPEG -> PNG took through a lossless .yaif). The output is the same.
+  // A RAW still goes through a .yaif held in memory, without its sensor frame coded (it stays in
+  // Yaif_raw): read_yaif then writes the DNG or develops it as decode does. In memory, not a temporary file: on Windows the replicas of yaif_par would read
+  // that file before replica 0 has written it.
+  // A lossy source stays lossy (a JPEG photo does not become a lossless WebP), a PNG or TIFF stays
+  // lossless; -m decides otherwise, as for decode.
+  ( + src,dst,e:String
+    + np,p,gn:Int
+    + gmeta,o:C_array Uint8
+    src := Command_args.at 2
+    e := src.as_lower
+    (File_utils.file_exists src).if { } else { fail ("cannot read " + src) }
+    (e.has_suffix ".yaif").if { fail "the source is a .yaif: use yaif decode" }
+    ((Command_args.at 3).as_lower.has_suffix ".yaif").if { fail "the destination is a .yaif: use yaif encode" }
+    parse_decode_args n
+    (opt_webp = 0).if {
+      ((e.has_suffix ".png") || {e.has_suffix ".pam"} || {e.has_suffix ".tif"} || {e.has_suffix ".tiff"}).if { opt_webp := 2 } else { opt_webp := 1 }
+    }
+    dst := keep_or_rename (Command_args.at 3)
+    (is_raw src).if {
+      Yaif_par.status ("Reading " + (short_name src) + " with LibRaw...")
+      convert_to := dst
+      encode_raw src
+      data := copy_bytes (Yaif_codec.out) size (Yaif_codec.out_count)
+      data_size := Yaif_codec.out_count
+      in_memory := True
+      read_yaif src decode_to dst
+    } else {
+      load_sources (2, 2)
+      np := 3
+      (has_alpha).if { np := 4 }
+      // put_source_meta reads the source file from data (is_raw loaded it); its MDAT chunks, then
+      // the gain map's metadata, become the new data, which is what write_image reads them from.
+      Yaif_codec.reset_out
+      put_source_meta src
+      meta_pos.clear
+      meta_len.clear
+      {p < Yaif_codec.out_count}.while_do {
+        meta_pos.add_last (p + 8)
+        o := Yaif_codec.out
+        meta_len.add_last ((((o.at (p + 4)).to_int) << 24) | (((o.at (p + 5)).to_int) << 16) | (((o.at (p + 6)).to_int) << 8) | (o.at (p + 7)).to_int)
+        p := p + 12 + meta_len.last
+      }
+      gm_w := Yaif_heic.gain_width
+      (gm_w > 0).if {
+        gm_h := Yaif_heic.gain_height
+        gm := copy_bytes (Yaif_heic.gain_map) size (gm_w * gm_h * 4)
+        gn := Yaif_heic.gain_meta_size
+        gmeta := Yaif_heic.gain_meta
+        gm_meta_pos := Yaif_codec.out_count
+        gm_meta_n := gn
+        0.to (gn - 1) do { i:Int
+          Yaif_codec.put_byte ((gmeta.at i).to_int)
+        }
+      }
+      data := copy_bytes (Yaif_codec.out) size (Yaif_codec.out_count)
+      data_size := Yaif_codec.out_count
+      Yaif_par.status ("Writing " + (short_name dst) + "...")
+      write_image (frames.first) planes np to dst
+      Yaif_par.clear
+      ("Done: wrote " + (short_name dst) + " in " + elapsed + "\n").print
+    }
+  )
+
+  - main <-
+  ( + n:Int
+    + cmd:String
+    t0 := Yaif_par.ms
+    make_crc_table
+    n := Command_args.count
+    (n >= 2).if { cmd := Command_args.at 1 }
+    ((cmd != NULL) && {cmd == "encode"} && {n >= 3}).if {
+      parse_encode_args n
+      ((last_src = 2) && {File_utils.file_exists (Command_args.at 2)} && {is_raw (Command_args.at 2)}).if {
+        ((opt_m = 2) || {opt_l != 0}).if { fail "RAW sources are always lossless, level 6 (no -m lossy, no -l)" }
+        Yaif_par.status ("Reading " + (short_name (Command_args.at 2)) + " with LibRaw...")
+        encode_raw (Command_args.at 2)
+        Yaif_par.status ("Writing " + (short_name dst_name) + "...")
+        save_out dst_name
+        done_line (file_size (Command_args.at 2))
+        System.exit 0
+      }
+      load_sources (2, last_src)
+      Yaif_par.clear
+      ((short_name (Command_args.at 2)) + ": " + width.to_string + "x" + height.to_string).print
+      (frames.count > 1).if { (", " + frames.count.to_string + " frames").print }
+      '\n'.print
+      meta_src := Command_args.at 2
+      encode_frames opt_d mode opt_m level opt_l eps opt_e
+      Yaif_par.status ("Writing " + (short_name dst_name) + "...")
+      save_out dst_name
+      n := 0
+      2.to last_src do { i:Int n := n + file_size (Command_args.at i) }
+      done_line n
+      // Test hook: YAIF_RECON=file.png writes the encoder's reconstruction, which the decoder must match exactly.
+      ((Environment.read_variable "YAIF_RECON") != NULL).if {
+        write_png recon planes recon_np to (Environment.read_variable "YAIF_RECON")
+      }
+    }.elseif {(cmd != NULL) && {cmd == "decode"} && {n >= 4}} then {
+      parse_decode_args n
+      read_yaif (Command_args.at 2) decode_to (keep_or_rename (Command_args.at 3))
+      // Test hook: YAIF_GAINMAP=file.png writes the decoded gain map (GMAP).
+      (((Environment.read_variable "YAIF_GAINMAP") != NULL) && {gm_w > 0}).if {
+        width := gm_w
+        height := gm_h
+        write_png gm planes 3 to (Environment.read_variable "YAIF_GAINMAP")
+      }
+    }.elseif {(cmd != NULL) && {cmd == "convert"} && {n >= 4}} then {
+      convert n
+    }.elseif {(cmd != NULL) && {cmd == "preview"} && {n = 4}} then {
+      preview_only := True
+      read_yaif (Command_args.at 2) decode_to (keep_or_rename (Command_args.at 3))
+    }.elseif {(cmd != NULL) && {cmd == "info"} && {n = 3}} then {
+      read_yaif (Command_args.at 2) decode_to NULL
+    }.elseif {(cmd != NULL) && {(cmd == "--version") || {cmd == "version"}} && {n = 2}} then {
+      ("yaif " + version + "\n").print
+    }.elseif {(cmd != NULL) && {cmd == "bench"} && {n >= 3}} then {
+      2.to (n - 1) do { i:Int
+        (is_raw (Command_args.at i)).if {
+          encode_raw (Command_args.at i)
+        } else {
+          load_sources (i, i)
+          encode_frames 100 mode 1 level 0 eps 0
+        }
+        Yaif_par.clear
+        ((Command_args.at i) + "  " + Yaif_codec.out_count.to_string + " bytes  " + ((Yaif_codec.out_count * 8 * 1000) / (width * height)).to_string + " mbit/pixel\n").print
+      }
+    } else {
+      usage
+    };
+    Yaif_update.check version
+  )

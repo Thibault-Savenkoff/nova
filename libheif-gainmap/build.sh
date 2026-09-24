@@ -1,10 +1,10 @@
 #!/bin/sh
-# Builds libnova-heif: libheif with the gain-map API of its pull request #1503 (pr1503.patch, the
+# Builds libyaif-heif: libheif with the gain-map API of its pull request #1503 (pr1503.patch, the
 # rebase kept at github.com/fxthomas/libheif, branch pr/1503-gain-maps-v1.23.1; it applies clean on
-# 1.23.4), and kvazaar (BSD) as its only codec, linked in statically. nova loads it for one thing:
+# 1.23.4), and kvazaar (BSD) as its only codec, linked in statically. yaif loads it for one thing:
 # writing a .heic that keeps the photo's HDR gain map (ISO 21496-1 `tmap`), which no released
 # libheif can do. Everything else, reading HEIC first of all, stays on the system's libheif, which
-# gets the distribution's security fixes -- this copy would not. Renamed (nova-heif) so it can
+# gets the distribution's security fixes -- this copy would not. Renamed (yaif-heif) so it can
 # never be mistaken for the system one, by name or by soname.
 #
 # Usage: build.sh <work-dir> <output-file>
@@ -44,7 +44,7 @@ cmake --install "$w/b-kvazaar"
 get "https://github.com/strukturag/libheif/releases/download/v$HEIF/libheif-$HEIF.tar.gz" $HEIF_SHA
 patch -d "$w/libheif-$HEIF" -p1 -s < "$here/pr1503.patch"
 # Renamed; and kvazaar is static, which on Windows kvazaar.h must be told (else dllimport).
-printf '%s\n' 'set_target_properties(heif PROPERTIES OUTPUT_NAME nova-heif)' \
+printf '%s\n' 'set_target_properties(heif PROPERTIES OUTPUT_NAME yaif-heif)' \
   'target_compile_definitions(heif PRIVATE KVZ_STATIC_LIB)' >> "$w/libheif-$HEIF/libheif/CMakeLists.txt"
 # Every codec off but kvazaar, so nothing else of this system gets linked in.
 PKG_CONFIG_PATH="$w/kvazaar/lib/pkgconfig:$w/kvazaar/lib64/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
@@ -57,6 +57,6 @@ $cmake -S "$w/libheif-$HEIF" -B "$w/b-heif" -DCMAKE_BUILD_TYPE=Release -DBUILD_S
   -DWITH_HEADER_COMPRESSION=OFF -DWITH_EXAMPLES=OFF -DWITH_GDK_PIXBUF=OFF -DBUILD_TESTING=OFF \
   -DBUILD_DOCUMENTATION=OFF
 cmake --build "$w/b-heif" --parallel "$jobs" --target heif
-lib=$(find "$w/b-heif/libheif" -maxdepth 1 -type f -name 'libnova-heif*' ! -name '*.a' | head -1)
-[ -n "$lib" ] || { echo "build.sh: no libnova-heif was built" >&2; exit 1; }
+lib=$(find "$w/b-heif/libheif" -maxdepth 1 -type f -name 'libyaif-heif*' ! -name '*.a' | head -1)
+[ -n "$lib" ] || { echo "build.sh: no libyaif-heif was built" >&2; exit 1; }
 cp "$lib" "$out"

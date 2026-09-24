@@ -61,10 +61,10 @@ jobs:
           echo "etag=$etag" >> "$GITHUB_OUTPUT"
 
       # Lisaac Ω has no prebuilt binary, so it is built here once per pinned version and zip
-      # upload (the cache key has both: version and ETag) and restored on every run after that. Only what compiling nova uses:
+      # upload (the cache key has both: version and ETag) and restored on every run after that. Only what compiling yaif uses:
       # the compiler, lib/ and make.lip -- a few MB of the 61 MB zip. Lisaac's own install.sh also
       # builds elit, its editor, which needs GL and GLFW and fails to link on arm64 (it ships an
-      # x86_64-only libglfw3.a), and it edits ~/.bashrc. nova needs none of that.
+      # x86_64-only libglfw3.a), and it edits ~/.bashrc. yaif needs none of that.
       - name: Restore/build Lisaac Ω ${{ steps.lisaac.outputs.version }}
         id: lisaac-cache
         uses: actions/cache@v4
@@ -92,13 +92,13 @@ jobs:
       - name: Add Lisaac Ω to PATH
         run: echo "$RUNNER_TEMP/lisaac/bin" >> "$GITHUB_PATH"
 
-      - name: Build nova
+      - name: Build yaif
         run: |
-          lisaac nova.li -boost
-          ./nova --version
+          lisaac yaif.li -boost
+          ./yaif --version
 
       # The unit tests (with the corrupt-file fuzz, which needs uv) and the install.sh test, once:
-      # they test nova's code and the installer, not the platform.
+      # they test yaif's code and the installer, not the platform.
       - uses: astral-sh/setup-uv@v6
         if: matrix.os == 'linux' && matrix.arch == 'x86_64'
 
@@ -111,9 +111,9 @@ jobs:
       - name: Pack the release archive
         run: |
           mkdir -p dist
-          release/pack.sh ./nova ${{ matrix.os }} ${{ matrix.arch }} dist
+          release/pack.sh ./yaif ${{ matrix.os }} ${{ matrix.arch }} dist
 
-      # What a user gets: install.sh from this archive, which builds libnova-heif, then a HEIC
+      # What a user gets: install.sh from this archive, which builds libyaif-heif, then a HEIC
       # written from the sample photo must carry its HDR gain map (the ISO 21496-1 tmap item).
       # On the Intel Mac for releases only: it takes 5 of that job's 6 minutes, and Windows waits
       # for every build. Still run before a release because it is the only build of kvazaar's x86
@@ -121,14 +121,14 @@ jobs:
       - name: Install from the archive, write a HEIC with its gain map
         if: matrix.runner != 'macos-15-intel' || startsWith(github.ref, 'refs/tags/')
         run: |
-          ./install.sh --from dist/nova-*.tar.gz --prefix "$RUNNER_TEMP/p" -y --no-plugins
-          "$RUNNER_TEMP/p/bin/nova" decode docs/samples/photo.nova "$RUNNER_TEMP/hdr.heic"
+          ./install.sh --from dist/yaif-*.tar.gz --prefix "$RUNNER_TEMP/p" -y --no-plugins
+          "$RUNNER_TEMP/p/bin/yaif" decode docs/samples/photo.yaif "$RUNNER_TEMP/hdr.heic"
           grep -q tmap "$RUNNER_TEMP/hdr.heic" || { echo "::error::no gain map (tmap) in the HEIC" >&2; exit 1; }
 
-      # macOS: an input of the universal job below, not a release file (publish takes nova-*).
+      # macOS: an input of the universal job below, not a release file (publish takes yaif-*).
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.os == 'macos' && 'part' || 'nova' }}-${{ matrix.os }}-${{ matrix.arch }}
+          name: ${{ matrix.os == 'macos' && 'part' || 'yaif' }}-${{ matrix.os }}-${{ matrix.arch }}
           path: dist/*
           if-no-files-found: error
 
@@ -138,11 +138,11 @@ jobs:
         if: matrix.os == 'linux' && matrix.arch == 'x86_64'
         with:
           name: c-source
-          path: nova.c
+          path: yaif.c
           if-no-files-found: error
 
   # One macOS download for both kinds of Mac: the arm64 and x86_64 binaries joined with lipo.
-  # Nothing else in the archive depends on the processor (libnova-heif is built at install).
+  # Nothing else in the archive depends on the processor (libyaif-heif is built at install).
   macos-universal:
     needs: build
     runs-on: macos-latest
@@ -158,24 +158,24 @@ jobs:
         run: |
           for a in arm64 x86_64; do
             mkdir -p "parts/$a"
-            tar -xzf parts/part-macos-$a/nova-*-macos-$a.tar.gz -C "parts/$a"
+            tar -xzf parts/part-macos-$a/yaif-*-macos-$a.tar.gz -C "parts/$a"
           done
-          lipo -create -output nova parts/arm64/nova-*/bin/nova parts/x86_64/nova-*/bin/nova
-          lipo -archs nova | grep -qw arm64
-          lipo -archs nova | grep -qw x86_64
+          lipo -create -output yaif parts/arm64/yaif-*/bin/yaif parts/x86_64/yaif-*/bin/yaif
+          lipo -archs yaif | grep -qw arm64
+          lipo -archs yaif | grep -qw x86_64
           mkdir -p dist
-          release/pack.sh ./nova macos universal dist
-          ./install.sh --from dist/nova-*-macos-universal.tar.gz --prefix "$RUNNER_TEMP/p" -y --no-plugins --no-heic-hdr
-          "$RUNNER_TEMP/p/bin/nova" --version
+          release/pack.sh ./yaif macos universal dist
+          ./install.sh --from dist/yaif-*-macos-universal.tar.gz --prefix "$RUNNER_TEMP/p" -y --no-plugins --no-heic-hdr
+          "$RUNNER_TEMP/p/bin/yaif" --version
 
       - uses: actions/upload-artifact@v4
         with:
-          name: nova-macos-universal
+          name: yaif-macos-universal
           path: dist/*
           if-no-files-found: error
 
   windows:
-    # nova.exe and the WIC codec cross-compile from the nova.c the Linux job
+    # yaif.exe and the WIC codec cross-compile from the yaif.c the Linux job
     # already wrote. Fedora because win/dist.sh reads MinGW's Fedora sysroot
     # and needs mingw64-zlib/mingw64-libwebp, which Debian and Ubuntu do not
     # package at all.
@@ -201,7 +201,7 @@ jobs:
           name: c-source
 
       # Fedora packages no mingw64 libheif, libde265, aom or libavif, so win/deps.sh cross-compiles
-      # them, and libnova-heif (libheif-gainmap/). The cache key is those scripts and the Fedora
+      # them, and libyaif-heif (libheif-gainmap/). The cache key is those scripts and the Fedora
       # release: they carry the pinned versions and the cmake options, so changing any rebuilds,
       # and nothing else does. restore-keys brings back the
       # previous tree on any edit, and deps.sh skips per library from its own markers -- editing
@@ -214,7 +214,7 @@ jobs:
           key: windeps-fedora44-${{ hashFiles('win/deps.sh', 'libheif-gainmap/*') }}
           restore-keys: windeps-fedora44-
 
-      - name: Cross-compile libheif, libde265, kvazaar, aom, libavif and libnova-heif
+      - name: Cross-compile libheif, libde265, kvazaar, aom, libavif and libyaif-heif
         run: bash win/deps.sh "$RUNNER_TEMP/windeps"
 
       - name: Build the Windows files
@@ -222,9 +222,9 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: nova-windows
+          name: yaif-windows
           path: |
-            dist/nova-*-windows-x86_64*
+            dist/yaif-*-windows-x86_64*
           if-no-files-found: error
 
   publish:
@@ -236,17 +236,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check the tag matches nova.li's version
+      - name: Check the tag matches yaif.li's version
         run: |
           tag=${GITHUB_REF#refs/tags/v}
-          v=$(sed -n 's/.*- version:String := "\(.*\)"/\1/p' nova.li)
-          [ "$tag" = "$v" ] || { echo "::error::tag v$tag does not match nova.li's version ($v); bump nova.li first" >&2; exit 1; }
+          v=$(sed -n 's/.*- version:String := "\(.*\)"/\1/p' yaif.li)
+          [ "$tag" = "$v" ] || { echo "::error::tag v$tag does not match yaif.li's version ($v); bump yaif.li first" >&2; exit 1; }
 
       - uses: actions/download-artifact@v4
         with:
           # Only the release files: c-source is the Windows job's input, not
           # something to attach to the release.
-          pattern: nova-*
+          pattern: yaif-*
           path: dist
           merge-multiple: true
 
@@ -257,7 +257,7 @@ jobs:
           tag=${GITHUB_REF#refs/tags/}
           # One SHA256SUMS for every file (install.sh reads it), also shown in the notes as a
           # collapsed block.
-          (cd dist && sha256sum nova-* > SHA256SUMS)
+          (cd dist && sha256sum yaif-* > SHA256SUMS)
           # Hand-written notes when release/NOTES-<tag>.md exists; else the body already on the
           # release (the web form's), minus a checksum block from an earlier run; else empty, and
           # the commits' notes come before it (--generate-notes, create only).
@@ -277,10 +277,10 @@ jobs:
           # without a clone) creates one too, and a re-run after a failed publish finds its own.
           # Fill that one in rather than failing on "release already exists".
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release edit "$tag" --title "NOVA $tag" "$@"
+            gh release edit "$tag" --title "YAIF $tag" "$@"
             gh release upload "$tag" dist/* --clobber
           else
             # --generate-notes has no `edit` equivalent, so it only applies on the create path.
             if [ ! -f "$notes" ]; then set -- "$@" --generate-notes; fi
-            gh release create "$tag" dist/* --title "NOVA $tag" "$@"
+            gh release create "$tag" dist/* --title "YAIF $tag" "$@"
           fi

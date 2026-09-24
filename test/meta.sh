@@ -1,7 +1,7 @@
 #!/bin/bash
 # Metadata round trip: EXIF (with GPS), XMP, ICC (multi-segment in JPEG), PNG text, Live video,
 # HEIC import (libheif: pixels as heif-dec, orientation applied and reset to 1; skipped without heif-enc).
-# Run from nova-lisaac/: test/meta.sh
+# Run from yaif-lisaac/: test/meta.sh
 set -e
 cd "$(dirname "$0")/.."
 T=$(mktemp -d)
@@ -22,24 +22,24 @@ info = PngImagePlugin.PngInfo(); info.add_text("Comment", "bonjour")
 im.save(f"{t}/b.png", exif=ex, icc_profile=icc[:3000], pnginfo=info)
 open(f"{t}/live.mov", "wb").write(os.urandom(100000))
 EOF
-./nova encode "$T/a.jpg" "$T/a.nova" -live "$T/live.mov"
-./nova info "$T/a.nova" | grep -A1 "MDAT\|LIVE"
-./nova decode "$T/a.nova" "$T/a_out.png"
+./yaif encode "$T/a.jpg" "$T/a.yaif" -live "$T/live.mov"
+./yaif info "$T/a.yaif" | grep -A1 "MDAT\|LIVE"
+./yaif decode "$T/a.yaif" "$T/a_out.png"
 cmp "$T/live.mov" "$T/a_out.mov" && echo "OK   live video"
-./nova decode "$T/a.nova" "$T/a_jpg.jpg" > /dev/null   # any output extension: a_jpg.mov, not a_jpg.jpg.mov
+./yaif decode "$T/a.yaif" "$T/a_jpg.jpg" > /dev/null   # any output extension: a_jpg.mov, not a_jpg.jpg.mov
 cmp "$T/live.mov" "$T/a_jpg.mov" && echo "OK   live video next to a .jpg"
 # Re-encoding the decoded PNG keeps the private nvMd chunk (JPEG COM segment here).
-./nova encode "$T/a_out.png" "$T/c.nova" > /dev/null
-./nova decode "$T/c.nova" "$T/c_out.png" > /dev/null
-./nova encode "$T/b.png" "$T/b.nova" > /dev/null
-./nova decode "$T/b.nova" "$T/b_out.png" > /dev/null
+./yaif encode "$T/a_out.png" "$T/c.yaif" > /dev/null
+./yaif decode "$T/c.yaif" "$T/c_out.png" > /dev/null
+./yaif encode "$T/b.png" "$T/b.yaif" > /dev/null
+./yaif decode "$T/b.yaif" "$T/b_out.png" > /dev/null
 if command -v heif-enc > /dev/null; then
   # Real ICC here: heif-enc keeps a valid profile only.
   $PY -c "from PIL import Image, ImageCms; import sys; im = Image.open(sys.argv[1]); im.save(sys.argv[2], exif=im.getexif(), xmp=im.info['xmp'], icc_profile=ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes())" "$T/a.jpg" "$T/h.jpg"
   heif-enc -q 95 "$T/h.jpg" -o "$T/h.heic" > /dev/null
   heif-dec "$T/h.heic" "$T/h_ref.png" > /dev/null
-  ./nova encode "$T/h.heic" "$T/h.nova" -m lossless > /dev/null
-  ./nova decode "$T/h.nova" "$T/h_out.png" > /dev/null
+  ./yaif encode "$T/h.heic" "$T/h.yaif" -m lossless > /dev/null
+  ./yaif decode "$T/h.yaif" "$T/h_out.png" > /dev/null
 fi
 $PY - "$T" <<'EOF'
 import sys

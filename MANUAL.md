@@ -1,6 +1,6 @@
-# NOVA manual
+# YAIF manual
 
-Everything the `nova` command does, and how to choose. The file format itself is in [FORMAT.md](FORMAT.md);
+Everything the `yaif` command does, and how to choose. The file format itself is in [FORMAT.md](FORMAT.md);
 installing and the viewer plugins are in [README.md](README.md).
 
 - [The three modes](#the-three-modes)
@@ -62,7 +62,7 @@ Two different knobs, one per codec:
 
 ## How the encoder decides
 
-Every choice below is made in this order, for every `nova encode`. None depends on the machine: the same
+Every choice below is made in this order, for every `yaif encode`. None depends on the machine: the same
 source and options always give the same file, byte for byte, on 1 core or 16, on Linux or Windows.
 
 ### 1. Reading the sources
@@ -103,8 +103,8 @@ its compression artefacts. Measured on a 24 Mpx iPhone 17 Pro Max HEIC of 3.0 MB
 
 | | Size | Of the HEIC |
 | --- | --- | --- |
-| `nova encode IMG.HEIC` (adaptive: level 5, q 90) | 2.8 MB | 93 % |
-| `nova encode IMG.HEIC -m lossless` (level 4) | 9.3 MB | 310 % |
+| `yaif encode IMG.HEIC` (adaptive: level 5, q 90) | 2.8 MB | 93 % |
+| `yaif encode IMG.HEIC -m lossless` (level 4) | 9.3 MB | 310 % |
 
 q 90 is about 45 dB: no visible difference with the HEIC. Use `-m lossless` for a PNG or a RAW you will edit,
 not to "keep the quality" of a HEIC or JPEG, which has already been decided by the phone.
@@ -169,12 +169,12 @@ little size, the price of decoding on every core.
 ## Encoding
 
 ```sh
-nova encode <sources...> [out.nova] [options]
+yaif encode <sources...> [out.yaif] [options]
 ```
 
-Leave the destination out and it is derived from the first source, next to it: `photo.jpg` gives `photo.nova`.
+Leave the destination out and it is derived from the first source, next to it: `photo.jpg` gives `photo.yaif`.
 If that file already exists and you are on a terminal, the encoder asks: `[r]` replace, `[n]` a new name
-(`photo-1.nova`, `photo-2.nova`, …), `[c]` cancel. In a script, with no terminal, it replaces as before.
+(`photo-1.yaif`, `photo-2.yaif`, …), `[c]` cancel. In a script, with no terminal, it replaces as before.
 
 Sources: PNG, JPEG, HEIC, HEIF, AVIF (needs libheif), camera RAW (needs LibRaw). Several sources make an
 animation. Options: `-m`, `-l`, `-q`, `-e`, `-d ms` (frame delay), `-live file.mov`.
@@ -188,7 +188,7 @@ The encoder always writes, without being asked:
 ## Decoding
 
 ```sh
-nova decode <in.nova> <out.ext> [options]
+yaif decode <in.yaif> <out.ext> [options]
 ```
 
 The output format comes from the extension: `.png`, `.tif`/`.tiff`, `.jpg`/`.jpeg`, `.webp`, `.avif`,
@@ -197,7 +197,7 @@ The output format comes from the extension: `.png`, `.tif`/`.tiff`, `.jpg`/`.jpe
 | Option | Meaning |
 | --- | --- |
 | `-q 1-100` | Quality of the output file. Defaults: JPEG and WebP 90, AVIF 85, HEIC 60 (about 44 dB) |
-| `-m lossy\|lossless` | For WebP, AVIF and HEIC. The default follows the `.nova`: a lossless file stays lossless |
+| `-m lossy\|lossless` | For WebP, AVIF and HEIC. The default follows the `.yaif`: a lossless file stays lossless |
 | `-fast` | WebP about 4× faster, files 2–6 % larger |
 | `-hdr` | The HDR rendition, see below |
 
@@ -206,14 +206,14 @@ Decoding is exact: PNG and TIFF give back the pixels the encoder stored, whateve
 ## Converting
 
 ```sh
-nova convert <in> <out.ext> [options]
-nova convert IMG_1152.HEIC IMG_1152.jpg     # HEIC to JPEG, EXIF, ICC and HDR gain map kept
-nova convert IMG_1401.CR3 IMG_1401.dng      # RAW straight to DNG
+yaif convert <in> <out.ext> [options]
+yaif convert IMG_1152.HEIC IMG_1152.jpg     # HEIC to JPEG, EXIF, ICC and HDR gain map kept
+yaif convert IMG_1401.CR3 IMG_1401.dng      # RAW straight to DNG
 ```
 
-One step instead of `encode` then `decode`, with no `.nova` in between: the pixels, the metadata and
+One step instead of `encode` then `decode`, with no `.yaif` in between: the pixels, the metadata and
 the HDR gain map go straight from the reader to the writer (a 7.7 Mpx JPEG to PNG in 0.7 s), and the
-result is the one `nova encode -m lossless` followed by `nova decode` would give. It reads what
+result is the one `yaif encode -m lossless` followed by `yaif decode` would give. It reads what
 `encode` reads and takes `decode`'s options.
 Without `-m`, WebP, AVIF and HEIC are lossless when the source was (PNG, TIFF, PAM) and lossy otherwise.
 
@@ -223,8 +223,8 @@ Several sources make one file. Frames after the first store only the rectangle t
 the previous frame as the decoder will see it.
 
 ```sh
-nova encode frame*.png anim.nova -d 40      # 40 ms between frames
-nova decode anim.nova out.png               # writes out_000.png, out_001.png, ...
+yaif encode frame*.png anim.yaif -d 40      # 40 ms between frames
+yaif decode anim.yaif out.png               # writes out_000.png, out_001.png, ...
 ```
 
 The numbering keeps your extension (`out_000.jpg` for a `.jpg` output). Viewers with the Qt or glycin plugin
@@ -232,25 +232,25 @@ play the animation; gdk-pixbuf shows the first frame.
 
 ## HDR
 
-An iPhone HEIC carries an HDR gain map (ISO 21496-1). NOVA keeps it, for 1–3 % of the file size.
+An iPhone HEIC carries an HDR gain map (ISO 21496-1). YAIF keeps it, for 1–3 % of the file size.
 
 ```sh
-nova decode photo.nova photo.jpg            # Ultra HDR JPEG (the gain map travels with it)
-nova decode photo.nova photo.avif           # AVIF with the gain map (needs libavif 1.2+)
-nova decode photo.nova photo.heic           # HEIC with the gain map (needs libnova-heif, below)
-nova decode photo.nova photo.avif -hdr      # AVIF 10 bits, PQ
-nova decode photo.nova photo.png -hdr       # PNG 16 bits, PQ
-nova decode photo.nova photo.tif -hdr       # 16-bit float TIFF, linear, 1.0 = SDR white (for editors)
+yaif decode photo.yaif photo.jpg            # Ultra HDR JPEG (the gain map travels with it)
+yaif decode photo.yaif photo.avif           # AVIF with the gain map (needs libavif 1.2+)
+yaif decode photo.yaif photo.heic           # HEIC with the gain map (needs libyaif-heif, below)
+yaif decode photo.yaif photo.avif -hdr      # AVIF 10 bits, PQ
+yaif decode photo.yaif photo.png -hdr       # PNG 16 bits, PQ
+yaif decode photo.yaif photo.tif -hdr       # 16-bit float TIFF, linear, 1.0 = SDR white (for editors)
 ```
 
 **To look at or share the photo, keep the gain map: `.jpg`, `.avif` or `.heic`, without `-hdr`.** They hold
 the SDR image, which every viewer shows as the iPhone does, and the gain map, which HDR screens apply. A
-lossless `.nova` (a screenshot) still gives a lossless AVIF or HEIC, without the gain map.
+lossless `.yaif` (a screenshot) still gives a lossless AVIF or HEIC, without the gain map.
 
-No released libheif can write a HEIC gain map yet, so `install.sh` builds **libnova-heif**: libheif with its
-gain-map pull request (#1503) and kvazaar, 1–3 minutes, into `lib/nova/` next to `bin/nova`
+No released libheif can write a HEIC gain map yet, so `install.sh` builds **libyaif-heif**: libheif with its
+gain-map pull request (#1503) and kvazaar, 1–3 minutes, into `lib/yaif/` next to `bin/yaif`
 (`libheif-gainmap/` in the source; the Windows installers ship it built). It needs cmake and a C/C++
-compiler; the installer says what to install when they are missing, and `--no-heic-hdr` skips it. nova
+compiler; the installer says what to install when they are missing, and `--no-heic-hdr` skips it. yaif
 loads it only to write a HEIC with a gain map: reading HEIC stays on your system's libheif, which gets its
 security updates. Without it, `.heic` output is SDR only.
 
@@ -264,11 +264,11 @@ map by. Without `-hdr`, PNG, TIFF and HEIC get the SDR image only.
 A RAW source keeps the sensor frame exactly (level 6), plus what LibRaw needs to develop it.
 
 ```sh
-nova encode IMG_1401.CR3 IMG_1401.nova
-nova decode IMG_1401.nova IMG_1401.dng                     # back to DNG
-nova decode IMG_1401.nova out.tif                          # developed, 16 bits
-nova decode IMG_1401.nova out.png -look darktable          # developed with darktable's look
-nova decode IMG_1401.nova sensor.pgm                       # the bare sensor frame
+yaif encode IMG_1401.CR3 IMG_1401.yaif
+yaif decode IMG_1401.yaif IMG_1401.dng                     # back to DNG
+yaif decode IMG_1401.yaif out.tif                          # developed, 16 bits
+yaif decode IMG_1401.yaif out.png -look darktable          # developed with darktable's look
+yaif decode IMG_1401.yaif sensor.pgm                       # the bare sensor frame
 ```
 
 `-look canon` (the default) follows the camera's rendering; `-look darktable` follows darktable's.
@@ -282,45 +282,45 @@ them and viewers rotate, as every other format does.
 A Live Photo's video rides along:
 
 ```sh
-nova encode IMG_0042.HEIC out.nova -live IMG_0042.mov
-nova decode out.nova out.png                # writes out.png + out.mov
+yaif encode IMG_0042.HEIC out.yaif -live IMG_0042.mov
+yaif decode out.yaif out.png                # writes out.png + out.mov
 ```
 
 ## Speed
 
 Images are cut into stripes coded and decoded in parallel, one process per stripe (0.5 to 2 Mpx each
-depending on the codec, 16 at most). `NOVA_THREADS=n` caps the processes; `NOVA_THREADS=1` runs everything in one process and gives exactly
+depending on the codec, 16 at most). `YAIF_THREADS=n` caps the processes; `YAIF_THREADS=1` runs everything in one process and gives exactly
 the same file. Windows uses copies of the process instead of `fork`, with the same result.
 
 A 7.7 Mpx photo takes about 3 s to encode at level 5 and 2.5 s to decode on a 12-core machine; level 4 is the
-slow one, which is why it is only tried from 16 Mpx. `nova preview` is instant whatever the size.
+slow one, which is why it is only tried from 16 Mpx. `yaif preview` is instant whatever the size.
 
 ## Reading a file
 
 ```sh
-nova info photo.nova       # chunks, sizes, level, frames, gain map
-nova preview photo.nova thumb.png
-nova bench photo.png ...   # lossless size and bits per pixel of each source, without writing a file
+yaif info photo.yaif       # chunks, sizes, level, frames, gain map
+yaif preview photo.yaif thumb.png
+yaif bench photo.png ...   # lossless size and bits per pixel of each source, without writing a file
 ```
 
 ## Recipes
 
 ```sh
 # A screenshot for a bug report, exact and small
-nova encode shot.png shot.nova -m lossless
+yaif encode shot.png shot.yaif -m lossless
 
 # A photo for a web page, smaller than the JPEG it came from
-nova encode photo.jpg photo.nova -m lossy
+yaif encode photo.jpg photo.yaif -m lossy
 
 # The same photo, visibly untouched but as small as possible
-nova encode photo.heic photo.nova -q 85
+yaif encode photo.heic photo.yaif -q 85
 
 # An icon or pixel art with few colours
-nova encode icon.png icon.nova -l 0
+yaif encode icon.png icon.yaif -l 0
 
 # A photo you will edit later: exact pixels, the camera's metadata
-nova encode IMG_1398.HEIC IMG_1398.nova -m lossless
+yaif encode IMG_1398.HEIC IMG_1398.yaif -m lossless
 
 # Back to a shareable file
-nova decode IMG_1398.nova IMG_1398.jpg -q 92
+yaif decode IMG_1398.yaif IMG_1398.jpg -q 92
 ```

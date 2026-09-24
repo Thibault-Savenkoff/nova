@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds nova from source (needs the Lisaac compiler) and installs it,
+# Builds yaif from source (needs the Lisaac compiler) and installs it,
 # reusing install.sh for everything after the compile step. For a prebuilt
 # binary instead, use install.sh directly (no compiler needed).
 # Run from the repository: build.sh [install.sh options...]
@@ -12,8 +12,8 @@ if ! command -v lisaac >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> Compiling nova (lisaac nova.li -boost)"
-lisaac nova.li -boost
+echo "==> Compiling yaif (lisaac yaif.li -boost)"
+lisaac yaif.li -boost
 
 case $(uname -s) in
   Linux) os=linux ;;
@@ -28,7 +28,7 @@ esac
 
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
-archive=$(release/pack.sh "$PWD/nova" "$os" "$arch" "$tmp")
+archive=$(release/pack.sh "$PWD/yaif" "$os" "$arch" "$tmp")
 
 echo "==> Installing"
 ./install.sh --from "$archive" "$@"
