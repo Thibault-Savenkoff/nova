@@ -49,6 +49,7 @@ Options:
   --prefix DIR    install into DIR instead of ~/.local or /usr/local
   --version X.Y.Z install this version instead of the latest v2 release
   --from FILE     install from a local .tar.gz instead of downloading
+                  (run from an unpacked archive, it installs that archive's files)
   --no-plugins    skip the Qt/KDE/GNOME/GTK viewer plugins
   --no-deps       skip checking for the HEIC/AVIF/WebP/RAW libraries
   --no-heic-hdr   don't build libnova-heif (then .heic output has no HDR gain map)
@@ -443,10 +444,10 @@ cargo_glycin_plugin() {
   [ -n "$prefix" ] || prefix=/usr
   execdir="$prefix/libexec/glycin-loaders/2+"
   confdir="$prefix/share/glycin-loaders/2+/conf.d"
-  run user cargo build --release --manifest-path "$src/plugins/glycin/Cargo.toml" \
+  run user cargo build --release --manifest-path "$src/plugins/glycin/Cargo.toml" --target-dir "$tmp/glycin" \
     > "$tmp/glycin.log" 2>&1 ||
     { tail -20 "$tmp/glycin.log" >&2; warn "glycin loader: build failed (log above)"; return 1; }
-  bin_out=$(find "$src/plugins/glycin/target/release" -maxdepth 1 -type f -name 'glycin-nova*' ! -name '*.d' | head -1)
+  bin_out=$(find "$tmp/glycin/release" -maxdepth 1 -type f -name 'glycin-nova*' ! -name '*.d' | head -1)
   [ -n "$bin_out" ] || { warn "glycin loader: build produced no binary, skipped"; return 1; }
   name=$(basename "$bin_out")
   install_file root "$bin_out" "$execdir/$name" 755
@@ -531,6 +532,10 @@ case $(uname -m) in
   *) die "unsupported architecture: $(uname -m)" ;;
 esac
 
+# This script's directory, when it runs from a file (empty for curl | bash).
+here=
+case ${BASH_SOURCE[0]:-} in */install.sh|install.sh) here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) ;; esac
+
 tmp=$(mktemp -d) || die "mktemp failed"
 trap 'rm -rf -- "$tmp"' EXIT
 
@@ -547,12 +552,19 @@ if [ -n "$from" ]; then
   version=$(printf '%s' "$archive" | sed -E "s/^nova-(.+)-$os-$arch\\.tar\\.gz\$/\\1/")
   [ -n "$version" ] && [ "$version" != "$archive" ] || die "unexpected archive name: $archive (expected nova-<version>-$os-$arch.tar.gz)"
   cp "$from" "$tmp/$archive"
+  unpack
+elif [ -z "$version" ] && [ -x "$here/bin/nova" ]; then
+  # Run from an unpacked release archive: install what sits next to this script.
+  step "Installing from $(pretty "$here")"
+  version=$("$here/bin/nova" --version 2>/dev/null | awk 'NR == 1 {print $2}') || true
+  [ -n "$version" ] || die "$(pretty "$here/bin/nova") does not run here: an archive for another OS or architecture?"
+  src=$here
 else
   find_release
   download
   verify
+  unpack
 fi
-unpack
 install_bin
 install_completion
 install_mime

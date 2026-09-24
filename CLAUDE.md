@@ -99,6 +99,13 @@ _Updated 2026-09-22._
   `build.sh` from that archive installed `bin/nova` alone (no install.sh, completions, plugins,
   docs) without a word. Outside a clone it now uses `find` on the same paths; checked both ways,
   27 files each. Found because the user asked what `build.sh` does from the source archive.
+- **`install.sh` run from an unpacked release archive installs that archive** (user report,
+  2026-09-24: unzipping a CI artifact and running `./install.sh` downloaded the latest release
+  instead). When it runs from a file (`BASH_SOURCE`, empty under `curl | bash`) with an executable
+  `bin/nova` beside it and no `--version`, `src` is that directory and the version comes from
+  `bin/nova --version` (which also fails cleanly for the wrong OS/arch). The glycin `cargo build`
+  now uses `--target-dir "$tmp/glycin"` so nothing is written into the user's unpacked folder.
+  `test/install.sh` case 5b checks it with the release URLs pointed at a dead port.
 - `install.sh --uninstall` is manifest-only: every file/rc-line it writes is recorded in
   `$prefix/share/nova/installed.txt`; uninstall only `rm -f`s a single path read back from it --
   never a directory, never a computed path. Deliberate (see Traps).

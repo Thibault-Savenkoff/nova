@@ -125,6 +125,15 @@ env -i HOME="$h5" PATH=/usr/bin:/bin SHELL=/bin/zsh NOVA_TEST_ROOT="$T/root" \
   bash "$PWD/install.sh" --from "$archive_path" --yes --no-plugins --no-heic-hdr --no-deps > "$T/5.log" 2>&1
 check "--from: installs offline" test -x "$h5/.local/bin/nova"
 
+# --- 5b: run from the unpacked archive: installs those files, downloads nothing ---
+h5b="$T/home5b"
+mkdir -p "$h5b" "$T/unpacked"
+tar -xzf "$archive_path" -C "$T/unpacked"
+env -i HOME="$h5b" PATH=/usr/bin:/bin SHELL=/bin/zsh NOVA_TEST_ROOT="$T/root" \
+  NOVA_RELEASE_BASE=http://127.0.0.1:1/download NOVA_API_BASE=http://127.0.0.1:1/api.json \
+  bash "$T/unpacked/${archive%.tar.gz}/install.sh" --yes --no-plugins --no-heic-hdr --no-deps > "$T/5b.log" 2>&1
+check "unpacked archive: installs without downloading" test -x "$h5b/.local/bin/nova"
+
 # --- 6: unknown version fails cleanly, nothing left behind ---
 h6="$T/home6"
 ok6=1
