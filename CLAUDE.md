@@ -13,8 +13,14 @@ Next up, in order:
    (`sha256sum -c SHA256SUMS --ignore-missing`), not per-file `.sha256`.
 Open, no date:
 - `install.ps1` for Windows (`irm | iex`): sidesteps SmartScreen/Defender; ~150-200 lines.
-- Code signing on Windows: SignPath Foundation -- user applies (2FA on GitHub first); then wire
-  signing into `release.yml` (nova.exe, nova_wic.dll, setup.exe, .msi; not the third-party DLLs).
+- **Rename the format (and `.nova`) or not -- decide BEFORE v2.0.0 final, never after.** `.nova` is
+  also Novaboard's pixel-art files and Neverwinter Online's data archives (both obscure, no desktop
+  handler); the bigger problem is the name "NOVA" (Amazon Nova, OpenStack Nova, Novaboard...): a
+  search for "NOVA image format" does not find the project. Advice given: rename name AND extension
+  together or neither; the user leans to exploring. Checked taken: Pixova, Lumova, Novix, Albireo
+  (non-image software), Opix; every 3-letter `.?if`; TOIF (Trezor). Ideas offered, unchecked: YAIF,
+  NIMF, ELAN, OKAY; Imalo, Fotyx, Ovra, Zibo, Eclat; Mira, Deneb, Rigel, Spica. Waiting for the
+  user's 3-5 favourites to check (name in imaging/software + extension). ~1 day of work if done.
 - macOS Finder/Quick Look: an ImageIO plugin, deferred past v2.
 - GNOME: re-verify the glycin install fix on the VM; Nautilus thumbnails still fail (not chased);
   `plugins/gdk-pixbuf` untested.
@@ -657,7 +663,10 @@ Not planned: Windows on ARM, `lisaac -split`, PowerShell completion filtered by 
   `win/dist.sh`'s own bundled README.txt wrongly said "Photos" -- fixed to name Photo Viewer and
   say Photos won't open it. `plugins/gdk-pixbuf` and `plugins/glycin` (GNOME) have no test
   environment available (user's other machine is Windows, not GNOME) -- untested, no plan yet.
-- **SignPath Foundation: prepared to apply (2026-09-24), user applies.** Their terms (signpath.org/terms,
+- **SignPath Foundation: NOT pursued (user's call, 2026-09-24)** -- the form wants "Reputation" (proof of wide
+  use) and a homepage/download page naming SignPath, and the user does not expect NOVA to be widely
+  used. README's section became `## Privacy and uninstalling` (privacy, what installers change,
+  uninstall); VERSIONINFO and the NSIS welcome-page notice stay (useful anyway). Preparation notes: Their terms (signpath.org/terms,
   read that day): OSI licence, released, documented, built from source in CI, sign ONLY own binaries
   (unsigned OSS DLLs may ship alongside -- so `libnova-heif.dll` stays unsigned, it is a libheif fork
   and libheif publishes no signed builds), product name + version metadata on every signed file, MFA

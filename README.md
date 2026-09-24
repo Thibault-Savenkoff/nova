@@ -240,19 +240,8 @@ Animations and Live Photos are created with the program only, and export is limi
 - [libwebp](https://chromium.googlesource.com/webm/libwebp) (BSD) writes WebP. Its headers are in `third_party/libwebp/`.
 - The site uses [Bricolage Grotesque](https://github.com/ateliertriay/bricolage) and [Atkinson Hyperlegible](https://www.brailleinstitute.org/freefont/) (SIL Open Font License, in `docs/fonts/`).
 
-## Code signing policy
+## Privacy and uninstalling
 
-The Windows files are not signed yet: nova has applied to [SignPath Foundation](https://signpath.org) for free
-code signing. Once accepted: free code signing provided by [SignPath.io](https://signpath.io), certificate by
-[SignPath Foundation](https://signpath.org).
-
-- **What is signed:** only files built from this repository by its GitHub Actions workflow
-  (`.github/workflows/release.yml`): `nova.exe`, `nova_wic.dll`, the `-setup.exe` installer and the `.msi`.
-  The open-source libraries shipped next to them (zlib, libwebp, LibRaw, libheif, libde265, kvazaar, aom,
-  libavif, the MinGW runtime, and `libnova-heif.dll`, libheif with a pull request applied) are not signed by
-  this project.
-- **Roles:** author, reviewer and approver of every release:
-  [Thibault Savenkoff](https://github.com/Thibault-Savenkoff). Each signed release is approved by hand.
 - **Privacy:** nova sends nothing about you or your files anywhere. Its only network access is the update
   check: at most once a day, only in an interactive terminal, one HTTPS request to GitHub for the list of
   releases (GitHub sees your IP address, as for any page; see
