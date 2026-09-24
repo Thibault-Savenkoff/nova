@@ -26,7 +26,9 @@ Open, no date:
   **FLARE** (checked: taken-ish -- Xara Flare vector format 1997, renamed Xar 2004; Homeworld's
   `.flare` game files; MadCap Flare, a well-known doc tool, owns the search results -- same
   unsearchable problem as NOVA). Rejected: ELAN (linguistics software), NIMF, OKAY, NAIF, WAIF/AWIF/
-  WHIP/HARP ("mouais"), MIRA, RIGEL, QUASAR, JINX/KIP/YIP.
+  WHIP/HARP ("mouais"), MIRA, RIGEL, QUASAR, JINX/KIP/YIP. **Current favourite: YAIF** ("pour
+  l'instant" -- not a final decision; nothing renamed). Deeper check: only a small Databricks
+  ingestion framework on GitHub (`malcolndandaro/yaif`), unrelated field; no image format, no `.yaif`.
 - macOS Finder/Quick Look: an ImageIO plugin, deferred past v2.
 - GNOME: re-verify the glycin install fix on the VM; Nautilus thumbnails still fail (not chased);
   `plugins/gdk-pixbuf` untested.
