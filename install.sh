@@ -430,6 +430,14 @@ cmake_plugin() {
   ok "$2 installed"
 }
 
+has_kf6kio() {  # KDE Frameworks ship CMake package files, no pkg-config .pc: look for KF6KIOConfig.cmake
+  local d
+  for d in /usr/lib*/cmake /usr/lib/*/cmake /usr/local/lib*/cmake /usr/share/cmake; do
+    [ -f "$d/KF6KIO/KF6KIOConfig.cmake" ] && return 0
+  done
+  return 1
+}
+
 drop_pixbuf_thumbnailer() {  # an earlier install's nova.thumbnailer, a second "NOVA" in Dolphin (see below)
   local thumb="$TEST_ROOT/usr/share/thumbnailers/nova.thumbnailer"
   if cmp -s "$src/plugins/gdk-pixbuf/nova.thumbnailer" "$thumb"; then
@@ -515,10 +523,10 @@ install_plugins() {
     info "KDE / Qt: Gwenview, Okular, Krita open .nova; Dolphin shows thumbnails."
     if ask "Build and install the Qt and KDE plugins?"; then
       cmake_plugin qt "Qt plugin (Gwenview, Okular, Krita)" || true
-      if pkg-config --exists KF6KIO 2>/dev/null; then
+      if has_kf6kio; then
         if cmake_plugin kde "Dolphin thumbnailer"; then enable_dolphin_thumbnailer; kde_thumb=1; drop_pixbuf_thumbnailer; fi
       else
-        info "KF6KIO not found, Dolphin thumbnailer skipped."
+        info "KF6KIO not found (Fedora: kf6-kio-devel, Debian/Ubuntu: libkf6kio-dev), Dolphin thumbnailer skipped."
       fi
     fi
   else

@@ -155,6 +155,11 @@ Not planned: Windows on ARM, `lisaac -split`, PowerShell completion filtered by 
   removal lived in `make_gdk_pixbuf_plugin`, so it only ran when the user ALSO said yes to the
   gdk-pixbuf loader -- they said no, the file stayed. Now `drop_pixbuf_thumbnailer` runs right after
   the KDE plugin installs (stub-tested: KDE y, gdk-pixbuf n -> removed). Re-check on the real machine.
+  **Second real try: "KF6KIO not found, Dolphin thumbnailer skipped"** on the user's Fedora KDE, which
+  has it: `install.sh` detected KIO with `pkg-config --exists KF6KIO`, and KDE Frameworks 6 ship only
+  CMake package files, no `.pc` -- so install.sh had NEVER built the Dolphin thumbnailer; the user's
+  `libnovathumb.so` came from the manual cmake build. `has_kf6kio` now looks for
+  `KF6KIO/KF6KIOConfig.cmake` under the usual `lib*/cmake` dirs (checked both ways here).
 - `install.sh --uninstall` is manifest-only: every file/rc-line it writes is recorded in
   `$prefix/share/nova/installed.txt`; uninstall only `rm -f`s a single path read back from it --
   never a directory, never a computed path. Deliberate (see Traps).
