@@ -10,7 +10,8 @@ readable by v2.0.0 final, and **v1 and v2 files are not compatible** either way.
   of an iPhone photo: an HDR screen shows the HDR, every other one the normal
   picture. Until now only `.jpg` and `.avif` kept it.
   No released libheif can write one yet, so nova uses **libnova-heif**: libheif
-  with its gain-map pull request (#1503), built only for this. Reading HEIC still
+  with its gain-map pull request
+  ([strukturag/libheif#1503](https://github.com/strukturag/libheif/pull/1503)), built only for this. Reading HEIC still
   goes through your system's libheif and its security updates.
   - **Windows**: included in the installers and the zip.
   - **Linux and macOS**: the install script builds it (1–3 minutes). It needs
