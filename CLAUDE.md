@@ -151,16 +151,27 @@ _Updated 2026-09-22._
   (`nova.li` bumped, `release/NOTES-v2.0.0-beta.4.md`, `dd71ad6`/`bdd9f27`). PUBLISHED
   (tag on `bdd9f27`, run `35958881890`): 14 assets, pre-release, notes with the explicit #1503 link.** Trap: a bare `#1503` in release notes is autolinked by
   GitHub to *this* repo's issue #1503 -- always write `owner/repo#N` with an explicit URL.
-  **Next after the release: direct conversion (user's call, 2026-09-24).**
-  **Workflow review: user said OK to 1, 2, 5; 3 = keep Fedora (only distro packaging the mingw64
-  zlib/libwebp/LibRaw/lcms nova ships; its dnf step is 46 s) but pin it; 4 = compromise: Intel-Mac
-  HEIC test on tag runs only (it alone covers kvazaar's x86 asm under Apple clang). Not done yet:** (1) run on every push
-  to `v2` + run `test/unit.sh`/`test/install.sh` in the Linux x86_64 job -- the tests never ran in
-  CI, which is how `test/install.sh` stayed broken since beta.3; (2) `permissions: contents: read`
-  by default, `write` on `publish` only (build jobs download third-party code); (3) pin
-  `fedora:44` and put it in the windeps cache key; (4) drop the HEIC install test on
-  `macos-15-intel` only (319 s of its 382 s job, and Windows waits on every build; ~55-70 s
-  elsewhere); (5) refresh stale step names/comments (libnova-heif, ETag). Previously:
+  **Workflow review: done (`f479a0c`).** `release.yml` now runs on every push to `v2` (not
+  `**.md`-only pushes; `paths-ignore` is ignored for tags, so a release always runs), with
+  `concurrency` cancelling a superseded branch run (never a tag run); `test/unit.sh` (uv via
+  `astral-sh/setup-uv`) + `test/install.sh` run in the Linux x86_64 job -- they never ran in CI,
+  which is how `test/install.sh` stayed broken since beta.3; `permissions: contents: read`, `write`
+  on `publish` only; `fedora:44` pinned and in the windeps cache key (kept Fedora: only distro
+  packaging the mingw64 zlib/libwebp/LibRaw/lcms nova ships); the HEIC install test skipped on
+  `macos-15-intel` except on tags (it alone builds kvazaar's x86 asm with Apple clang). Run
+  `35961072361`: tests green (unit all OK, 720 corrupt files, install ALL OK), Intel Mac 382 -> 32 s.
+  `test/unit.sh` now FAILs when `uv` is missing instead of silently skipping the fuzz -- expected
+  locally here (no uv), not a regression.
+  **`nova convert <src> <dst> [decode options]` (`1c53d31`)**, user's request after beta.4: any
+  source `encode` reads -> any output `decode` writes, no `.nova` left behind. The source goes
+  through a lossless level-1 `.nova` **held in memory** (`in_memory` slot, `read_nova` skips
+  `load_file`) -- not a temp file, because on Windows only nova_par's replica 0 writes files.
+  Byte-identical to `encode -m lossless -l 1` + `decode` (checked jpg->png/jpg/tif, png->png);
+  Ultra HDR JPEG keeps ICC + hdrgm; ~3.2 s for 7.7 Mpx. Without `-m`, WebP/AVIF/HEIC output is
+  lossless for PNG/TIFF/PAM sources, lossy otherwise. Refuses a `.nova` on either side (points to
+  encode/decode). Completions (4 shells) + MANUAL "Converting" + README updated. **RAW source
+  (`convert X.CR3 X.dng`) untested -- no RAW file here; ask the user to try it.**
+  Previously:
   `libheif-gainmap/build.sh` = libheif 1.23.4 + `pr1503.patch` (fxthomas rebase re-diffed for 1.23.4,
   one fix: `get_unused_item_id()` returns `Result<>` since 1.23.2) + kvazaar static, all other
   codecs off, tarballs SHA-256-pinned, output renamed **libnova-heif** (distinct file name *and*
