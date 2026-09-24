@@ -629,6 +629,11 @@ _Updated 2026-09-22._
   and ran a separate `t.sh` in a fresh `bash` -- `$S` was never exported, so `rm -rf $S/home` became
   `rm -rf /home`. Fix: `test/install.sh` is one file, no cross-script variable handoff, `set -eu`,
   and a path-prefix check before its one `rm -rf`.
+- **`lisaac -split` (parallel C compile, per the user's teacher) does not build nova** (checked
+  2026-09-24): it splits the C into ~20 files, but the C that nova's modules embed (`np_*`, `nh_*`,
+  `nw_*`, `nr_*`... statics and globals) stays in one of them, so the others fail on implicit
+  declarations and the link fails. Making it work = moving that C into a real `.c` + header (static
+  state must stay single). Gain too small for now: a full `-boost` build is 8.5 s on 4 cores here.
 - bash `local x` **without** an assignment is genuinely *unbound* under `set -u`.
 - `set -e` only aborts on the *last* command in a `&&`/`||` chain failing, and only propagates that
   exemption into a called function when the function itself is invoked as that guarded chain.
