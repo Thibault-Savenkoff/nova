@@ -106,8 +106,16 @@ BD-rate on mean curves, PSNR + SSIMULACRA2 built from libjxl v0.11.1 `jxlsrc/bui
   +11 %, SS2 +26 %. Finest band step x1.56 (f400): SS2 +19 % but PSNR +18 %. Combined c300+f400:
   PSNR +18 %, SS2 +16 %; c300+f340: +15 % / +19 %. Visual check (kodim13, same 91 KB): the current
   coder washes greens/browns toward grey (coarse chroma); the variant keeps the colours.
-- Ideas not tried: backward-adaptive masking (child step from parent index, no side info),
-  deringing post-filter. Any constant change = format change: 3 decoders + q recalibration + beta.8.
+- **Phase B tried and dropped**: step x (1 + k * luma activity of the 3 parent-level bands), no side
+  info (dequantize reversed: planes 2..0, fine to coarse, so parents/luma still hold indices). k > 0
+  (classic masking): SS2 +37..+60 %, worse; k < 0: PSNR -2 pts, SS2 no gain. SSIMULACRA2 punishes
+  lost texture. Plateau around the chosen constants (recon 12/40, level-1 factor: +-1-2 pts).
+- **Shipped (phase A)**: chroma x300/256, x246/256, finest band x340/256 -- 24 img: PSNR +14.2 %,
+  SS2 +19.2 % (from +15.3 / +31.2). q 90 unchanged in meaning (4 % smaller, SS2 85.9 vs 85.4).
+  **Format: level-5 quality byte + 128 = new steps**; < 128 = old steps, still decoded (old files
+  byte-identical, checked); beta.7 decoders refuse new files (they check q <= 100). All 3 decoders,
+  wasm rebuilt, `?v=15`. Not in a release yet: needs beta.8. Remaining gap to AVIF would need a new
+  transform/prediction (not planned). Possible later: deringing post-filter (untested).
 
 ### To do (details in the entries below)
 Next up, in order:
