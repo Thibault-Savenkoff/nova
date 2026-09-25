@@ -96,6 +96,19 @@ wasm (1.5 MB) only fetched on first conversion, PREV shown before the full decod
 2.1 s on 4 cores). **`site.jpg` retaken** from the local v2 page -- screenshot trap: Puppeteer's
 `fullPage` grows the viewport and the canvas is sized in `vh`, so freeze the canvas px size first.
 
+### Lossy vs AVIF: research started (2026-09-25, user: "ça serait quand même cool")
+Harness in scratchpad: `bd.py <yaif> <tag>` (24 Kodak, yaif q 50/65/80/90 vs avifenc -s 4 q 50/65/80/90,
+BD-rate on mean curves, PSNR + SSIMULACRA2 built from libjxl v0.11.1 `jxlsrc/build/tools/ssimulacra2`;
+`QUICK=1` = 8 images), `var.sh <tag> <sed on yaif_lossy.li>` builds a variant and scores it.
+- Baseline (24 img): **YAIF vs AVIF: PSNR +15 %, SSIMULACRA2 +31 %** (JXL: +52 % / +2 %).
+- Encoder-only dead zones (`dead_zone` 60/120, `dz0` 40/100): all within ~2 % -- already tuned.
+- Format constants (quick set): chroma steps x2/x1.64 -> x1.17/x0.96 (`chroma1/2` 300/246): PSNR
+  +11 %, SS2 +26 %. Finest band step x1.56 (f400): SS2 +19 % but PSNR +18 %. Combined c300+f400:
+  PSNR +18 %, SS2 +16 %; c300+f340: +15 % / +19 %. Visual check (kodim13, same 91 KB): the current
+  coder washes greens/browns toward grey (coarse chroma); the variant keeps the colours.
+- Ideas not tried: backward-adaptive masking (child step from parent index, no side info),
+  deringing post-filter. Any constant change = format change: 3 decoders + q recalibration + beta.8.
+
 ### To do (details in the entries below)
 Next up, in order:
 1. **Mac test on real hardware** (user has no Mac access right now): `install.sh`, `nova convert`
