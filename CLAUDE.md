@@ -70,6 +70,11 @@ Bench here (8 Kodak PNGs, sample photo + screenshot decoded from docs/samples; s
   Trap: gdk-pixbuf on Linux sniffs by MIME (GIO), not the loader's byte pattern: without
   `image/x-yaif` in shared-mime-info it says "Couldn't recognize" -- register `plugins/mime/yaif.xml`
   (XDG_DATA_DIRS) to test it outside install.sh.
+  **Confirmed on the user's Dolphin: "rapide comme l'éclair"** -- once the box was ticked by hand:
+  install.sh wrote `yaifthumb` into dolphinrc `PreviewSettings/Plugins`, but the id is the file name
+  `libyaifthumb` (cmake MODULE prefix) -- never worked, NOVA's `novathumb` neither. Fixed; and no
+  Plugins= key now means "leave it" (Dolphin defaults include new thumbnailers; writing one entry
+  would disable all others -- inferred from KIO's defaultPlugins, not tested on a key-less dolphinrc).
 - User's remark "nearly everything is level 5 or 6": by design (photos -> 5 wavelet, RAW -> 6;
   screenshots/text/alpha -> 2, palettes -> 0). Real flaw = one number mixes method and effort.
   **Proposed**: print the method name in `Done:`/`yaif info` ("wavelet, q 90", "lossless,
