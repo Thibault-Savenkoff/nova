@@ -117,9 +117,26 @@ BD-rate on mean curves, PSNR + SSIMULACRA2 built from libjxl v0.11.1 `jxlsrc/bui
   wasm rebuilt, `?v=15`. Not in a release yet: needs beta.8. Remaining gap to AVIF would need a new
   transform/prediction (not planned). Possible later: deringing post-filter (untested).
 - **beta.8 prepared (`6833498`)**: version bump + `release/NOTES-v2.0.0-beta.8.md` (lossy -12 %,
-  thumbnails, method names, zsh/Dolphin install fixes, web/logo). Waiting for CI then the user's tag.
+  thumbnails, method names, zsh/Dolphin install fixes, web/logo). **PUBLISHED 2026-09-25** (tag on
+  `418dec7`, run `36128545415`, 7 jobs + publish green): 7 assets, pre-release, notes + checksums.
   Trap: `test/install.sh` uses port 8765 for its fake release server -- don't run a docs
   `http.server` on 8765 at the same time (it silently exits 1 with no FAIL line).
+
+### Web page: PWA + subtitle (2026-09-25, `e7455a2`, user's request after beta.8)
+- **Installable app**: `docs/manifest.webmanifest` + `docs/sw.js`, icons in `docs/icons/` (rendered
+  from the favicon SVG with `rsvg-convert`; maskable/apple-touch full-bleed, glyph fits the 80 % safe
+  circle). SW registered as `sw.js?v=N` (the page's `V`): new N = new worker, precaches that version
+  (1.5 MB wasm included, so conversion works offline) and deletes other caches; navigation is
+  network-first (index names the version), everything else cache-first. **Bumping `V` is now also
+  what refreshes the offline copy.** Desktop Chrome/Edge: `file_handlers` + `launchQueue` open a
+  `.yaif` from the file manager (untested on a real desktop). Checked in headless chromium:
+  `Page.getInstallabilityErrors` empty, offline reload + sample + PNG->.yaif conversion work.
+- **Real bug fixed**: `pick()` tested the NOVA signature, so choosing/dropping a `.yaif` said "not an
+  image" since the rename (the example buttons call `open()` directly, so e2e never saw it).
+- Subtitle "Yet Another Image Format" under the logo: page (`h1 .sub`, font sized to the logo's
+  width on desktop) and README SVGs (`textLength='320'`, viewBox 320x142, `<img height=102>`).
+  `site.jpg` retaken. Page light background is `#edeff1` by design (looks grey next to GitHub's
+  white README) -- asked the user whether to go white.
 
 ### To do (details in the entries below)
 Next up, in order:
