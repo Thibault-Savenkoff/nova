@@ -38,6 +38,12 @@ entry BELOW this one predates the rename and uses the old names: read `nova` as 
   title "YAIF v2.0.0-beta.7", pre-release, 7 assets `yaif-2.0.0-beta.7-*` + SHA256SUMS, body = notes +
   checksum block. **To check on the user's Windows PC (still has NOVA): the beta.7 `-setup.exe` must
   remove NOVA from Settings > Apps** -- the NSIS `RemoveNova` section has never run on real Windows.
+- Plan step 6 checked (2026-09-25): MANUAL.md/FORMAT.md reread after the sed, nothing to fix;
+  completions identical to NOVA's modulo the name (diffed), and live-tested: bash (with
+  bash-completion), fish (`complete -C`), pwsh (`TabExpansion2`, `yaif` and `yaif.exe`) give the
+  subcommands, `-m`/`-look` values and `.yaif` files; zsh registers `_yaif` (#compdef). User renamed
+  `~/photos-nova` to `~/photos-yaif`. Left: steps 9 (codec optimisation) and 10 (website audit),
+  `site.jpg` retake, and the Windows NOVA-removal test (user rebooting to try it).
 
 ### To do (details in the entries below)
 Next up, in order:
