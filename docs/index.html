@@ -425,6 +425,7 @@ function specs(rows) {
     dt.textContent = k;
     dd.textContent = v;
     const box = document.createElement('div');
+    if (v.length > 24) box.style.gridColumn = 'span 2';   // the HDR sentence: 2 columns, not 5 lines
     box.append(dt, dd);
     return box;
   }));
