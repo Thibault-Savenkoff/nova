@@ -710,13 +710,15 @@ static Band band(int k, int o) {
   return b;
 }
 
+/* q >= 128 (files from 2.0.0-beta.8 on): finer chroma, coarser finest band; below: earlier files. */
 static int64_t lossy_step(int q, int p, Band b) {
-  int e = 108 - q, n, i;
+  int v8 = q >= 128, e = 108 - (q & 127), n, i;
   int64_t d = ((((int64_t)512 * 256 * POW_T[e % 14]) / 1000) << (e / 14)) >> 2;
-  if (p == 1) d = (d * CHROMA1) / 256;
-  if (p == 2) d = (d * CHROMA2) / 256;
+  if (p == 1) d = (d * (v8 ? 300 : CHROMA1)) / 256;
+  if (p == 2) d = (d * (v8 ? 246 : CHROMA2)) / 256;
   n = b.o == 3 ? b.k - 1 : b.k;
   for (i = 1; i <= n; i++) d = (d * 4096) / 5413;
+  if (v8 && b.o > 0 && b.k == 0) d = (d * 340) / 256;
   return d < 16 ? 16 : d;
 }
 
@@ -1057,7 +1059,7 @@ static int decode_region(State *S, const uint8_t *data, size_t pos, size_t len, 
     c->px = buf; c->stride = s; c->ox = x0; c->oy = y0; c->w = fw; c->h = fh;
     return decode_palette(c, data, pos + 2, len - 2, np);
   }
-  if (lv == 5 && q <= 100 && (np == 3 ? len >= 2 : len >= 6)) {
+  if (lv == 5 && (q & 127) <= 100 && (np == 3 ? len >= 2 : len >= 6)) {
     size_t p = pos + 2, n = len - 2;
     int ok, c;
     Stripes J;

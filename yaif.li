@@ -997,7 +997,7 @@ Public
   // yaif info: the method of the coded region at data[at], with its level number (bug reports).
   ( + lv:Int
     lv := u8 at
-    ", " + (method lv param (u8 (at + 1))) + " (level " + lv.to_string + ")"
+    ", " + (method lv param ((u8 (at + 1)) & 127)) + " (level " + lv.to_string + ")"
   )
 
   - encode_frames d:Int mode md:Int level lv:Int eps ep:Int <-

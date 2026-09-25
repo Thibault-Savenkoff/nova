@@ -923,18 +923,19 @@ Public
     level := lv
     eps := ep
     put_byte lv
-    put_byte ep
+    // Level 5: bit 7 of the quality byte marks the current steps (Yaif_lossy.step).
+    (lv = 5).if { put_byte (ep + 128) } else { put_byte ep }
     (lv = 0).if {
       build_palette
       eps := 0
       encode_palette np
     }.elseif {(lv = 5) && {np = 3}} then {
-      Yaif_lossy.encode buf stride s region (x0, y0, fw, fh) quality ep
+      Yaif_lossy.encode buf stride s region (x0, y0, fw, fh) quality (ep + 128)
     }.elseif {lv = 5} then {
       at := out_count
       put_u32 0
       fill_invisible buf stride s region (x0, y0, fw, fh)
-      Yaif_lossy.encode buf stride s region (x0, y0, fw, fh) quality ep
+      Yaif_lossy.encode buf stride s region (x0, y0, fw, fh) quality (ep + 128)
       set_u32 (out_count - at - 4) at at
       // Alpha goes in the G plane of a scratch region, coded alone (1 plane) and losslessly.
       a := alpha_region buf stride s region (x0, y0, fw, fh) back False
@@ -1112,10 +1113,10 @@ Public
     ((len >= 3) && {(data.at pos).to_int = 0}).if {
       eps := 0
       result := decode_palette data from (pos + 2) size (len - 2) planes np
-    }.elseif {(len >= 2) && {(data.at pos).to_int = 5} && {(data.at (pos + 1)).to_int <= 100} && {np = 3}} then {
+    }.elseif {(len >= 2) && {(data.at pos).to_int = 5} && {((data.at (pos + 1)).to_int & 127) <= 100} && {np = 3}} then {
       lossy_seen := True
       result := Yaif_lossy.decode data from (pos + 2) size (len - 2) into buf stride s region (x0, y0, fw, fh) quality ((data.at (pos + 1)).to_int)
-    }.elseif {(len >= 6) && {(data.at pos).to_int = 5} && {(data.at (pos + 1)).to_int <= 100} && {np = 4}} then {
+    }.elseif {(len >= 6) && {(data.at pos).to_int = 5} && {((data.at (pos + 1)).to_int & 127) <= 100} && {np = 4}} then {
       lossy_seen := True
       n := (((data.at (pos + 2)).to_int) << 24) | (((data.at (pos + 3)).to_int) << 16) | (((data.at (pos + 4)).to_int) << 8) | ((data.at (pos + 5)).to_int)
       result := (n <= len - 8) && {(data.at (pos + 6 + n)).to_int >= 1} && {(data.at (pos + 6 + n)).to_int <= 4}

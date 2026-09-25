@@ -674,13 +674,15 @@ function band(k, o) {
   return { k, o, bs, bx: (o === 1 || o === 3) ? 1 << k : 0, by: (o === 2 || o === 3) ? 1 << k : 0 };
 }
 
+// q >= 128 (files from 2.0.0-beta.8 on): finer chroma, coarser finest band; below: earlier files.
 function lossyStep(q, p, b) {
-  const e = 108 - q;
+  const v8 = q >= 128, e = 108 - (q & 127);
   let d = (Math.trunc((512 * 256 * POW_T[e % 14]) / 1000) << Math.trunc(e / 14)) >> 2;
-  if (p === 1) d = Math.trunc((d * CHROMA1) / 256);
-  if (p === 2) d = Math.trunc((d * CHROMA2) / 256);
+  if (p === 1) d = Math.trunc((d * (v8 ? 300 : CHROMA1)) / 256);
+  if (p === 2) d = Math.trunc((d * (v8 ? 246 : CHROMA2)) / 256);
   const n = b.o === 3 ? b.k - 1 : b.k;
   for (let i = 1; i <= n; i++) d = Math.trunc((d * 4096) / 5413);
+  if (v8 && b.o > 0 && b.k === 0) d = Math.trunc((d * 340) / 256);
   return d < 16 ? 16 : d;
 }
 
@@ -990,7 +992,7 @@ async function decodeRegion(data, pos, len, buf, s, x0, y0, fw, fh, np, run, inf
     st.codec.setRegion(buf, s, x0, y0, fw, fh);
     return st.codec.decodePalette(data, pos + 2, len - 2, np);
   }
-  if (lv === 5 && q <= 100 && (np === 3 ? len >= 2 : len >= 6)) {
+  if (lv === 5 && (q & 127) <= 100 && (np === 3 ? len >= 2 : len >= 6)) {
     if (info) info.lossy = true;
     let p = pos + 2, n = len - 2;
     if (np === 4) {

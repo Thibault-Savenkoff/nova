@@ -115,17 +115,25 @@ Public
   - quality:Int
 
   - step p:Int :Int <-
+  // quality >= 128 (files from 2.0.0-beta.8 on): finer chroma, coarser finest band -- 12 % smaller
+  // than the earlier steps at equal SSIMULACRA2 on Kodak, PSNR unchanged. Below 128: earlier files.
   ( + d,e,n:Int
     // 512 x 2^((80 - q) / 14): q 90 ~ 45 dB, 75 ~ 41 dB, 50 ~ 36 dB, 25 ~ 30 dB on photos.
-    e := 108 - quality
+    e := 108 - (quality & 127)
     d := ((512 * 256 * (pow_t.at (e % 14)) / 1000) << (e / 14)) >> 2
-    (p = 1).if { d := d * chroma1 / 256 }
-    (p = 2).if { d := d * chroma2 / 256 }
+    (quality >= 128).if {
+      (p = 1).if { d := d * 300 / 256 }
+      (p = 2).if { d := d * 246 / 256 }
+    } else {
+      (p = 1).if { d := d * chroma1 / 256 }
+      (p = 2).if { d := d * chroma2 / 256 }
+    }
     n := bk
     (bo = 3).if { n := bk - 1 }
     1.to n do { i:Int
       d := d * 4096 / 5413
     }
+    ((quality >= 128) && {bo > 0} && {bk = 0}).if { d := d * 340 / 256 }
     (d < 16).if { d := 16 }
     d
   )
@@ -142,7 +150,7 @@ Public
 
   - recon:Int := 26
 
-  // Chroma steps x 2 and x 1.64: chroma errors show less, and SSIM (luma) stays near AVIF.
+  // Chroma steps x 2 and x 1.64 of the files written before 2.0.0-beta.8 (quality byte < 128, see step).
   - chroma1:Int := 512
 
   - chroma2:Int := 420

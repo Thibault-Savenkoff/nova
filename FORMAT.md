@@ -85,7 +85,7 @@ map). It starts with two bytes:
 ```
 u8 level    0-6
 u8 param    level 0: unused; levels 1-4: eps (0 = lossless, else near-lossless: |error| <= eps);
-            level 5: quality 0-100
+            level 5: quality 0-100, + 128 for the current steps (see 5.4)
 ```
 
 Decoder entry point: `decodeRegion` (`docs/yaif_decode.js`), `Yaif_codec.decode` (`yaif_codec.li`).
@@ -134,8 +134,10 @@ RGBA:  u32 n, the RGB part above (n bytes), then the alpha plane as a coded regi
 - Colour: a YCoCg-style transform on samples scaled by 64 (inverse: `lossyFinish`, R = Y + Co - Cg, G = Y + Cg, B = Y - Co - Cg).
 - Transform: CDF 9/7 lifting in integers (constants 1817, 3616, -217, -6497 over 4096), up to 6 levels
   while each side stays >= 16 samples (`waveletLevels`, `waveletInverse`).
-- Quantisation: step from the quality (`lossyStep`: table `POW_T`, chroma x 512/256 and 420/256, finer
-  for coarser levels), dead-zone reconstruction offset 26/256 (`lossyPlane`).
+- Quantisation: step from the quality (`lossyStep`: table `POW_T`, finer for coarser levels), dead-zone
+  reconstruction offset 26/256 (`lossyPlane`). Quality byte >= 128 (written from 2.0.0-beta.8 on):
+  quality = byte - 128, chroma steps x 300/256 and 246/256, finest detail bands (level 0) x 340/256.
+  Below 128 (earlier files, still read): chroma x 512/256 and 420/256, no finest-band factor.
 - Stripes: `ns` stripes of rows multiple of `2^levels` (`lossyRows`), independent streams.
 - Coefficients: low band with MED prediction, then high bands coarse to fine (HL, LH, HH). The finest
   bands carry one zero flag per 2x2 block of positions (all three planes). Contexts: neighbours, parent band, the other
