@@ -6,6 +6,7 @@
 <title>YAIF image format</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' gradientUnits='userSpaceOnUse' x1='52' y1='52' x2='74' y2='22'%3E%3Cstop offset='0' stop-color='%23e4ecff'/%3E%3Cstop offset='1' stop-color='%233278ff'/%3E%3C/linearGradient%3E%3C/defs%3E%3CclipPath id='t'%3E%3Crect width='100' height='100' rx='20'/%3E%3C/clipPath%3E%3Cg clip-path='url%28%23t%29'%3E%3Crect width='100' height='100' fill='%230c121e'/%3E%3Ccircle cx='8.3' cy='8.3' r='41.7' fill='%233278ff' fill-opacity='.18'/%3E%3C/g%3E%3Cpath fill='%23e4ecff' d='M22 22h13l15 25v31H44V58z'/%3E%3Cpath fill='url%28%23g%29' d='M65 22h13L56 58v20H50V47z'/%3E%3C/svg%3E">
 <meta name="description" content="Open and create YAIF images (.yaif) in your browser: photos, screenshots, animations and camera RAW files. Nothing is uploaded.">
+<link rel="preload" href="fonts/atkinson.woff2" as="font" type="font/woff2" crossorigin>
 <style>
   @font-face { font-family: 'Bricolage Grotesque'; src: url(fonts/bricolage.woff2) format('woff2'); font-weight: 200 800; font-display: swap; }
   @font-face { font-family: 'Atkinson Hyperlegible Next'; src: url(fonts/atkinson.woff2) format('woff2'); font-weight: 200 800; font-display: swap; }
@@ -218,9 +219,9 @@
   <span>YAIF v2. Images never leave your device.</span>
   <a href="https://github.com/Thibault-Savenkoff/yaif">Source on GitHub</a>
 </footer>
-<script src="yaif_decode.js?v=14"></script>
-<script src="heif_meta.js?v=14"></script>
-<script src="meta_strip.js?v=14"></script>
+<script defer src="yaif_decode.js?v=14"></script>
+<script defer src="heif_meta.js?v=14"></script>
+<script defer src="meta_strip.js?v=14"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
