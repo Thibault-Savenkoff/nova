@@ -31,6 +31,10 @@ entry BELOW this one predates the rename and uses the old names: read `nova` as 
 - Plan: `/root/.claude/plans/reflective-popping-dahl.md` (steps 1-10; 9-10 = codec optimisation +
   website audit, requested by the user alongside the rename).
 - Local-only trap: Debian's MinGW needs `-lpthread` for `clock_gettime` (Fedora's in CI does not).
+- **zsh completion broke after NOVA -> YAIF (user report, 2026-09-25)**: compinit reuses `~/.zcompdump`
+  while the COUNT of completion files is unchanged -- `_nova` out, `_yaif` in = same count, stale dump.
+  Reproduced; `install.sh` now `rm -f ${ZDOTDIR:-$HOME}/.zcompdump*` after removing NOVA (`d449271`,
+  test 5c). Existing installs: `rm -f ~/.zcompdump*; exec zsh`.
 
 - **beta.7 prepared** (version bump + `release/NOTES-v2.0.0-beta.7.md`: the rename, `.nova` no
   longer read -> convert first with the old `nova`, old installs removed -- same-kind only on
