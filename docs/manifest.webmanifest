@@ -1,0 +1,19 @@
+{
+  "name": "YAIF",
+  "short_name": "YAIF",
+  "description": "Open and create YAIF images (.yaif) on your device: photos, screenshots, animations and camera RAW files. Nothing is uploaded.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#edeff1",
+  "theme_color": "#edeff1",
+  "icons": [
+    { "src": "icons/192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "file_handlers": [
+    { "action": "./", "accept": { "image/x-yaif": [".yaif"] } }
+  ]
+}

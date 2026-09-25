@@ -3,7 +3,7 @@
 <h1>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/images/logo-dark.svg">
-    <img src=".github/images/logo-light.svg" height="72" alt="YAIF">
+    <img src=".github/images/logo-light.svg" height="102" alt="YAIF: Yet Another Image Format">
   </picture>
 </h1>
 
