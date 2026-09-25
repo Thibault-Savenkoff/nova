@@ -116,6 +116,10 @@ BD-rate on mean curves, PSNR + SSIMULACRA2 built from libjxl v0.11.1 `jxlsrc/bui
   byte-identical, checked); beta.7 decoders refuse new files (they check q <= 100). All 3 decoders,
   wasm rebuilt, `?v=15`. Not in a release yet: needs beta.8. Remaining gap to AVIF would need a new
   transform/prediction (not planned). Possible later: deringing post-filter (untested).
+- **beta.8 prepared (`6833498`)**: version bump + `release/NOTES-v2.0.0-beta.8.md` (lossy -12 %,
+  thumbnails, method names, zsh/Dolphin install fixes, web/logo). Waiting for CI then the user's tag.
+  Trap: `test/install.sh` uses port 8765 for its fake release server -- don't run a docs
+  `http.server` on 8765 at the same time (it silently exits 1 with no FAIL line).
 
 ### To do (details in the entries below)
 Next up, in order:
