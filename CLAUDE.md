@@ -97,7 +97,7 @@ wasm (1.5 MB) only fetched on first conversion, PREV shown before the full decod
 `fullPage` grows the viewport and the canvas is sized in `vh`, so freeze the canvas px size first.
 
 ### Lossy vs AVIF: research started (2026-09-25, user: "ça serait quand même cool")
-Harness in scratchpad: `bd.py <yaif> <tag>` (24 Kodak, yaif q 50/65/80/90 vs avifenc -s 4 q 50/65/80/90,
+Harness in `/var/tmp/yaif-work/` (moved off RAM-backed /tmp 2026-09-25; Lisaac compiler in `lisaac/bin`, LibRaw 0.22.1 in `lr/`): `bd.py <yaif> <tag>` (24 Kodak, yaif q 50/65/80/90 vs avifenc -s 4 q 50/65/80/90,
 BD-rate on mean curves, PSNR + SSIMULACRA2 built from libjxl v0.11.1 `jxlsrc/build/tools/ssimulacra2`;
 `QUICK=1` = 8 images), `var.sh <tag> <sed on yaif_lossy.li>` builds a variant and scores it.
 - Baseline (24 img): **YAIF vs AVIF: PSNR +15 %, SSIMULACRA2 +31 %** (JXL: +52 % / +2 %).
@@ -146,7 +146,7 @@ BD-rate on mean curves, PSNR + SSIMULACRA2 built from libjxl v0.11.1 `jxlsrc/bui
   `chroma_filter`. Integer rules: floor divisions only (`fdiv`, never `/` or `>>` on negatives: Lisaac
   Int = int64_t, JS exact below 2^53), I and C clamped to +-8192 for the sums, `a` clamped to +-32767
   (Q12), 5-row rings (O(width) memory, safe on phones). Encoder filters its reconstruction too.
-- Prototype + scores: scratchpad `dflt/proto.py` (float, on decoded PNGs), `panel.py` (zoom panels),
+- Prototype + scores: `/var/tmp/yaif-work/dflt/proto.py` (decoded PNGs in `dflt/dec` deleted, regenerate) (float, on decoded PNGs), `panel.py` (zoom panels),
   `flag.py` (sets the bit on an old file). Rejected: CDEF-like constrained smoothing on luma/chroma
   (metrics flat, no visible gain: a threshold protects exactly the big chroma jumps at edges), guided
   filter without fade (q 90 SS2 86.1 -> 84.8), edge masks (worse).
@@ -155,7 +155,8 @@ BD-rate on mean curves, PSNR + SSIMULACRA2 built from libjxl v0.11.1 `jxlsrc/bui
   next to edges in skies, kodim19) NOT addressed** -- y8 luma smoothing tried, nothing visible.
 - All tests green: lossy.sh (+q 50 recon), js.sh/libyaif.sh (+q 50/70), replicas.sh (+q 50), unit.sh
   2768/0 + 720 corrupt files. Needs a beta.9 (format flag). Local trap: `test/unit.sh` exits 1 silently
-  when `lisaac` is not on PATH (scratchpad `lisaac/bin`).
+  when `lisaac` is not on PATH (`/var/tmp/yaif-work/lisaac/bin`). **Keep big work files out of the
+  scratchpad: /tmp is RAM (tmpfs, 3.9 G on a 7 G host)** -- use /var/tmp/yaif-work.
 
 ### To do (details in the entries below)
 Next up, in order:
