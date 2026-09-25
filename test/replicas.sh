@@ -25,8 +25,8 @@ same() {  # $1 label, then the yaif arguments with OUT for the output file
 }
 for f in "$@"; do
   b=$(basename "$f")
-  for m in adaptive lossless lossy; do
-    case $f in *.CR3) [ $m = adaptive ] || continue;; esac
+  for m in adaptive lossless lossy "lossy -q 50"; do
+    case $f in *.CR3) [ "$m" = adaptive ] || continue;; esac
     same "$b -m $m" encode "$f" OUT.yaif -m $m
     cp $T/n.yaif $T/src.yaif
     same "$b -m $m decode" decode $T/src.yaif OUT.jpg

@@ -127,7 +127,7 @@ Reference: `Codec.codeRegion`, `predict`, `blend`, `nlms`, `setContexts`, `codeR
 ### 5.4 Level 5: wavelet (lossy photos)
 
 ```
-RGB:   u8 ns, ns x (u32 length, stream)
+RGB:   u8 ns, ns x (u32 length, stream)      ns: stripe count (1-16), + 128 when the chroma filter applies
 RGBA:  u32 n, the RGB part above (n bytes), then the alpha plane as a coded region (levels 1-4, lossless)
 ```
 
@@ -139,6 +139,11 @@ RGBA:  u32 n, the RGB part above (n bytes), then the alpha plane as a coded regi
   quality = byte - 128, chroma steps x 300/256 and 246/256, finest detail bands (level 0) x 340/256.
   Below 128 (earlier files, still read): chroma x 512/256 and 420/256, no finest-band factor.
 - Stripes: `ns` stripes of rows multiple of `2^levels` (`lossyRows`), independent streams.
+- Chroma filter, when bit 7 of `ns` is set (written from 2.0.0-beta.9 on) and quality < 85: after the
+  inverse transform, Co and Cg are each pulled toward a linear fit of chroma on luma over 5 x 5
+  windows (a guided filter), with strength 64/64 up to quality 50 and `(85 - q) * 64 / 35` above.
+  Exact integers; the reference is `chromaFilter` (`docs/yaif_decode.js`), whose values every decoder
+  must reproduce bit for bit (edges replicated, floor divisions).
 - Coefficients: low band with MED prediction, then high bands coarse to fine (HL, LH, HH). The finest
   bands carry one zero flag per 2x2 block of positions (all three planes). Contexts: neighbours, parent band, the other
   orientations, the luma plane for chroma. Reference: `Lossy.decodeStripe`, `codeBand`, `codeFlags`,

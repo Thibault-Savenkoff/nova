@@ -224,15 +224,15 @@
   <span>YAIF v2. Images never leave your device.</span>
   <a href="https://github.com/Thibault-Savenkoff/yaif">Source on GitHub</a>
 </footer>
-<script defer src="yaif_decode.js?v=15"></script>
-<script defer src="heif_meta.js?v=15"></script>
-<script defer src="meta_strip.js?v=15"></script>
+<script defer src="yaif_decode.js?v=16"></script>
+<script defer src="heif_meta.js?v=16"></script>
+<script defer src="meta_strip.js?v=16"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 // Cache buster of the scripts and workers: bump it with the ?v= of the script tags above at each
 // release, or a browser can mix a cached worker with a new decoder.
-const V = '?v=15';
+const V = '?v=16';
 let cv = $('cv'), ctx = cv.getContext('2d');
 const info = $('info'), bar = $('bar'), fill = bar.firstElementChild;
 let name = 'image', timer = null, token = 0;
@@ -261,7 +261,7 @@ function runner(progress, stat = {}) {
     stat.used = Math.max(stat.used || 1, Math.min(ws.length, jobs.length));
     if (!ws.length) return jobs.map(YaifDecode.runJob);
     // The wavelet planes (l5p) come after the stripes: the bar stays full meanwhile.
-    try { return await onWorkers(ws, jobs, jobs[0] && jobs[0].kind === 'l5p' ? () => {} : progress); }
+    try { return await onWorkers(ws, jobs, jobs[0] && /^l5[pc]$/.test(jobs[0].kind) ? () => {} : progress); }
     catch (e) {
       // Workers can fail to load after creation (file://, blocked script): decode here instead.
       if (!e.workerFailed) throw e;

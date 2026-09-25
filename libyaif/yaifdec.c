@@ -965,6 +965,74 @@ static void lossy_plane(int32_t *a, int w, int h, int q, int p) {
   wavelet_inverse(a, w, h, levels);
 }
 
+/* Chroma filter (level 5, flagged by bit 7 of the stripe count, files from 2.0.0-beta.9 on): each
+   chroma value is pulled toward a linear fit of chroma on luma over its 5 x 5 window (a guided
+   filter), which removes the coloured fringes the wavelet leaves along edges. Full strength up to
+   q 50, fading out to none at q 85. Exact integers (the 3 decoders must agree): floor divisions
+   only, all products below 2^53. Rows are filtered in place, 5-row rings keep what is still needed. */
+static int64_t fdiv(int64_t n, int64_t d) { return n >= 0 ? n / d : -((-n + d - 1) / d); }
+static int32_t clamp13(int32_t v) { return v < -8192 ? -8192 : v > 8191 ? 8191 : v; }
+static int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+static int chroma_filter(const int32_t *Y, int32_t *C, int w, int h, int q) {
+  int e = 108 - q, f = q <= 50 ? 64 : (85 - q) * 64 / 35, na = 0, ns = 0, x, y, d;
+  int64_t v = (int64_t)(29 * POW_T[e % 14]) << (e / 14), eps = v * v / 4000000 * 625;
+  int32_t *m = q < 85 ? malloc((size_t)w * 32 * sizeof(int32_t)) : NULL;
+  /* m: horizontal 5-sums of I, C, I^2, IC for 5 source rows (20 rows), of a and b for 5 rows (10),
+     then one row each of a and b */
+  int32_t *hI = m, *hC = m + 5 * w, *hII = m + 10 * w, *hIC = m + 15 * w, *ha = m + 20 * w, *hb = m + 25 * w;
+  int32_t *ra = m + 30 * w, *rb = m + 31 * w;
+  if (q >= 85) return 1;
+  if (!m) return 0;
+  for (y = 0; y < h; y++) {
+    while (na <= (y + 2 < h ? y + 2 : h - 1)) {
+      while (ns <= (na + 2 < h ? na + 2 : h - 1)) {
+        size_t o = (size_t)(ns % 5) * w;
+        const int32_t *yr = Y + (size_t)ns * w, *cr = C + (size_t)ns * w;
+        for (x = 0; x < w; x++) {
+          int32_t sI = 0, sC = 0, sII = 0, sIC = 0;
+          for (d = -2; d <= 2; d++) {
+            int xx = clampi(x + d, 0, w - 1);
+            int32_t i = clamp13(yr[xx]), c = clamp13(cr[xx]);
+            sI += i; sC += c; sII += i * i; sIC += i * c;
+          }
+          hI[o + x] = sI; hC[o + x] = sC; hII[o + x] = sII; hIC[o + x] = sIC;
+        }
+        ns++;
+      }
+      for (x = 0; x < w; x++) {
+        int64_t sI = 0, sC = 0, sII = 0, sIC = 0, a;
+        for (d = -2; d <= 2; d++) {
+          size_t o = (size_t)(clampi(na + d, 0, h - 1) % 5) * w + x;
+          sI += hI[o]; sC += hC[o]; sII += hII[o]; sIC += hIC[o];
+        }
+        a = fdiv((25 * sIC - sI * sC) * 4096, 25 * sII - sI * sI + eps);
+        a = a < -32768 ? -32768 : a > 32767 ? 32767 : a;
+        ra[x] = (int32_t)a;
+        rb[x] = (int32_t)fdiv(sC * 4096 - a * sI, 6400);
+      }
+      for (x = 0; x < w; x++) {
+        int32_t sa = 0, sb = 0;
+        for (d = -2; d <= 2; d++) { int xx = clampi(x + d, 0, w - 1); sa += ra[xx]; sb += rb[xx]; }
+        ha[(size_t)(na % 5) * w + x] = sa; hb[(size_t)(na % 5) * w + x] = sb;
+      }
+      na++;
+    }
+    for (x = 0; x < w; x++) {
+      int64_t sa = 0, sb = 0, g;
+      size_t i = (size_t)y * w + x;
+      for (d = -2; d <= 2; d++) {
+        size_t o = (size_t)(clampi(y + d, 0, h - 1) % 5) * w + x;
+        sa += ha[o]; sb += hb[o];
+      }
+      g = fdiv(sa * clamp13(Y[i]) * 16 + sb * 4096 + 819200, 1638400);
+      C[i] = (int32_t)(C[i] + fdiv((g - C[i]) * f + 32, 64));
+    }
+  }
+  free(m);
+  return 1;
+}
+
 static uint8_t px6(int v) { v = (v + 32) >> 6; return (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v); }
 
 /* Writes the YCoCg planes (after lossy_plane) as RGB into buf (region x0, y0, w, h of stride s). */
@@ -998,7 +1066,7 @@ static int run_jobs(int n, job_fn fn, void *ctx, State *S);
 typedef struct {
   const uint8_t *data;
   size_t off[16], len[16];
-  int ns, ok;
+  int ns, ok, filt;
   int32_t *P[3];                    /* level 5 */
   int fw, fh, q;
   uint8_t *buf;                     /* levels 1-4 */
@@ -1019,6 +1087,12 @@ static void plane_job(void *ctx, int i, State *S) {
   lossy_plane(J->P[i], J->fw, J->fh, J->q, i);
 }
 
+static void chroma_job(void *ctx, int i, State *S) {
+  Stripes *J = ctx;
+  (void)S;
+  if (!chroma_filter(J->P[0], J->P[i + 1], J->fw, J->fh, J->q & 127)) J->ok = 0;
+}
+
 static void l14_job(void *ctx, int i, State *S) {
   Stripes *J = ctx;
   Codec *c = &S->c;
@@ -1037,7 +1111,8 @@ static int stripe_table(Stripes *J, const uint8_t *d, size_t pos, size_t end) {
   size_t tp = pos + 1;
   int i;
   if (pos >= end) return 0;
-  J->ns = d[pos];
+  J->ns = d[pos] & 127;
+  J->filt = d[pos] >> 7;
   if (J->ns < 1 || J->ns > 16) return 0;
   for (i = 0; i < J->ns; i++) {
     size_t sl;
@@ -1075,6 +1150,7 @@ static int decode_region(State *S, const uint8_t *data, size_t pos, size_t len, 
     ok = J.P[0] && J.P[1] && J.P[2] && run_jobs(J.ns, l5_job, &J, S) && J.ok;
     if (ok) {
       ok = run_jobs(3, plane_job, &J, S);
+      if (ok && J.filt) ok = run_jobs(2, chroma_job, &J, S) && J.ok;
       if (ok) lossy_finish(J.P, fw, fh, buf, s, x0, y0);
     }
     for (c = 0; c < 3; c++) free(J.P[c]);
@@ -1092,7 +1168,7 @@ static int decode_region(State *S, const uint8_t *data, size_t pos, size_t len, 
   if (len >= 3 && lv >= 1 && lv <= 4 && q <= 64) {
     Stripes J;
     memset(&J, 0, sizeof J);
-    if (!stripe_table(&J, data, pos + 2, pos + len) || J.ns > fh) return 0;
+    if (!stripe_table(&J, data, pos + 2, pos + len) || J.filt || J.ns > fh) return 0;
     J.data = data; J.buf = buf; J.s = s; J.x0 = x0; J.y0 = y0; J.fw = fw; J.fh = fh;
     J.rows = (fh + J.ns - 1) / J.ns; J.np = np; J.lv = lv; J.q = q; J.ok = 1;
     if ((J.ns - 1) * J.rows >= fh) return 0;

@@ -39,7 +39,7 @@ print('ok' if ref.shape == js.shape and (ref == js).all() else 'bad %s %s %d' % 
 }
 for f in "$@"; do
   b=$(basename ${f%% *}); [ "$f" != "${f%% *}" ] && b="$b (animation)"
-  for m in "-m lossless -l 1" "-m lossless -l 2" "-m lossless -l 3" "-m lossless -l 4" "-l 5" "-m lossless -l 0" "-m lossy -l 3 -e 2" "-m lossy -l 4 -e 1"; do
+  for m in "-m lossless -l 1" "-m lossless -l 2" "-m lossless -l 3" "-m lossless -l 4" "-l 5" "-l 5 -q 50" "-l 5 -q 70" "-m lossless -l 0" "-m lossy -l 3 -e 2" "-m lossy -l 4 -e 1"; do
     ./yaif encode $f $T/t.yaif $m >/dev/null 2>&1 || { echo "SKIP $b $m"; continue; }
     cmp_js $T/t.yaif "$b $m"
     case $b in photo.png) cmp_js $T/t.yaif "$b $m PREV" preview;; esac

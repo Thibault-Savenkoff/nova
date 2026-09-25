@@ -20,6 +20,11 @@ Public
   // 0: the first setup allocates them in shared memory, even for a region of 4 samples or less.
   - pcap:Int
 
+  // Row rings of chroma_filter (32 rows of w), private to each process.
+  - fm:C_array Int32 := C_array Int32.create 4
+
+  - fcap:Int
+
   - pa p:Int :C_array Int32 <-
   ( + result:C_array Int32
     (p = 0).if { result := pl0 }.elseif {p = 1} then { result := pl1 } else { result := pl2 }
@@ -553,6 +558,10 @@ Public
       pl1 := Yaif_par.shared_int32 pcap
       pl2 := Yaif_par.shared_int32 pcap
     }
+    (w * 32 > fcap).if {
+      fcap := w * 32
+      fm := C_array Int32.create fcap
+    }
     pow_t.at 0 put 1000
     pow_t.at 1 put 1051
     pow_t.at 2 put 1104
@@ -580,6 +589,121 @@ Public
       (n <= 0).if {
         Yaif_wavelet.setup (pa p) size (w, h)
         (inv).if { Yaif_wavelet.inverse } else { Yaif_wavelet.forward }
+        (n = 0).if { Yaif_par.finish }
+      }
+    }
+    Yaif_par.wait_all
+  )
+
+  //
+  // Chroma filter (files from 2.0.0-beta.9 on, bit 7 of the stripe count): each chroma value is
+  // pulled toward a linear fit of chroma on luma over its 5 x 5 window (a guided filter), which
+  // removes the coloured fringes the wavelet leaves along edges. Full strength up to q 50, none from
+  // q 85. libyaif/yaifdec.c and docs/yaif_decode.js must give the same values: exact integers,
+  // floor divisions only, products below 2^53. Rows are filtered in place; the rings of fm keep the
+  // sums still needed (horizontal 5-sums of I, C, I^2, IC for 5 source rows, of a and b for 5 rows).
+  //
+
+  - fdiv n:Int by d:Int :Int <-
+  ( + result:Int
+    (n >= 0).if { result := n / d } else { result := - ((d - 1 - n) / d) }
+    result
+  )
+
+  - c13 v:Int :Int <- (v.max (-8192)).min 8191
+
+  - chroma_filter p:Int <-
+  ( + q,e,f,na,ns,xx,o,r,si,sc,sii,sic,a,g,v,eps,yi,ci:Int
+    + yp,cp:C_array Int32
+    q := quality & 127
+    (q < 85).if {
+      e := 108 - q
+      f := 64
+      (q > 50).if { f := (85 - q) * 64 / 35 }
+      v := (29 * (pow_t.at (e % 14))) << (e / 14)
+      eps := v * v / 4000000 * 625
+      yp := pl0
+      cp := pa p
+      0.to (h - 1) do { y:Int
+        {na <= ((y + 2).min (h - 1))}.while_do {
+          {ns <= ((na + 2).min (h - 1))}.while_do {
+            o := (ns % 5) * w
+            0.to (w - 1) do { x:Int
+              si := 0
+              sc := 0
+              sii := 0
+              sic := 0
+              0.to 4 do { d:Int
+                xx := ((x + d - 2).max 0).min (w - 1)
+                yi := c13 ((yp.at (ns * w + xx)).to_int)
+                ci := c13 ((cp.at (ns * w + xx)).to_int)
+                si := si + yi
+                sc := sc + ci
+                sii := sii + yi * yi
+                sic := sic + yi * ci
+              }
+              fm.at (o + x) put (si.to_raw_int32)
+              fm.at (5 * w + o + x) put (sc.to_raw_int32)
+              fm.at (10 * w + o + x) put (sii.to_raw_int32)
+              fm.at (15 * w + o + x) put (sic.to_raw_int32)
+            }
+            ns := ns + 1
+          }
+          0.to (w - 1) do { x:Int
+            si := 0
+            sc := 0
+            sii := 0
+            sic := 0
+            0.to 4 do { d:Int
+              o := ((((na + d - 2).max 0).min (h - 1)) % 5) * w + x
+              si := si + (fm.at o).to_int
+              sc := sc + (fm.at (5 * w + o)).to_int
+              sii := sii + (fm.at (10 * w + o)).to_int
+              sic := sic + (fm.at (15 * w + o)).to_int
+            }
+            a := fdiv ((25 * sic - si * sc) * 4096) by (25 * sii - si * si + eps)
+            a := (a.max (-32768)).min 32767
+            fm.at (30 * w + x) put (a.to_raw_int32)
+            fm.at (31 * w + x) put ((fdiv (sc * 4096 - a * si) by 6400).to_raw_int32)
+          }
+          o := (na % 5) * w
+          0.to (w - 1) do { x:Int
+            si := 0
+            sc := 0
+            0.to 4 do { d:Int
+              xx := ((x + d - 2).max 0).min (w - 1)
+              si := si + (fm.at (30 * w + xx)).to_int
+              sc := sc + (fm.at (31 * w + xx)).to_int
+            }
+            fm.at (20 * w + o + x) put (si.to_raw_int32)
+            fm.at (25 * w + o + x) put (sc.to_raw_int32)
+          }
+          na := na + 1
+        }
+        0.to (w - 1) do { x:Int
+          si := 0
+          sc := 0
+          0.to 4 do { d:Int
+            o := ((((y + d - 2).max 0).min (h - 1)) % 5) * w + x
+            si := si + (fm.at (20 * w + o)).to_int
+            sc := sc + (fm.at (25 * w + o)).to_int
+          }
+          r := y * w + x
+          ci := (cp.at r).to_int
+          g := fdiv (si * (c13 ((yp.at r).to_int)) * 16 + sc * 4096 + 819200) by 1638400
+          cp.at r put ((ci + fdiv ((g - ci) * f + 32) by 64).to_raw_int32)
+        }
+      }
+    }
+  )
+
+  - filter_chroma <-
+  // One process per chroma plane (they read luma, write only their own plane).
+  ( + n:Int
+    1.to 2 do { p:Int
+      n := Yaif_par.start
+      (n <= 0).if {
+        chroma_filter p
         (n = 0).if { Yaif_par.finish }
       }
     }
@@ -626,7 +750,7 @@ Public
       }
     }
     Yaif_par.wait_all
-    Yaif_codec.put_byte ns
+    Yaif_codec.put_byte (ns + 128)
     0.to (ns - 1) do { i:Int
       n := (lens.at i).to_int
       Yaif_codec.put_u32 n
@@ -638,18 +762,21 @@ Public
     Yaif_par.free lens size (ns * 4)
     each_band_quant True
     transform True
+    filter_chroma
     from_planes buf stride s region (x0, y0)
   )
 
   - decode data:C_array Uint8 from pos:Int size len:Int into buf:C_array Uint8 stride s:Int region (x0,y0,fw,fh:Int) quality q:Int :Boolean <-
   ( + ns,p,n:Int
-    + ok:Boolean
+    + ok,filt:Boolean
     + offs:C_array Int
     + st:C_array Int32
     setup (fw, fh) quality q
     ok := len >= 1
     (ok).if {
       ns := (data.at pos).to_int
+      filt := ns >= 128
+      ns := ns & 127
       ok := (ns >= 1) && {ns <= 16}
     }
     // Stream offsets first (offs: start, length per stripe), then the stripes in parallel.
@@ -687,6 +814,7 @@ Public
     }
     each_band_quant True
     transform True
+    (filt).if { filter_chroma }
     from_planes buf stride s region (x0, y0)
     ok
   )

@@ -914,6 +914,62 @@ function lossyPlane(a, w, h, q, p) {
   waveletInverse(a, w, h, levels);
 }
 
+// Chroma filter (files from 2.0.0-beta.9 on, bit 7 of the stripe count): see chroma_filter in
+// libyaif/yaifdec.c. Exact integers: every product stays below 2^53, so Math.floor of a quotient is
+// the true floor.
+const fdiv = (n, d) => n >= 0 ? Math.floor(n / d) : -Math.floor((d - 1 - n) / d);
+const c13 = v => v < -8192 ? -8192 : v > 8191 ? 8191 : v;
+function chromaFilter(Y, C, w, h, q) {
+  if (q >= 85) return;
+  const e = 108 - q, f = q <= 50 ? 64 : Math.floor((85 - q) * 64 / 35);
+  const v = 29 * POW_T[e % 14] * 2 ** Math.floor(e / 14), eps = Math.floor(v * v / 4000000) * 625;
+  const hI = new Int32Array(5 * w), hC = new Int32Array(5 * w), hII = new Int32Array(5 * w), hIC = new Int32Array(5 * w);
+  const ha = new Int32Array(5 * w), hb = new Int32Array(5 * w), ra = new Int32Array(w), rb = new Int32Array(w);
+  const cx = x => x < 0 ? 0 : x > w - 1 ? w - 1 : x, cy = y => y < 0 ? 0 : y > h - 1 ? h - 1 : y;
+  let na = 0, ns = 0;
+  for (let y = 0; y < h; y++) {
+    while (na <= Math.min(y + 2, h - 1)) {
+      while (ns <= Math.min(na + 2, h - 1)) {
+        const o = (ns % 5) * w, r = ns * w;
+        for (let x = 0; x < w; x++) {
+          let sI = 0, sC = 0, sII = 0, sIC = 0;
+          for (let d = -2; d <= 2; d++) {
+            const xx = cx(x + d), i = c13(Y[r + xx]), c = c13(C[r + xx]);
+            sI += i; sC += c; sII += i * i; sIC += i * c;
+          }
+          hI[o + x] = sI; hC[o + x] = sC; hII[o + x] = sII; hIC[o + x] = sIC;
+        }
+        ns++;
+      }
+      for (let x = 0; x < w; x++) {
+        let sI = 0, sC = 0, sII = 0, sIC = 0;
+        for (let d = -2; d <= 2; d++) {
+          const o = (cy(na + d) % 5) * w + x;
+          sI += hI[o]; sC += hC[o]; sII += hII[o]; sIC += hIC[o];
+        }
+        let a = fdiv((25 * sIC - sI * sC) * 4096, 25 * sII - sI * sI + eps);
+        a = a < -32768 ? -32768 : a > 32767 ? 32767 : a;
+        ra[x] = a;
+        rb[x] = fdiv(sC * 4096 - a * sI, 6400);
+      }
+      const o = (na % 5) * w;
+      for (let x = 0; x < w; x++) {
+        let sa = 0, sb = 0;
+        for (let d = -2; d <= 2; d++) { const xx = cx(x + d); sa += ra[xx]; sb += rb[xx]; }
+        ha[o + x] = sa; hb[o + x] = sb;
+      }
+      na++;
+    }
+    for (let x = 0; x < w; x++) {
+      let sa = 0, sb = 0;
+      for (let d = -2; d <= 2; d++) { const o = (cy(y + d) % 5) * w + x; sa += ha[o]; sb += hb[o]; }
+      const i = y * w + x, c = C[i];
+      const g = fdiv(sa * c13(Y[i]) * 16 + sb * 4096 + 819200, 1638400);
+      C[i] = c + fdiv((g - c) * f + 32, 64);
+    }
+  }
+}
+
 // Writes the YCoCg planes (after lossyPlane) as RGB into buf (region x0, y0, w, h of stride s).
 function lossyFinish(planes, w, h, buf, s, x0, y0) {
   const px = v => { v = (v + 32) >> 6; return v < 0 ? 0 : v > 255 ? 255 : v; };
@@ -932,9 +988,10 @@ function lossyFinish(planes, w, h, buf, s, x0, y0) {
 // Stripe table of a level-5 block: [{off, len}] or null.
 function lossyTable(d, pos, len, w, h) {
   if (len < 1) return null;
-  const ns = d[pos];
+  const ns = d[pos] & 127;
   if (ns < 1 || ns > 16) return null;
   const out = [];
+  out.filt = d[pos] >= 128;
   let p = pos + 1;
   for (let i = 0; i < ns; i++) {
     if (p + 4 > pos + len) return null;
@@ -953,7 +1010,8 @@ function lossyTable(d, pos, len, w, h) {
 
 // Jobs: {kind: 'l14', data, off, len, fw, rows, np, level, eps, img (RGBA of the stripe)} or
 // {kind: 'l5', data, off, len, w, h, s, ns} -> 3 Int32Array planes of the stripe rows, or
-// {kind: 'l5p', plane, w, h, q, p} -> the plane dequantized and back from the wavelet.
+// {kind: 'l5p', plane, w, h, q, p} -> the plane dequantized and back from the wavelet, or
+// {kind: 'l5c', plane, y, w, h, q} -> the chroma plane after chromaFilter (y: the luma plane).
 let worker = null;
 function jobState() {
   if (!worker) { const m = new Model(); worker = { m, codec: new Codec(m), lossy: new Lossy(m) }; }
@@ -971,6 +1029,10 @@ function runJob(j) {
     st.m.start(j.data, j.off, j.len, j.fw * j.rows * j.np, j.level);
     c.codeRegion(j.np);
     return { ok: !st.m.overrun, img: j.img };
+  }
+  if (j.kind === 'l5c') {
+    chromaFilter(j.y, j.plane, j.w, j.h, j.q & 127);
+    return { ok: true, plane: j.plane };
   }
   if (j.kind === 'l5p') {
     lossyPlane(j.plane, j.w, j.h, j.q, j.p);
@@ -1010,8 +1072,9 @@ async function decodeRegion(data, pos, len, buf, s, x0, y0, fw, fh, np, run, inf
       const a = lossyRows(fw, fh, i, tab.length)[0] * fw;
       for (let c = 0; c < 3; c++) planes[c].set(r.planes[c], a);
     });
-    const fin = await run(planes.map((a, p) => ({ kind: 'l5p', plane: a, w: fw, h: fh, q, p })));
-    lossyFinish(fin.map(r => r.plane), fw, fh, buf, s, x0, y0);
+    let fin = (await run(planes.map((a, p) => ({ kind: 'l5p', plane: a, w: fw, h: fh, q, p })))).map(r => r.plane);
+    if (tab.filt && (q & 127) < 85) fin = [fin[0], ...(await run(fin.slice(1).map(a => ({ kind: 'l5c', plane: a, y: fin[0], w: fw, h: fh, q })))).map(r => r.plane)];
+    lossyFinish(fin, fw, fh, buf, s, x0, y0);
     if (np === 4 && ok) {
       const a = new Uint8Array(fw * fh * 4);
       for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) a[(y * fw + x) * 4 + 1] = buf[((y0 + y) * s + x0 + x) * 4 + 3];
