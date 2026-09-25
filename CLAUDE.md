@@ -43,7 +43,8 @@ entry BELOW this one predates the rename and uses the old names: read `nova` as 
   bash-completion), fish (`complete -C`), pwsh (`TabExpansion2`, `yaif` and `yaif.exe`) give the
   subcommands, `-m`/`-look` values and `.yaif` files; zsh registers `_yaif` (#compdef). User renamed
   `~/photos-nova` to `~/photos-yaif`. Left: steps 9 (codec optimisation) and 10 (website audit),
-  `site.jpg` retake, and the Windows NOVA-removal test (user rebooting to try it).
+  `site.jpg` retake. **Windows NOVA removal CONFIRMED on the user's PC (2026-09-25)**: the beta.7
+  `-setup.exe` removed the installed NOVA (NSIS `RemoveNova` section works for real).
 
 ### To do (details in the entries below)
 Next up, in order:
