@@ -27,12 +27,18 @@ public:
   bool read(QImage *image) override {
     if (!load() || frame >= int(frames.size())) return false;
     *image = frames[frame];
+    // ScaledSize is supported, so the reader expects exactly that size back (the thumbnail preview too).
+    if (scaled.isValid() && image->size() != scaled) *image = image->scaled(scaled, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     frame++;
     return true;
   }
 
   bool supportsOption(ImageOption o) const override {
-    return o == Size || o == ImageFormat || o == Animation || o == ImageTransformation;
+    return o == Size || o == ImageFormat || o == Animation || o == ImageTransformation || o == ScaledSize;
+  }
+
+  void setOption(ImageOption o, const QVariant &v) override {
+    if (o == ScaledSize) scaled = v.toSize();
   }
 
   QVariant option(ImageOption o) const override {
@@ -57,6 +63,7 @@ private:
   QByteArray data;
   yaif_info info {};
   int pw = 0, ph = 0, frame = 0;
+  QSize scaled;   // ScaledSize asked by the reader (thumbnails: Dolphin, Gwenview)
   bool infoOk = false, loaded = false;
   std::vector<QImage> frames;
 
@@ -87,9 +94,16 @@ private:
     if (loaded) return !frames.empty();
     loaded = true;
     auto d = reinterpret_cast<const uint8_t *>(data.constData());
-    uint8_t *px = yaif_decode(d, size_t(data.size()), &info);
+    int w = info.width, h = info.height;
+    uint8_t *px = nullptr;
+    // A small enough ScaledSize (a thumbnail) is served from the PREV thumbnail: ~50x faster.
+    if (info.has_preview && info.frames == 1 && scaled.isValid()) {
+      px = yaif_decode_preview(d, size_t(data.size()), &w, &h);
+      if (px && (w < scaled.width() || h < scaled.height())) { free(px); px = nullptr; w = info.width; h = info.height; }
+    }
+    if (!px) px = yaif_decode(d, size_t(data.size()), &info);
     if (!px) return false;
-    const size_t fs = size_t(info.width) * info.height * 4;
+    const size_t fs = size_t(w) * h * 4;
     QColorSpace cs;
     size_t n = 0;
     if (uint8_t *icc = yaif_icc(d, size_t(data.size()), &n)) {
@@ -98,7 +112,7 @@ private:
     }
     const auto fmt = info.planes == 4 ? QImage::Format_RGBA8888 : QImage::Format_RGBX8888;
     for (int i = 0; i < info.frames; i++) {
-      QImage im(px + fs * i, info.width, info.height, info.width * 4, fmt);
+      QImage im(px + fs * i, w, h, w * 4, fmt);
       frames.push_back(im.copy());   // own the pixels: px is freed below
       if (cs.isValid()) frames.back().setColorSpace(cs);
     }

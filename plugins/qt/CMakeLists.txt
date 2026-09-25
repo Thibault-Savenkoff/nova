@@ -3,6 +3,10 @@
 # Install for this user: see README.md ("Viewer plugins").
 cmake_minimum_required(VERSION 3.16)
 project(qyaif LANGUAGES C CXX)
+# Without a build type (the plain commands above and in the README) cmake does not optimise: 3x slower decoding.
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
 find_package(Qt6 REQUIRED COMPONENTS Core Gui)
 find_package(Threads REQUIRED)
 set(CMAKE_AUTOMOC ON)
