@@ -203,15 +203,18 @@ add_fpath_line() {  # like add_rc_line, but inserted before compinit/oh-my-zsh (
 # ---- uninstall ----
 enable_dolphin_thumbnailer() {
   if ! command -v kreadconfig6 >/dev/null 2>&1 || ! command -v kwriteconfig6 >/dev/null 2>&1; then
-    info "kreadconfig6/kwriteconfig6 not found, enable yaifthumb in Dolphin's settings manually"
+    info "kreadconfig6/kwriteconfig6 not found, tick YAIF Images in Dolphin's preview settings"
     return 0
   fi
   local cur new
   cur=$(kreadconfig6 --file dolphinrc --group PreviewSettings --key Plugins 2>/dev/null) || cur=
+  # The plugin's id is its file name, libyaifthumb (cmake adds "lib"). No Plugins= list at all means
+  # Dolphin's defaults, which include every new thumbnailer: writing one would switch the others off.
   case ",$cur," in
-    *,yaifthumb,*) ok "Dolphin already uses the YAIF thumbnailer" ;;
+    ,,) ok "Dolphin uses its default thumbnailers, the YAIF one included (restart Dolphin)" ;;
+    *,libyaifthumb,*) ok "Dolphin already uses the YAIF thumbnailer" ;;
     *)
-      new=${cur:+$cur,}yaifthumb
+      new=$cur,libyaifthumb
       run user kwriteconfig6 --file dolphinrc --group PreviewSettings --key Plugins "$new" ||
         { warn "could not enable the Dolphin thumbnailer"; return 0; }
       record dolphin "$cur"
