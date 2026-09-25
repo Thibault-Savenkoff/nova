@@ -138,6 +138,25 @@ BD-rate on mean curves, PSNR + SSIMULACRA2 built from libjxl v0.11.1 `jxlsrc/bui
   `site.jpg` retaken. Page light background is `#edeff1` by design (looks grey next to GitHub's
   white README) -- **kept (user, 2026-09-25)**: ground/surface two-level palette, less glare.
 
+### Chroma filter (2026-09-25, `d6b1a43`, user: "même si on ne gagne pas en taille garde le filtre")
+- Shown to the user at q 50 x6 zoom: green/red/blue fringes around dark text (kodim03) = chroma ringing.
+  **Fix: guided filter on Co/Cg (5x5, chroma fit on luma)**, strength 64/64 up to q 50, `(85-q)*64/35`
+  above, none from q 85 (default q 90 untouched). Flag = **bit 7 of the level-5 stripe count byte**;
+  unflagged files byte-identical. Spec in FORMAT.md 5.4; C reference comment in `libyaif/yaifdec.c`
+  `chroma_filter`. Integer rules: floor divisions only (`fdiv`, never `/` or `>>` on negatives: Lisaac
+  Int = int64_t, JS exact below 2^53), I and C clamped to +-8192 for the sums, `a` clamped to +-32767
+  (Q12), 5-row rings (O(width) memory, safe on phones). Encoder filters its reconstruction too.
+- Prototype + scores: scratchpad `dflt/proto.py` (float, on decoded PNGs), `panel.py` (zoom panels),
+  `flag.py` (sets the bit on an old file). Rejected: CDEF-like constrained smoothing on luma/chroma
+  (metrics flat, no visible gain: a threshold protects exactly the big chroma jumps at edges), guided
+  filter without fade (q 90 SS2 86.1 -> 84.8), edge masks (worse).
+- Result (real encoder, 24 Kodak vs AVIF): SS2 +19.2 -> +19.0 %, PSNR +14.2 -> +13.9 %. Decode cost
+  7.7 Mpx q 50: +0.5 s native, +1 s CPU libyaif, +3 s single-thread JS. **Luma halos (grey smudges
+  next to edges in skies, kodim19) NOT addressed** -- y8 luma smoothing tried, nothing visible.
+- All tests green: lossy.sh (+q 50 recon), js.sh/libyaif.sh (+q 50/70), replicas.sh (+q 50), unit.sh
+  2768/0 + 720 corrupt files. Needs a beta.9 (format flag). Local trap: `test/unit.sh` exits 1 silently
+  when `lisaac` is not on PATH (scratchpad `lisaac/bin`).
+
 ### To do (details in the entries below)
 Next up, in order:
 1. **Mac test on real hardware** (user has no Mac access right now): `install.sh`, `nova convert`
