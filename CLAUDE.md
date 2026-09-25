@@ -1,6 +1,6 @@
 ## Current state
 
-_Updated 2026-09-24._
+_Updated 2026-09-25._
 
 ### NOVA is now YAIF (2026-09-24)
 **Renamed NOVA -> YAIF ("Yet Another Image Format", user's pick for its self-deprecation).** Every
@@ -58,12 +58,19 @@ Bench here (8 Kodak PNGs, sample photo + screenshot decoded from docs/samples; s
   limit 30/127): all within +-0.1 % -- already tuned.
 - **Found**: Qt/KDE (Dolphin/Gwenview) and gdk-pixbuf plugins decode the FULL image for thumbnails;
   the `PREV` (512 px, present > 2 Mpx) decodes in 0.04 s vs 1.9 CPU-s for a 7.7 Mpx photo (~50x).
-  WIC already uses it. Plugin-only fix, format unchanged -- **proposed, awaiting the user's go.**
+  WIC already uses it. **Done (`4e14d22`)**: Qt handler supports `ScaledSize` (serves PREV when it
+  covers the size, scales itself), gdk-pixbuf uses its `size_func` size the same way. Measured here
+  (Qt 6 + gdk-pixbuf dev installed): 256 px thumb 612 -> 48 ms (Qt), 640 -> 60 ms (gdk-pixbuf);
+  larger sizes/animations/no-PREV unchanged. Glycin left alone (untestable). Qt CMakeLists defaults to
+  Release (plain `cmake -B build` from the README was -O0, 3x slower). **To confirm in Dolphin.**
+  Trap: gdk-pixbuf on Linux sniffs by MIME (GIO), not the loader's byte pattern: without
+  `image/x-yaif` in shared-mime-info it says "Couldn't recognize" -- register `plugins/mime/yaif.xml`
+  (XDG_DATA_DIRS) to test it outside install.sh.
 - User's remark "nearly everything is level 5 or 6": by design (photos -> 5 wavelet, RAW -> 6;
   screenshots/text/alpha -> 2, palettes -> 0). Real flaw = one number mixes method and effort.
   **Proposed**: print the method name in `Done:`/`yaif info` ("wavelet, q 90", "lossless,
-  predictive 2/4", "lossless, palette"), format byte unchanged, `-l` kept. Awaiting the user's pick
-  (both ~1 h 45).
+  predictive 2/4", "lossless, palette"), format byte unchanged, `-l` kept. **Done**: user wanted the
+  number kept in `yaif info` ("wavelet, q 90 (level 5)" per FDAT/FDLT); `Done:` shows the name only.
 
 ### To do (details in the entries below)
 Next up, in order:
