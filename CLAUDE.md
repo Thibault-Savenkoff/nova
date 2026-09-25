@@ -27,7 +27,7 @@ entry BELOW this one predates the rename and uses the old names: read `nova` as 
   (README light/dark SVGs, web page inline SVG via `currentColor` -> `var(--acc)`), the favicon and
   `win/yaif.ico` (PNG-in-ICO 256..16). Rejected: plain Y, dot-as-stem, pixelated right half (the
   user disliked every pixel layout), pile of cards, funnel, outline, file, halo/flare/sunset/bands.
-  `.github/images/site.jpg` still shows NOVA: retake once v2 is live (no browser here).
+  `.github/images/site.jpg` retaken 2026-09-25 (see step 10 below).
 - Plan: `/root/.claude/plans/reflective-popping-dahl.md` (steps 1-10; 9-10 = codec optimisation +
   website audit, requested by the user alongside the rename).
 - Local-only trap: Debian's MinGW needs `-lpthread` for `clock_gettime` (Fedora's in CI does not).
@@ -46,8 +46,7 @@ entry BELOW this one predates the rename and uses the old names: read `nova` as 
   completions identical to NOVA's modulo the name (diffed), and live-tested: bash (with
   bash-completion), fish (`complete -C`), pwsh (`TabExpansion2`, `yaif` and `yaif.exe`) give the
   subcommands, `-m`/`-look` values and `.yaif` files; zsh registers `_yaif` (#compdef). User renamed
-  `~/photos-nova` to `~/photos-yaif`. Left: steps 9 (codec optimisation) and 10 (website audit),
-  `site.jpg` retake. **Windows NOVA removal CONFIRMED on the user's PC (2026-09-25)**: the beta.7
+  `~/photos-nova` to `~/photos-yaif`. Steps 9 and 10 done since (entries above). **Windows NOVA removal CONFIRMED on the user's PC (2026-09-25)**: the beta.7
   `-setup.exe` removed the installed NOVA (NSIS `RemoveNova` section works for real).
 
 ### Plan step 9 measured (2026-09-25)
@@ -80,6 +79,18 @@ Bench here (8 Kodak PNGs, sample photo + screenshot decoded from docs/samples; s
   **Proposed**: print the method name in `Done:`/`yaif info` ("wavelet, q 90", "lossless,
   predictive 2/4", "lossless, palette"), format byte unchanged, `-l` kept. **Done**: user wanted the
   number kept in `yaif info` ("wavelet, q 90 (level 5)" per FDAT/FDLT); `Done:` shows the name only.
+
+### Plan step 10, website audit: done (2026-09-25)
+Headless Chromium + Lighthouse 12 now installed here (`apt install chromium`; lighthouse and
+puppeteer-core via `npx` with emsdk's node, `~/emsdk/node/*/bin`). Local server: `python3 -m http.server`
+in `docs/`. Mobile 95/100/100/100, desktop 100 x4 before any change. Fixed: the 3 decoder scripts
+`defer` (only used from handlers; checked samples + PNG/JPEG conversions, no page error) and a
+preload of `atkinson.woff2` (the LCP is the intro paragraph's text): mobile perf 97, FCP 2.4 -> 1.7 s
+(`18d7c49`). Long spec values (the HDR line) span 2 columns. Not fixable from the page: text
+compression and cache TTL (server's; GitHub Pages does both). OK as is: 360 px layout, both themes,
+wasm (1.5 MB) only fetched on first conversion, PREV shown before the full decode (7.7 Mpx sample
+2.1 s on 4 cores). **`site.jpg` retaken** from the local v2 page -- screenshot trap: Puppeteer's
+`fullPage` grows the viewport and the canvas is sized in `vh`, so freeze the canvas px size first.
 
 ### To do (details in the entries below)
 Next up, in order:
