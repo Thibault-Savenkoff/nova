@@ -588,6 +588,9 @@ if [ -f "$old_nova" ]; then
   # shellcheck disable=SC2086
   NOVA_TEST_ROOT=$TEST_ROOT bash "$old_nova" --uninstall $old_flag ||
     warn "NOVA's uninstaller failed; run it yourself: bash $(pretty "$old_nova") --uninstall"
+  # zsh keeps its completion cache while the count of completion files is unchanged: _nova out and
+  # _yaif in leaves it the same, so `yaif` would never complete. It is only a cache, rebuilt at start.
+  rm -f "${ZDOTDIR:-$HOME}"/.zcompdump*
 fi
 
 if [ -n "$from" ]; then

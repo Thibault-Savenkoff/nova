@@ -145,9 +145,11 @@ mkdir -p "$h5c/.local/bin" "$h5c/.local/share/nova"
 printf '#!/bin/bash\necho "$@" > "%s/args"\nrm -f "%s/.local/bin/nova" "%s/.local/share/nova/installed.txt"\n' \
   "$h5c" "$h5c" "$h5c" > "$h5c/.local/share/nova/install.sh"
 : > "$h5c/.local/share/nova/installed.txt"
+: > "$h5c/.zcompdump"
 run_install "$h5c" --yes --no-plugins --no-heic-hdr > "$T/5c.log" 2>&1
 check "old NOVA: its binary removed"    [ ! -e "$h5c/.local/bin/nova" ]
 check "old NOVA: its manifest removed"  [ ! -e "$h5c/.local/share/nova/installed.txt" ]
+check "old NOVA: zsh completion cache dropped" [ ! -e "$h5c/.zcompdump" ]
 check "old NOVA: uninstalled with the same prefix" grep -qxF -- "--uninstall --prefix $h5c/.local" "$h5c/args"
 check "old NOVA: YAIF installed"        test -x "$h5c/.local/bin/yaif"
 
