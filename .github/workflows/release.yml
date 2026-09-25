@@ -22,6 +22,11 @@ concurrency:
 permissions:
   contents: read
 
+# The scripts default to 2 compile jobs (a 7 GB dev machine ran out of memory); runners have 4 cores
+# and 16 GB (macOS: 3-4 cores, 7-14 GB).
+env:
+  JOBS: 4
+
 jobs:
   build:
     strategy:
