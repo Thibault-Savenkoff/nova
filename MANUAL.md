@@ -48,6 +48,10 @@ When you leave `-l` out, levels 1 to 3 are tried on the central 512 × 512 of th
 16 Mpx). Level 1 must be beaten by 3 % to be dropped, then the smallest wins. Level 0 is measured on the whole
 frame, because a palette only works if the whole image fits one.
 
+The number mostly picks the codec, so photos show 5, RAW files 6, and screenshots and graphics 0 to 2:
+that is not a lower effort. `yaif encode` says it in words (`wavelet, q 90`, `lossless, predictive 2/4`,
+`lossless, palette`); `yaif info` adds the level number.
+
 ## Quality: -q and -e
 
 Two different knobs, one per codec:

@@ -24,8 +24,8 @@ Public
     "    several sources = animation\n".print
     "    -m adaptive|lossless|lossy  default adaptive: lossless for\n".print
     "                                graphics, wavelet q 90 for photos\n".print
-    "    -l 0-5    codec level (default: the encoder tries them);\n".print
-    "              5 = lossy wavelet (photos)\n".print
+    "    -l 0-5    method (default: the encoder tries them): 0 palette,\n".print
+    "              1-4 predictive (4 strongest), 5 lossy wavelet\n".print
     "    -q 0-100  wavelet quality (default 90, ~45 dB: visually lossless;\n".print
     "              a JPEG source keeps its own quality, 50 + Q/2 up to 90)\n".print
     "    -e 1-64   lossy max error per sample (default 2)\n".print
@@ -726,7 +726,7 @@ Public
     // convert: an empty FDAT, the samples stay in Yaif_raw for read_yaif.
     (convert_to = NULL).if { Yaif_raw.encode }
     end_chunk
-    mode_name := "lossless, level 6 RAW"
+    mode_name := method 6 param 0
   )
 
   - raw_preview name:String <-
@@ -973,6 +973,33 @@ Public
 
   - mode_name:String
 
+  - method lv:Int param p:Int :String <-
+  // A coded region's level byte and its parameter (FORMAT.md 5) in words: the level number reads
+  // like an effort scale, but it mostly picks the codec.
+  ( + result:String
+    (lv = 0).if {
+      result := "lossless, palette"
+    }.elseif {lv = 5} then {
+      result := "wavelet, q " + p.to_string
+    }.elseif {lv = 6} then {
+      result := "RAW, lossless"
+    }.elseif {(lv < 0) || {lv > 6}} then {
+      result := "unknown method"
+    }.elseif {p = 0} then {
+      result := "lossless, predictive " + lv.to_string + "/4"
+    } else {
+      result := "near-lossless (max error " + p.to_string + "), predictive " + lv.to_string + "/4"
+    }
+    result
+  )
+
+  - info_method at:Int :String <-
+  // yaif info: the method of the coded region at data[at], with its level number (bug reports).
+  ( + lv:Int
+    lv := u8 at
+    ", " + (method lv param (u8 (at + 1))) + " (level " + lv.to_string + ")"
+  )
+
   - encode_frames d:Int mode md:Int level lv:Int eps ep:Int <-
   // Frames -> Yaif_codec.out. md: 0 adaptive, 1 lossless, 2 lossy. lv: 0 pick, -1 level 0, else the level.
   // Frames are coded from `work`, which holds the reconstructed image (lossy changes pixels):
@@ -1022,8 +1049,7 @@ Public
       lvl := 0
       (Yaif_codec.palette_fits (frames.first) stride width region (0, 0, width, height)).if { } else { fail "level 0 needs an image of 256 colours or less" }
     }
-    (e = 0).if { mode_name := "lossless" }.elseif {lvl = 5} then { mode_name := "lossy q " + e.to_string } else { mode_name := "lossy eps " + e.to_string }
-    mode_name := mode_name + ", level " + lvl.to_string
+    mode_name := method lvl param e
     Yaif_codec.reset_out
     put_magic
     begin_chunk t_ihdr
@@ -1355,7 +1381,16 @@ Public
         0.to 3 do { i:Int
           (data.at (pos + i)).to_char.print
         }
-        ("  " + len.to_string + " bytes\n").print
+        ("  " + len.to_string + " bytes").print
+        // RAW frames have no level byte (FORMAT.md 5.5); an FDLT region follows its 16-byte rectangle.
+        ((t = t_fdat) && {raw}).if {
+          (", " + (method 6 param 0) + " (level 6)").print
+        }.elseif {(t = t_fdat) && {len >= 2}} then {
+          (info_method (pos + 8)).print
+        }.elseif {(t = t_fdlt) && {len >= 18}} then {
+          (info_method (pos + 24)).print
+        }
+        '\n'.print
       }
       pos := pos + 8
       (t = t_ihdr).if {
@@ -1729,7 +1764,7 @@ Public
   )
 
   - done_line src:Int <-
-  // "Done: 26,050,253 bytes, 80.6 % of the source (lossless, level 6 (RAW)) in 7.5 s"
+  // "Done: 26,050,253 bytes, 80.6 % of the source (RAW, lossless) in 7.5 s"
   ( + r,n:Int
     + s:String
     Yaif_par.clear
