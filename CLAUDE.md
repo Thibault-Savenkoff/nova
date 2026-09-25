@@ -46,6 +46,25 @@ entry BELOW this one predates the rename and uses the old names: read `nova` as 
   `site.jpg` retake. **Windows NOVA removal CONFIRMED on the user's PC (2026-09-25)**: the beta.7
   `-setup.exe` removed the installed NOVA (NSIS `RemoveNova` section works for real).
 
+### Plan step 9 measured (2026-09-25)
+Bench here (8 Kodak PNGs, sample photo + screenshot decoded from docs/samples; scripts in scratchpad):
+- **Lossless: YAIF already beats JXL `-e 7` by 3-12 % and WebP `-z 9` by 10-25 %** (screenshot: tie
+  with WebP). **Lossy: ~1 dB PSNR behind AVIF** at equal size (~10-15 % bigger at equal PSNR), ahead
+  of JXL on PSNR. Catching AVIF = new transform, out of scope.
+- Speed: symmetric CM, ~0.8 s/core for a 0.4 Mpx image; ~49 % in `Yaif_model.bit` (already
+  prefetched/bucketed). PNG output is already parallel deflate level 6.
+- **Rejected**: (1) lossless stripes 2 -> 0.5 Mpx: large lossless photo decode -35 %, but
+  screenshots +11 % (match model loses the whole image). (2) model constants (`lr` 4/8, hashed
+  limit 30/127): all within +-0.1 % -- already tuned.
+- **Found**: Qt/KDE (Dolphin/Gwenview) and gdk-pixbuf plugins decode the FULL image for thumbnails;
+  the `PREV` (512 px, present > 2 Mpx) decodes in 0.04 s vs 1.9 CPU-s for a 7.7 Mpx photo (~50x).
+  WIC already uses it. Plugin-only fix, format unchanged -- **proposed, awaiting the user's go.**
+- User's remark "nearly everything is level 5 or 6": by design (photos -> 5 wavelet, RAW -> 6;
+  screenshots/text/alpha -> 2, palettes -> 0). Real flaw = one number mixes method and effort.
+  **Proposed**: print the method name in `Done:`/`yaif info` ("wavelet, q 90", "lossless,
+  predictive 2/4", "lossless, palette"), format byte unchanged, `-l` kept. Awaiting the user's pick
+  (both ~1 h 45).
+
 ### To do (details in the entries below)
 Next up, in order:
 1. **Mac test on real hardware** (user has no Mac access right now): `install.sh`, `nova convert`
