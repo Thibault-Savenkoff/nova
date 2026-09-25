@@ -23,8 +23,8 @@ w=$1
 out=$2
 cmake=${CMAKE:-cmake}
 # A bare --parallel is an unbounded make -j: every C++ file of libheif at once, which ran a 8 GB
-# machine out of memory. One job per core (JOBS to override).
-jobs=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}
+# machine out of memory, and 9 jobs later ran a 7 GB one out (it killed a VM). 2 jobs (JOBS to override).
+jobs=${JOBS:-2}
 mkdir -p "$w"
 
 sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | awk '{print $1}'; }

@@ -11,7 +11,7 @@ if [ ! -f $B/libraw.a ]; then
   mkdir -p $B
   [ -d $LR ] || curl -sfL https://github.com/LibRaw/LibRaw/archive/refs/tags/0.22.2.tar.gz | tar xz -C $B
   mkdir -p $B/o
-  ls $LR/src/*.cpp $LR/src/*/*.cpp | grep -v integration | xargs -P "$(nproc)" -I{} sh -c \
+  ls $LR/src/*.cpp $LR/src/*/*.cpp | grep -v integration | xargs -P "${JOBS:-2}" -I{} sh -c \
     'em++ -O3 -msimd128 -w -fwasm-exceptions -DLIBRAW_NOTHREADS -DUSE_ZLIB -sUSE_ZLIB=1 -I'$LR' -c {} -o '$B'/o/$(echo {} | tr / _).o'
   emar rcs $B/libraw.a $B/o/*.o
 fi

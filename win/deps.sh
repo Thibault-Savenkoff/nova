@@ -38,7 +38,7 @@ build() {
   shift 2
   mingw64-cmake -S "$work/$src" -B "$work/b-$name" \
     -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF "$@"
-  cmake --build "$work/b-$name" -j"$(nproc)"
+  cmake --build "$work/b-$name" -j"${JOBS:-2}"
   DESTDIR="$stage" cmake --install "$work/b-$name"
   sync
 }

@@ -3,6 +3,8 @@
 # reusing install.sh for everything after the compile step. For a prebuilt
 # binary instead, use install.sh directly (no compiler needed).
 # Run from the repository: build.sh [install.sh options...]
+# 2 compile jobs at most, everywhere below (a 7 GB machine ran out of memory): JOBS to override.
+export MAKEFLAGS="-j${JOBS:-2}" CMAKE_BUILD_PARALLEL_LEVEL="${JOBS:-2}"
 set -eu
 cd "$(dirname "$0")"
 

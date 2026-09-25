@@ -423,8 +423,9 @@ cmake_plugin() {
   local b="$tmp/build-$1" f
   run user cmake -S "$src/plugins/$1" -B "$b" -DCMAKE_BUILD_TYPE=Release > "$tmp/$1.log" 2>&1 ||
     { tail -20 "$tmp/$1.log" >&2; warn "$2: configuration failed (log above)"; return 1; }
-  # A bare --parallel is an unbounded make -j (all files at once, out of memory): one job per core.
-  run user cmake --build "$b" --parallel "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" > "$tmp/$1.log" 2>&1 ||
+  # A bare --parallel is an unbounded make -j (all files at once, out of memory). 2 jobs by default:
+  # C++ compilers take 300-500 MB each, and a 7 GB machine was run out of memory. JOBS to override.
+  run user cmake --build "$b" --parallel "${JOBS:-2}" > "$tmp/$1.log" 2>&1 ||
     { tail -20 "$tmp/$1.log" >&2; warn "$2: build failed (log above)"; return 1; }
   DESTDIR=$TEST_ROOT run root cmake --install "$b" > "$tmp/$1.log" 2>&1 ||
     { tail -20 "$tmp/$1.log" >&2; warn "$2: install failed (log above)"; return 1; }
