@@ -136,7 +136,7 @@ BD-rate on mean curves, PSNR + SSIMULACRA2 built from libjxl v0.11.1 `jxlsrc/bui
 - Subtitle "Yet Another Image Format" under the logo: page (`h1 .sub`, font sized to the logo's
   width on desktop) and README SVGs (`textLength='320'`, viewBox 320x142, `<img height=102>`).
   `site.jpg` retaken. Page light background is `#edeff1` by design (looks grey next to GitHub's
-  white README) -- asked the user whether to go white.
+  white README) -- **kept (user, 2026-09-25)**: ground/surface two-level palette, less glare.
 
 ### To do (details in the entries below)
 Next up, in order:
